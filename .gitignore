@@ -5,3 +5,4 @@ dist
 *.log
 .codebase-memory/
 *.tsbuildinfo
+backend/uploads/

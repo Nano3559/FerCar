@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Package, ShoppingCart, TrendingUp,
   ArrowLeftRight, DollarSign, BarChart3, Settings,
-  RotateCcw, Send, Tags, Car, LogOut, X,
+  RotateCcw, Send, Tags, Car, LogOut, X, ListChecks, ClipboardList,
 } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { useNavigate } from "react-router-dom";
@@ -16,8 +16,10 @@ const allLinks = [
   { to: "/panel/devoluciones", label: "Devoluciones", icon: RotateCcw, module: "devoluciones" },
   { to: "/panel/solicitudes", label: "Solicitudes", icon: Send, module: "solicitudes" },
   { to: "/panel/movimientos", label: "Movimientos", icon: ArrowLeftRight, module: "movimientos" },
+  { to: "/panel/despachos", label: "Lista de Despacho", icon: ListChecks, module: "despachos" },
   { to: "/panel/costos", label: "Costos", icon: DollarSign, module: "costos" },
   { to: "/panel/precios", label: "Precios", icon: Tags, module: "precios" },
+  { to: "/panel/notas-compra", label: "Notas de Compra", icon: ClipboardList, module: "notas-compra" },
   { to: "/panel/reportes", label: "Reportes", icon: BarChart3, module: "reportes" },
   { to: "/panel/configuracion", label: "Configuración", icon: Settings, module: "configuracion" },
 ];
@@ -61,21 +63,21 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-dark-900 border-r border-dark-700/50 flex flex-col
         transform transition-transform duration-300 ease-in-out
-        md:relative md:translate-x-0 md:z-auto
-        ${open ? "translate-x-0" : "-translate-x-full"}
+        md:relative md:translate-x-0 md:z-auto md:visible
+        ${open ? "translate-x-0" : "-translate-x-full invisible"}
       `}>
         <div className="p-5 border-b border-dark-700/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20">
-                <Car size={22} className="text-white" />
+                <Car size={22} className="text-foreground" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-white">RepuestoPro</h1>
+                <h1 className="text-lg font-bold text-foreground">RepuestoPro</h1>
                 <p className="text-xs text-gray-500">{role || "Sistema"}</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-all md:hidden">
+            <button onClick={onClose} aria-label="Cerrar menú" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all md:hidden">
               <X size={20} />
             </button>
           </div>

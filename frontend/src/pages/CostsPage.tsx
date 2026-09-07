@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
+import { useDialogBehavior } from "../components/ui/useDialog";
 
 interface Supplier { id: number; name: string; nit: string; phone: string; costsCount?: number; }
 interface Product { id: number; itemCode: string; name: string; brand: string; model: string; }
@@ -56,6 +57,10 @@ export default function CostsPage() {
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<number | null>(null);
   const [supplierForm, setSupplierForm] = useState({ name: "", nit: "", phone: "" });
+
+  const costPanelRef = useDialogBehavior(showCostModal, () => setShowCostModal(false));
+  const supplierPanelRef = useDialogBehavior(showSupplierModal, () => setShowSupplierModal(false));
+  const invoicePanelRef = useDialogBehavior(showInvoiceModal, () => setShowInvoiceModal(false));
 
   const formatBs = (v: number) =>
     `Bs. ${v.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -263,7 +268,7 @@ export default function CostsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Costos</h1>
+          <h1 className="text-2xl font-bold text-foreground">Costos</h1>
           <p className="text-gray-400 text-sm mt-1">Gestión de costos, facturas y proveedores</p>
         </div>
         <div className="flex gap-2">
@@ -276,7 +281,7 @@ export default function CostsPage() {
             <Upload size={16} /> Importar Factura
           </button>
           <button onClick={openCreateCost}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
             <Plus size={16} /> Nuevo Costo
           </button>
         </div>
@@ -284,9 +289,9 @@ export default function CostsPage() {
 
       <div className="relative">
         <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
-        <input value={search} onChange={(e) => setSearch(e.target.value)}
+        <input value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Buscar costos"
           placeholder="Buscar por producto, código, marca o proveedor..."
-          className="w-full pl-10 pr-4 py-2.5 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500 transition-all" />
+          className="w-full pl-10 pr-4 py-2.5 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 transition-all" />
       </div>
 
       {/* Costs table */}
@@ -320,7 +325,7 @@ export default function CostsPage() {
                     <tr key={c.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
                       <td className="px-4 py-3 text-gray-300">{new Date(c.date).toLocaleDateString("es-BO")}</td>
                       <td className="px-4 py-3 text-gray-300 font-mono text-xs">{c.itemCode}</td>
-                      <td className="px-4 py-3 text-white font-medium">{c.productName}</td>
+                      <td className="px-4 py-3 text-foreground font-medium">{c.productName}</td>
                       <td className="px-4 py-3 text-gray-300">{c.brand}</td>
                       <td className="px-4 py-3 text-gray-300">{c.supplierName}</td>
                       <td className="px-4 py-3">
@@ -353,12 +358,12 @@ export default function CostsPage() {
                 <span className="text-xs text-gray-500">{total} registros</span>
                 <div className="flex items-center gap-2">
                   <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
-                    className="p-1.5 text-gray-400 hover:text-white disabled:opacity-30 rounded-lg transition-all">
+                    className="p-1.5 text-gray-400 hover:text-foreground disabled:opacity-30 rounded-lg transition-all">
                     <ChevronLeft size={16} />
                   </button>
                   <span className="text-xs text-gray-400">{page}/{pages}</span>
                   <button onClick={() => setPage(Math.min(pages, page + 1))} disabled={page === pages}
-                    className="p-1.5 text-gray-400 hover:text-white disabled:opacity-30 rounded-lg transition-all">
+                    className="p-1.5 text-gray-400 hover:text-foreground disabled:opacity-30 rounded-lg transition-all">
                     <ChevronRight size={16} />
                   </button>
                 </div>
@@ -372,16 +377,16 @@ export default function CostsPage() {
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
         <div className="px-4 py-3 border-b border-dark-700/50">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-white font-medium">Proveedores ({filteredSuppliers.length})</h3>
+            <h3 className="text-foreground font-medium">Proveedores ({filteredSuppliers.length})</h3>
             <button onClick={openCreateSupplier} className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-all">
               <Plus size={14} /> Agregar
             </button>
           </div>
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)}
+            <input value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)} aria-label="Buscar proveedor"
               placeholder="Buscar por nombre, NIT o teléfono..."
-              className="w-full pl-9 pr-3 py-2 bg-dark-900/50 border border-dark-700/50 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500 transition-all" />
+              className="w-full pl-9 pr-3 py-2 bg-dark-900/50 border border-dark-700/50 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 transition-all" />
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -398,7 +403,7 @@ export default function CostsPage() {
             <tbody>
               {filteredSuppliers.map((s) => (
                 <tr key={s.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                  <td className="px-4 py-3 text-white font-medium">{s.name}</td>
+                  <td className="px-4 py-3 text-foreground font-medium">{s.name}</td>
                   <td className="px-4 py-3 text-gray-300 font-mono text-xs">{s.nit || "—"}</td>
                   <td className="px-4 py-3 text-gray-300">{s.phone || "—"}</td>
                   <td className="px-4 py-3 text-gray-400 text-center text-xs">{s.costsCount || 0}</td>
@@ -422,10 +427,10 @@ export default function CostsPage() {
       {/* Cost Modal */}
       {showCostModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-lg shadow-2xl">
+          <div ref={costPanelRef} role="dialog" aria-modal="true" aria-label="Nuevo costo" className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
-              <h3 className="text-lg font-bold text-white">{editingCost ? "Editar Costo" : "Nuevo Costo"}</h3>
-              <button onClick={() => setShowCostModal(false)} className="p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-all">
+              <h3 className="text-lg font-bold text-foreground">{editingCost ? "Editar Costo" : "Nuevo Costo"}</h3>
+              <button onClick={() => setShowCostModal(false)} aria-label="Cerrar" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
                 <X size={18} />
               </button>
             </div>
@@ -436,7 +441,7 @@ export default function CostsPage() {
                 {selectedProduct ? (
                   <div className="flex items-center justify-between p-3 bg-dark-800 border border-primary-600/20 rounded-xl">
                     <div>
-                      <p className="text-sm text-white font-medium">{selectedProduct.name}</p>
+                      <p className="text-sm text-foreground font-medium">{selectedProduct.name}</p>
                       <p className="text-xs text-gray-500">{selectedProduct.brand} · {selectedProduct.itemCode}</p>
                     </div>
                     <button onClick={() => { setSelectedProduct(null); setProductSearch(""); }} className="p-1 text-gray-400 hover:text-red-400">
@@ -446,14 +451,14 @@ export default function CostsPage() {
                 ) : (
                   <>
                     <Search size={16} className="absolute left-3 top-[34px] text-gray-500" />
-                    <input value={productSearch} onChange={(e) => handleProductSearch(e.target.value)} placeholder="Buscar producto..."
-                      className="w-full pl-9 pr-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                    <input value={productSearch} onChange={(e) => handleProductSearch(e.target.value)} placeholder="Buscar producto..." aria-label="Buscar producto"
+                      className="w-full pl-9 pr-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
                     {productResults.length > 0 && (
                       <div className="absolute top-full left-0 right-0 mt-1 bg-dark-800 border border-dark-700 rounded-xl shadow-xl z-10 max-h-48 overflow-y-auto">
                         {productResults.map((p) => (
                           <button key={p.id} onClick={() => { setSelectedProduct(p); setProductSearch(p.name); setProductResults([]); }}
                             className="w-full text-left px-4 py-2.5 hover:bg-dark-700 transition-colors border-b border-dark-700/30 last:border-0">
-                            <p className="text-sm text-white">{p.name}</p>
+                            <p className="text-sm text-foreground">{p.name}</p>
                             <p className="text-xs text-gray-500">{p.brand} · {p.itemCode}</p>
                           </button>
                         ))}
@@ -466,7 +471,7 @@ export default function CostsPage() {
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Proveedor *</label>
                 <select value={costSupplierId} onChange={(e) => setCostSupplierId(e.target.value)}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500">
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
                   <option value="">Seleccionar...</option>
                   {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
@@ -476,17 +481,17 @@ export default function CostsPage() {
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Tipo Cambio (Bs/USD) *</label>
                   <input type="number" step="0.01" min="0" value={exchangeRate} onChange={(e) => setExchangeRate(e.target.value)}
-                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">% Gastos</label>
                   <input type="number" value={percentage} onChange={(e) => setPercentage(e.target.value)}
-                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Costo (USD) *</label>
                   <input type="number" step="0.01" min="0" value={costUsd} onChange={(e) => setCostUsd(e.target.value)}
-                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
                 </div>
               </div>
 
@@ -508,11 +513,11 @@ export default function CostsPage() {
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-dark-700/50">
               <button onClick={() => setShowCostModal(false)}
-                className="px-4 py-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl text-sm transition-all">
+                className="px-4 py-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl text-sm transition-all">
                 Cancelar
               </button>
               <button onClick={saveCost} disabled={saving}
-                className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
                 {saving ? "Guardando..." : editingCost ? "Guardar Cambios" : "Registrar Costo"}
               </button>
             </div>
@@ -523,10 +528,10 @@ export default function CostsPage() {
       {/* Supplier Modal */}
       {showSupplierModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-md shadow-2xl">
+          <div ref={supplierPanelRef} role="dialog" aria-modal="true" aria-label="Nuevo proveedor" className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
-              <h3 className="text-lg font-bold text-white">{editingSupplier ? "Editar Proveedor" : "Nuevo Proveedor"}</h3>
-              <button onClick={() => setShowSupplierModal(false)} className="p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-all">
+              <h3 className="text-lg font-bold text-foreground">{editingSupplier ? "Editar Proveedor" : "Nuevo Proveedor"}</h3>
+              <button onClick={() => setShowSupplierModal(false)} aria-label="Cerrar" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
                 <X size={18} />
               </button>
             </div>
@@ -534,26 +539,26 @@ export default function CostsPage() {
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Nombre *</label>
                 <input value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
               </div>
               <div>
                 <label className="block text-xs text-gray-400 mb-1">NIT</label>
                 <input value={supplierForm.nit} onChange={(e) => setSupplierForm({ ...supplierForm, nit: e.target.value })}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
               </div>
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Teléfono</label>
                 <input value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
               </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-dark-700/50">
               <button onClick={() => setShowSupplierModal(false)}
-                className="px-4 py-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl text-sm transition-all">
+                className="px-4 py-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl text-sm transition-all">
                 Cancelar
               </button>
               <button onClick={saveSupplier}
-                className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
                 {editingSupplier ? "Guardar Cambios" : "Crear Proveedor"}
               </button>
             </div>
@@ -563,10 +568,10 @@ export default function CostsPage() {
       {/* Invoice Import Modal */}
       {showInvoiceModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-lg shadow-2xl">
+          <div ref={invoicePanelRef} role="dialog" aria-modal="true" aria-label="Importar factura" className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
-              <h3 className="text-lg font-bold text-white">Importar Factura (Costos)</h3>
-              <button onClick={() => setShowInvoiceModal(false)} className="p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-all">
+              <h3 className="text-lg font-bold text-foreground">Importar Factura (Costos)</h3>
+              <button onClick={() => setShowInvoiceModal(false)} aria-label="Cerrar" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
                 <X size={18} />
               </button>
             </div>
@@ -600,7 +605,7 @@ export default function CostsPage() {
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Proveedor *</label>
                 <select value={invoiceSupplierId} onChange={(e) => setInvoiceSupplierId(e.target.value)}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500">
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
                   <option value="">Seleccionar...</option>
                   {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
@@ -610,17 +615,17 @@ export default function CostsPage() {
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Tipo de Cambio (Bs/USD) *</label>
                   <input type="number" step="0.01" value={invoiceRate} onChange={(e) => setInvoiceRate(e.target.value)}
-                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">% Gastos (flete/nac.)</label>
                   <input type="number" value={invoicePercent} onChange={(e) => setInvoicePercent(e.target.value)}
-                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">% Margen (precio)</label>
                   <input type="number" value={invoiceMargin} onChange={(e) => setInvoiceMargin(e.target.value)}
-                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
                 </div>
               </div>
 
@@ -635,11 +640,11 @@ export default function CostsPage() {
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-dark-700/50">
               <button onClick={() => setShowInvoiceModal(false)}
-                className="px-4 py-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl text-sm transition-all">
+                className="px-4 py-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl text-sm transition-all">
                 Cerrar
               </button>
               <button onClick={importInvoice} disabled={importing}
-                className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
                 {importing ? "Procesando..." : "Importar Factura"}
               </button>
             </div>

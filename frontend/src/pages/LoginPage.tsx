@@ -40,7 +40,7 @@ export default function LoginPage() {
       {/* Back button */}
       <Link
         to="/"
-        className="absolute top-6 left-6 z-10 flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+        className="absolute top-6 left-6 z-10 flex items-center gap-2 text-gray-400 hover:text-foreground transition-colors"
       >
         <ArrowLeft size={18} />
         <span className="text-sm">Volver</span>
@@ -50,47 +50,52 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-600/20">
-            <Car size={32} className="text-white" />
+            <Car size={32} className="text-foreground" />
           </div>
-          <h1 className="text-2xl font-bold text-white">RepuestoPro</h1>
+          <h1 className="text-2xl font-bold text-foreground">RepuestoPro</h1>
           <p className="text-gray-400 text-sm mt-1">Sistema de Inventario y Ventas</p>
         </div>
 
         {/* Login card */}
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-8 backdrop-blur-sm">
-          <h2 className="text-xl font-semibold text-white mb-1">Iniciar Sesión</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-1">Iniciar Sesión</h2>
           <p className="text-gray-400 text-sm mb-6">Ingresa tus credenciales para acceder</p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label htmlFor="login-email" className="block text-sm font-medium text-gray-300 mb-2">
                 Correo electrónico
               </label>
               <input
+                id="login-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
+                autoComplete="email"
+                className="w-full px-4 py-3 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
                 placeholder="correo@ejemplo.com"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label htmlFor="login-password" className="block text-sm font-medium text-gray-300 mb-2">
                 Contraseña
               </label>
               <div className="relative">
                 <input
+                  id="login-password"
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all pr-12"
+                  autoComplete="current-password"
+                  className="w-full px-4 py-3 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all pr-12"
                   placeholder="••••••••"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300 transition-colors"
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}

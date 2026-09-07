@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
+import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -43,6 +44,10 @@ export default function WholesalePage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
+
+  const confirmPanelRef = useDialogBehavior(showConfirm, () => setShowConfirm(false));
+  const receiptPanelRef = useDialogBehavior(showReceipt && lastWholesaleSale !== null, () => setShowReceipt(false));
+  const importPanelRef = useDialogBehavior(showImportModal, () => { setShowImportModal(false); setImportResult(null); });
 
   const [items, setItems] = useState<WholesaleItem[]>([]);
   const [searchProd, setSearchProd] = useState("");
@@ -227,12 +232,12 @@ export default function WholesalePage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Ventas por Mayor</h1>
+          <h1 className="text-2xl font-bold text-foreground">Ventas por Mayor</h1>
           <p className="text-gray-400 text-sm mt-1">Gestión de ventas al por mayor</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => { setShowImportModal(true); setImportFile(null); setImportResult(null); }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-green-600/20">
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
             <Upload size={16} /> Importar Excel
           </button>
           <button onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchSales(); }}
@@ -240,7 +245,7 @@ export default function WholesalePage() {
             <FileText size={16} /> Historial
           </button>
           <button onClick={() => { resetForm(); setShowForm(true); }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
             <Plus size={16} /> Nueva Venta Mayor
           </button>
         </div>
@@ -250,8 +255,8 @@ export default function WholesalePage() {
       {showHistory && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-            <h3 className="text-white font-medium">Historial de Ventas Mayoristas</h3>
-            <button onClick={fetchSales} className="p-1.5 text-gray-400 hover:text-white rounded-lg transition-all">
+            <h3 className="text-foreground font-medium">Historial de Ventas Mayoristas</h3>
+            <button onClick={fetchSales} className="p-1.5 text-gray-400 hover:text-foreground rounded-lg transition-all">
               <RefreshCw size={14} />
             </button>
           </div>
@@ -278,10 +283,10 @@ export default function WholesalePage() {
                     <tr key={s.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
                       <td className="px-4 py-3 text-gray-300 font-mono text-xs">#{s.id}</td>
                       <td className="px-4 py-3 text-gray-300">{formatDate(s.saleDate)}</td>
-                      <td className="px-4 py-3 text-white font-medium">{s.customer?.name || "N/A"}</td>
+                      <td className="px-4 py-3 text-foreground font-medium">{s.customer?.name || "N/A"}</td>
                       <td className="px-4 py-3 text-gray-300">{s.location?.name || "N/A"}</td>
                       <td className="px-4 py-3 text-gray-300">{s.payments.map((p) => p.method).join(", ")}</td>
-                      <td className="px-4 py-3 text-amber-400 font-medium text-right">{formatBs(Number(s.total))}</td>
+                      <td className="px-4 py-3 text-emerald-400 font-medium text-right">{formatBs(Number(s.total))}</td>
                       <td className="px-4 py-3 text-center">
                         <button onClick={() => printNota(s)} className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all" title="Imprimir nota">
                           <FileText size={14} />
@@ -300,8 +305,8 @@ export default function WholesalePage() {
       {showForm && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-            <h3 className="text-white font-medium">Nueva Venta Mayorista</h3>
-            <button onClick={() => setShowForm(false)} className="p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-all">
+            <h3 className="text-foreground font-medium">Nueva Venta Mayorista</h3>
+            <button onClick={() => setShowForm(false)} className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
               <X size={18} />
             </button>
           </div>
@@ -311,12 +316,12 @@ export default function WholesalePage() {
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Nombre del cliente *</label>
                 <input value={clientName} onChange={(e) => setClientName(e.target.value)}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
               </div>
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Para quién es el pedido</label>
                 <input value={pedido} onChange={(e) => setPedido(e.target.value)}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
               </div>
             </div>
 
@@ -324,7 +329,7 @@ export default function WholesalePage() {
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Lugar de entrega *</label>
                 <select value={deliveryPlace} onChange={(e) => { setDeliveryPlace(e.target.value); if (e.target.value !== "Otra") setCustomDeliveryPlace(""); }}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500">
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
                   <option value="Cochabamba">Cochabamba</option>
                   <option value="Santa Cruz">Santa Cruz</option>
                   <option value="La Paz">La Paz</option>
@@ -335,14 +340,15 @@ export default function WholesalePage() {
                     value={customDeliveryPlace}
                     onChange={(e) => setCustomDeliveryPlace(e.target.value)}
                     placeholder="Escribe la ubicación a la que se envía o vende..."
-                    className="mt-2 w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500"
+                    aria-label="Otra ubicación de entrega"
+                    className="mt-2 w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500"
                   />
                 )}
               </div>
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Forma de pago *</label>
                 <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500">
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
                   <option value="EFECTIVO">Efectivo</option>
                   <option value="TRANSFERENCIA">Transferencia</option>
                   <option value="QR">QR</option>
@@ -350,27 +356,28 @@ export default function WholesalePage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Datos factura (NIT)</label>
-                <input value={facturaNIT} onChange={(e) => setFacturaNIT(e.target.value)} placeholder="NIT"
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+                <label htmlFor="wholesale-nit" className="block text-xs text-gray-400 mb-1">Datos factura (NIT)</label>
+                <input id="wholesale-nit" value={facturaNIT} onChange={(e) => setFacturaNIT(e.target.value)} placeholder="NIT"
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
               </div>
             </div>
 
             <div className="relative">
-              <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input value={searchProd} onChange={(e) => handleSearch(e.target.value)}
-                placeholder="Buscar producto por código, nombre o marca..."
-                className="w-full pl-10 pr-4 py-2.5 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500 transition-all" />
+<Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
+            <input value={searchProd} onChange={(e) => handleSearch(e.target.value)}
+              placeholder="Buscar producto por código, nombre o marca..."
+              aria-label="Buscar producto"
+                className="w-full pl-10 pr-4 py-2.5 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 transition-all" />
               {searchResults.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-dark-900 border border-dark-700 rounded-xl shadow-xl z-10 max-h-48 overflow-y-auto">
                   {searchResults.map((p) => (
                     <button key={p.id} onClick={() => addItem(p)}
                       className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-dark-800 transition-colors text-left">
                       <div>
-                        <p className="text-white text-sm">{p.name}</p>
+                        <p className="text-foreground text-sm">{p.name}</p>
                         <p className="text-gray-400 text-xs">{p.brand} | {p.itemCode} | {p.model}</p>
                       </div>
-                      <span className="text-amber-400 text-sm font-medium">{formatBs(p.wholesalePrice || p.price1)}</span>
+                      <span className="text-emerald-400 text-sm font-medium">{formatBs(p.wholesalePrice || p.price1)}</span>
                     </button>
                   ))}
                 </div>
@@ -401,23 +408,23 @@ export default function WholesalePage() {
                     {items.map((item) => (
                       <tr key={item.productId} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
                         <td className="px-3 py-2 text-gray-300 font-mono text-xs">{item.itemCode}</td>
-                        <td className="px-3 py-2 text-white font-medium">{item.name}</td>
+                        <td className="px-3 py-2 text-foreground font-medium">{item.name}</td>
                         <td className="px-3 py-2 text-gray-300">{item.brand}</td>
                         <td className="px-3 py-2 text-gray-300">{item.model}</td>
                         <td className="px-3 py-2">
                           <div className="flex items-center justify-center gap-1">
                             <button onClick={() => updateQuantity(item.productId, item.quantity - 1)}
-                              className="p-1 text-gray-400 hover:text-white hover:bg-dark-700 rounded transition-all"><Minus size={12} /></button>
-                            <span className="w-8 text-center text-white text-sm">{item.quantity}</span>
+                              className="p-1 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded transition-all"><Minus size={12} /></button>
+                            <span className="w-8 text-center text-foreground text-sm">{item.quantity}</span>
                             <button onClick={() => updateQuantity(item.productId, item.quantity + 1)}
-                              className="p-1 text-gray-400 hover:text-white hover:bg-dark-700 rounded transition-all"><Plus size={12} /></button>
+                              className="p-1 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded transition-all"><Plus size={12} /></button>
                           </div>
                         </td>
                         <td className="px-3 py-2 text-right">
                           <input type="number" value={item.unitPrice} onChange={(e) => updatePrice(item.productId, Number(e.target.value))}
-                            className="w-20 px-2 py-1 bg-dark-800 border border-dark-700 rounded-lg text-white text-xs text-right focus:outline-none focus:border-primary-500" />
+                            className="w-20 px-2 py-1 bg-dark-800 border border-dark-700 rounded-lg text-foreground text-xs text-right focus:outline-none focus:border-primary-500" />
                         </td>
-                        <td className="px-3 py-2 text-amber-400 font-medium text-right">{formatBs(item.subtotal)}</td>
+                        <td className="px-3 py-2 text-emerald-400 font-medium text-right">{formatBs(item.subtotal)}</td>
                         <td className="px-3 py-2 text-center">
                           <button onClick={() => removeItem(item.productId)}
                             className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
@@ -432,9 +439,9 @@ export default function WholesalePage() {
             )}
 
             <div className="flex items-center justify-between pt-3 border-t border-dark-700/50">
-              <span className="text-lg font-bold text-white">Total: <span className="text-amber-400">{formatBs(total)}</span></span>
+              <span className="text-lg font-bold text-foreground">Total: <span className="text-emerald-400">{formatBs(total)}</span></span>
               <button onClick={openConfirm}
-                className="flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
+                className="flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
                 <Check size={16} /> Confirmar Venta
               </button>
             </div>
@@ -445,20 +452,20 @@ export default function WholesalePage() {
       {/* Confirm modal */}
       {showConfirm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div id="wholesale-confirm-modal" className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-lg shadow-2xl">
+          <div ref={confirmPanelRef} id="wholesale-confirm-modal" role="dialog" aria-modal="true" aria-label="Confirmar venta mayorista" className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
-              <h3 className="text-lg font-bold text-white">Confirmar Venta Mayorista</h3>
-              <button onClick={() => setShowConfirm(false)} className="p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-all">
+              <h3 className="text-lg font-bold text-foreground">Confirmar Venta Mayorista</h3>
+              <button onClick={() => setShowConfirm(false)} aria-label="Cerrar" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
                 <X size={18} />
               </button>
             </div>
               <div className="p-6 space-y-3">
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Cliente:</span><span className="text-white">{clientName}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Para quién:</span><span className="text-white">{pedido || "No especificado"}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Entrega:</span><span className="text-white">{finalDeliveryPlace}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Factura/NIT:</span><span className="text-white">{facturaNIT || "No especificado"}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Pago:</span><span className="text-white">{paymentMethod}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Productos:</span><span className="text-white">{items.length}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Cliente:</span><span className="text-foreground">{clientName}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Para quién:</span><span className="text-foreground">{pedido || "No especificado"}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Entrega:</span><span className="text-foreground">{finalDeliveryPlace}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Factura/NIT:</span><span className="text-foreground">{facturaNIT || "No especificado"}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Pago:</span><span className="text-foreground">{paymentMethod}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Productos:</span><span className="text-foreground">{items.length}</span></div>
                 <div className="border-t border-dark-700/50 pt-3 space-y-1">
                   {items.map((item) => (
                     <div key={item.productId} className="flex justify-between gap-3 text-xs">
@@ -468,13 +475,13 @@ export default function WholesalePage() {
                   ))}
                 </div>
               <div className="border-t border-dark-700/50 pt-3 flex justify-between">
-                <span className="text-white font-medium">Total:</span>
-                <span className="text-amber-400 text-lg font-bold">{formatBs(total)}</span>
+                <span className="text-foreground font-medium">Total:</span>
+                <span className="text-emerald-400 text-lg font-bold">{formatBs(total)}</span>
               </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-dark-700/50">
               <button onClick={() => setShowConfirm(false)}
-                className="px-4 py-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl text-sm transition-all">
+                className="px-4 py-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl text-sm transition-all">
                 Cancelar
               </button>
               <button onClick={downloadPDF}
@@ -482,7 +489,7 @@ export default function WholesalePage() {
                 <FileText size={14} /> PDF
               </button>
               <button onClick={confirmSale}
-                className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
                 Confirmar
               </button>
             </div>
@@ -492,35 +499,35 @@ export default function WholesalePage() {
 
       {showReceipt && lastWholesaleSale && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div id="wholesale-receipt-modal" className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div ref={receiptPanelRef} id="wholesale-receipt-modal" role="dialog" aria-modal="true" aria-label="Venta mayorista registrada" className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="px-6 py-5 border-b border-dark-700/50 text-center">
-              <h3 className="text-lg font-bold text-white">Venta mayorista registrada</h3>
+              <h3 className="text-lg font-bold text-foreground">Venta mayorista registrada</h3>
               <p className="text-xs text-gray-500 mt-1">RepuestoPro · Venta #{lastWholesaleSale.id}</p>
             </div>
             <div className="p-6 space-y-4 text-sm">
               <div className="grid grid-cols-2 gap-2 text-gray-300">
-                <span>Cliente: <strong className="text-white">{lastWholesaleSale.clientName || "Registrado"}</strong></span>
-                <span>Fecha: <strong className="text-white">{formatDate(lastWholesaleSale.saleDate)}</strong></span>
-                <span>Para quién: <strong className="text-white">{lastWholesaleSale.pedido || "No especificado"}</strong></span>
-                <span>Entrega: <strong className="text-white">{lastWholesaleSale.deliveryPlace}</strong></span>
-                <span>Factura/NIT: <strong className="text-white">{lastWholesaleSale.facturaNIT || "No especificado"}</strong></span>
-                <span>Pago: <strong className="text-white">{lastWholesaleSale.paymentMethod}</strong></span>
+                <span>Cliente: <strong className="text-foreground">{lastWholesaleSale.clientName || "Registrado"}</strong></span>
+                <span>Fecha: <strong className="text-foreground">{formatDate(lastWholesaleSale.saleDate)}</strong></span>
+                <span>Para quién: <strong className="text-foreground">{lastWholesaleSale.pedido || "No especificado"}</strong></span>
+                <span>Entrega: <strong className="text-foreground">{lastWholesaleSale.deliveryPlace}</strong></span>
+                <span>Factura/NIT: <strong className="text-foreground">{lastWholesaleSale.facturaNIT || "No especificado"}</strong></span>
+                <span>Pago: <strong className="text-foreground">{lastWholesaleSale.paymentMethod}</strong></span>
               </div>
               <div className="border-t border-dark-700/50 pt-3 space-y-2">
                 {lastWholesaleSale.items.map((item) => (
                   <div key={item.productId} className="flex justify-between gap-3">
                     <span className="text-gray-300">{item.name} x{item.quantity}</span>
-                    <span className="text-amber-400">{formatBs(item.subtotal)}</span>
+                    <span className="text-emerald-400">{formatBs(item.subtotal)}</span>
                   </div>
                 ))}
               </div>
               <div className="border-t border-dark-700/50 pt-3 flex justify-between text-lg font-bold">
-                <span className="text-white">Total</span><span className="text-amber-400">{formatBs(lastWholesaleSale.total)}</span>
+                <span className="text-foreground">Total</span><span className="text-emerald-400">{formatBs(lastWholesaleSale.total)}</span>
               </div>
             </div>
             <div className="flex gap-3 px-6 py-4 border-t border-dark-700/50">
               <button onClick={() => setShowReceipt(false)} className="flex-1 px-4 py-2.5 text-gray-300 bg-dark-700 hover:bg-dark-600 rounded-xl text-sm">Cerrar</button>
-              <button onClick={downloadPDF} className="flex-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2"><FileText size={15} /> Descargar PDF</button>
+              <button onClick={downloadPDF} className="flex-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2"><FileText size={15} /> Descargar PDF</button>
             </div>
           </div>
         </div>
@@ -532,7 +539,7 @@ export default function WholesalePage() {
           <TrendingUp size={48} className="text-gray-600 mx-auto mb-4" />
           <p className="text-gray-400 mb-4">Registro de ventas al por mayor</p>
           <button onClick={() => { resetForm(); setShowForm(true); }}
-            className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-medium transition-all">
+            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all">
             Crear nueva venta mayorista
           </button>
         </div>
@@ -541,10 +548,10 @@ export default function WholesalePage() {
       {/* Modal: Importar Excel */}
       {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
+          <div ref={importPanelRef} role="dialog" aria-modal="true" aria-label="Importar productos mayoristas" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white">Importar Productos Mayoristas</h2>
-              <button onClick={() => { setShowImportModal(false); setImportResult(null); }} className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+              <h2 className="text-lg font-bold text-foreground">Importar Productos Mayoristas</h2>
+              <button onClick={() => { setShowImportModal(false); setImportResult(null); }} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>
@@ -558,7 +565,7 @@ export default function WholesalePage() {
                     {importFile ? (
                       <>
                         <FileSpreadsheet size={32} className="text-green-400" />
-                        <span className="text-sm text-white">{importFile.name}</span>
+                        <span className="text-sm text-foreground">{importFile.name}</span>
                         <span className="text-xs text-gray-500">{(importFile.size / 1024).toFixed(1)} KB</span>
                       </>
                     ) : (
@@ -593,11 +600,11 @@ export default function WholesalePage() {
               )}
             </div>
             <div className="flex items-center justify-end gap-3 p-5 border-t border-dark-700/50">
-              <button onClick={() => { setShowImportModal(false); setImportResult(null); }} className="px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors">
+              <button onClick={() => { setShowImportModal(false); setImportResult(null); }} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">
                 {importResult ? "Cerrar" : "Cancelar"}
               </button>
               {!importResult && (
-                <button onClick={handleImportExcel} disabled={!importFile || importing} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2">
+                <button onClick={handleImportExcel} disabled={!importFile || importing} className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2">
                   {importing ? <><RefreshCw size={16} className="animate-spin" /> Importando...</> : <><Upload size={16} /> Importar</>}
                 </button>
               )}

@@ -21,7 +21,7 @@ const IMAGE_STOPWORDS = new Set(["img", "imagen", "image", "photo", "foto", "pro
 router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
     const {
-      search, brand, manufacturer, model, year, oemCode, factoryCode,
+      search, name, itemCode, detail, brand, manufacturer, model, year, oemCode, factoryCode,
       categoryId, locationId: queryLocationId, page = "1", limit = "20",
     } = req.query;
 
@@ -64,6 +64,17 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
       }
     }
 
+    if (name && typeof name === "string") AND.push({ name: { contains: name, mode: "insensitive" } });
+    if (itemCode && typeof itemCode === "string") AND.push({ itemCode: { contains: itemCode, mode: "insensitive" } });
+    if (detail && typeof detail === "string") {
+      AND.push({
+        OR: [
+          { detail: { contains: detail, mode: "insensitive" } },
+          { detalles: { contains: detail, mode: "insensitive" } },
+        ],
+      });
+    }
+
     if (queryLocationId && typeof queryLocationId === "string") {
       AND.push({ inventories: { some: { locationId: Number(queryLocationId), stock: { gt: 0 } } } });
     }
@@ -81,6 +92,11 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
       include: {
         category: true,
         inventories: { include: { location: true } },
+        costs: {
+          take: 1,
+          orderBy: { date: "desc" },
+          include: { supplier: { select: { name: true } } },
+        },
       },
       orderBy: { name: "asc" },
     });
@@ -109,6 +125,7 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
         detail: p.detail,
         detalles: p.detalles,
         image: p.image,
+        images: p.images,
         oemCode: p.oemCode,
         factoryCode: p.factoryCode,
         categoryId: p.categoryId,
@@ -120,6 +137,7 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
         item.price2 = p.price2;
         item.wholesalePrice = p.wholesalePrice;
         item.cost = p.cost;
+        item.supplierName = p.costs[0]?.supplier?.name || null;
       }
       return item;
     });
@@ -134,23 +152,55 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// GET /filters — Marcas, fabricantes, modelos, años, categorías disponibles
-router.get("/filters", optionalAuth, async (_req: AuthRequest, res: Response) => {
+// GET /filters — Marcas, fabricantes, modelos, años, categorías y otros detalles disponibles
+router.get("/filters", optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const [brandsRaw, manufacturersRaw, modelsRaw, yearsRaw, categories] = await Promise.all([
-      prisma.product.findMany({ select: { brand: true }, orderBy: { brand: "asc" } }),
-      prisma.product.findMany({ select: { manufacturer: true }, orderBy: { manufacturer: "asc" } }),
-      prisma.product.findMany({ select: { model: true }, orderBy: { model: "asc" } }),
-      prisma.product.findMany({ select: { year: true }, orderBy: { year: "asc" } }),
-      prisma.category.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    ]);
+    let allowedCats: string[] = [];
+    if (req.user?.role === "TIENDA") {
+      const roleUser = await prisma.user.findUnique({
+        where: { id: req.user?.userId },
+        include: { role: true },
+      });
+      allowedCats = ((roleUser?.role?.columnConfig as any)?.__categorias ?? []) as string[];
+    }
+    const hasCatScope = allowedCats.length > 0;
+    const scopeWhere = hasCatScope
+      ? { OR: [{ category: { name: { in: allowedCats } } }, { categoryId: null }] }
+      : {};
+
+    const [brandsRaw, manufacturersRaw, modelsRaw, yearsRaw, categories, namesRaw, itemCodesRaw, oemRaw, factoryRaw, detallesRaw] =
+      await Promise.all([
+        prisma.product.findMany({ where: scopeWhere, select: { brand: true }, orderBy: { brand: "asc" } }),
+        prisma.product.findMany({ where: scopeWhere, select: { manufacturer: true }, orderBy: { manufacturer: "asc" } }),
+        prisma.product.findMany({ where: scopeWhere, select: { model: true }, orderBy: { model: "asc" } }),
+        prisma.product.findMany({ where: scopeWhere, select: { year: true }, orderBy: { year: "asc" } }),
+        prisma.category.findMany({
+          ...(hasCatScope ? { where: { name: { in: allowedCats } } } : {}),
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        }),
+        prisma.product.findMany({ where: scopeWhere, select: { name: true }, orderBy: { name: "asc" } }),
+        prisma.product.findMany({ where: scopeWhere, select: { itemCode: true }, orderBy: { itemCode: "asc" } }),
+        prisma.product.findMany({ where: scopeWhere, select: { oemCode: true }, orderBy: { oemCode: "asc" } }),
+        prisma.product.findMany({ where: scopeWhere, select: { factoryCode: true }, orderBy: { factoryCode: "asc" } }),
+        prisma.product.findMany({ where: scopeWhere, select: { detail: true, detalles: true }, orderBy: { detail: "asc" } }),
+      ]);
 
     const brands = [...new Set(brandsRaw.flatMap((b) => b.brand.split("/").map((v) => v.trim())).filter(Boolean))].sort();
     const manufacturers = [...new Set(manufacturersRaw.map((m) => m.manufacturer).filter(Boolean))].sort();
     const models = [...new Set(modelsRaw.flatMap((m) => m.model.split("/").map((v) => v.trim())).filter(Boolean))].sort();
     const years = [...new Set(yearsRaw.flatMap((y) => y.year.split("/").map((v) => v.trim())).filter(Boolean))].sort();
+    const names = [...new Set(namesRaw.map((n) => n.name).filter(Boolean))].sort();
+    const itemCodes = [...new Set(itemCodesRaw.map((c) => c.itemCode).filter(Boolean))].sort();
+    const oemCodes = [...new Set(oemRaw.map((c) => c.oemCode).filter((v): v is string => Boolean(v)))].sort();
+    const factoryCodes = [...new Set(factoryRaw.map((c) => c.factoryCode).filter((v): v is string => Boolean(v)))].sort();
+    const detalles = [
+      ...new Set(
+        detallesRaw.flatMap((d) => [d.detail, d.detalles]).filter((v): v is string => Boolean(v))
+      ),
+    ].sort();
 
-    res.json({ brands, manufacturers, models, categories, years });
+    res.json({ brands, manufacturers, models, categories, years, names, itemCodes, oemCodes, factoryCodes, detalles });
   } catch (error) {
     console.error("Error al obtener filtros:", error);
     res.status(500).json({ message: "Error interno del servidor" });
@@ -192,6 +242,7 @@ router.get("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
       detail: product.detail,
       detalles: product.detalles,
       image: product.image,
+      images: product.images,
       oemCode: product.oemCode,
       factoryCode: product.factoryCode,
       categoryId: product.categoryId,
@@ -227,7 +278,7 @@ router.get("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
 // POST — Crear producto (solo ADMIN)
 router.post("/", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
-    const { itemCode, manufacturer, name, brand, model, year, detail, oemCode, factoryCode, price1, price2, wholesalePrice, cost, categoryId, image, locationId, stock = 0, minStock = 1 } = req.body;
+    const { itemCode, manufacturer, name, brand, model, year, detail, oemCode, factoryCode, price1, price2, wholesalePrice, cost, categoryId, image, images, locationId, stock = 0, minStock = 1 } = req.body;
 
     if (!itemCode || !manufacturer || !name || !brand || !model || !year || price1 == null) {
       return res.status(400).json({ message: "Campos obligatorios: itemCode, manufacturer, name, brand, model, year, price1" });
@@ -254,7 +305,8 @@ router.post("/", authenticate, authorize("ADMIN"), async (req: AuthRequest, res:
         wholesalePrice: wholesalePrice ?? null,
         cost: cost ?? null,
         categoryId: categoryId ?? null,
-        image: image || null,
+        image: (image as string) || null,
+        images: Array.isArray(images) ? (images as string[]).filter((u): u is string => typeof u === "string" && u.length > 0) : [],
       },
     });
 
@@ -278,7 +330,7 @@ router.put("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, re
       return res.status(404).json({ message: "Producto no encontrado" });
     }
 
-    const { itemCode, manufacturer, name, brand, model, year, detail, oemCode, factoryCode, price1, price2, wholesalePrice, cost, categoryId, image } = req.body;
+    const { itemCode, manufacturer, name, brand, model, year, detail, oemCode, factoryCode, price1, price2, wholesalePrice, cost, categoryId, image, images } = req.body;
 
     if (itemCode && itemCode !== existing.itemCode) {
       const dup = await prisma.product.findUnique({ where: { itemCode } });
@@ -305,6 +357,9 @@ router.put("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, re
         cost: cost !== undefined ? cost : existing.cost,
         categoryId: categoryId !== undefined ? (categoryId ?? null) : existing.categoryId,
         image: image !== undefined ? (image || null) : existing.image,
+        images: Array.isArray(images)
+          ? (images as string[]).filter((u): u is string => typeof u === "string" && u.length > 0)
+          : existing.images,
       },
     });
 

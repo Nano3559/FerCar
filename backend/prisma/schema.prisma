@@ -34,6 +34,7 @@ model User {
   role         RoleModel        @relation(fields: [roleId], references: [id])
   auditLogs    AuditLog[]
   notifications Notification[]
+  purchaseNotes PurchaseNote[] @relation("PurchaseNoteUser")
 }
 
 model Location {
@@ -49,6 +50,7 @@ model Location {
   requests      ProductRequest[]
   salesFrom     Sale[]           @relation("SaleFromLocation")
   users         User[]
+  purchaseNotes PurchaseNote[]
 }
 
 model Category {
@@ -71,6 +73,7 @@ model Product {
   oemCode        String?
   factoryCode    String?
   image          String?
+  images         String[]       @default([])
   price1         Decimal
   price2         Decimal
   wholesalePrice Decimal?
@@ -87,6 +90,7 @@ model Product {
   requests       ProductRequest[]
   returns        Return[]
   saleItems      SaleItem[]
+  purchaseItems  PurchaseNoteItem[]
 }
 
 model Inventory {
@@ -226,6 +230,59 @@ model Cost {
   updatedAt    DateTime @updatedAt
   product      Product  @relation(fields: [productId], references: [id])
   supplier     Supplier @relation(fields: [supplierId], references: [id])
+}
+
+model PurchaseNote {
+  id            Int                @id @default(autoincrement())
+  noteNumber    String             @unique
+  date          DateTime           @default(now())
+  supplierName  String
+  supplierNit   String?
+  supplierPhone String?
+  locationId    Int
+  fileUrl       String?
+  exchangeRate  Decimal?
+  expensesPer   Decimal?
+  totalUnits    Int                @default(0)
+  totalCost     Decimal            @default(0)
+  userId        Int
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  location      Location           @relation(fields: [locationId], references: [id])
+  user          User               @relation("PurchaseNoteUser", fields: [userId], references: [id])
+  items         PurchaseNoteItem[]
+
+  @@index([locationId])
+}
+
+model PurchaseNoteItem {
+  id        Int          @id @default(autoincrement())
+  noteId    Int
+  productId Int
+  quantity  Int
+  unitCost  Decimal
+  price1    Decimal?
+  price2    Decimal?
+  disc20    Decimal?
+  disc30    Decimal?
+  disc40    Decimal?
+  disc50    Decimal?
+  priceD20  Decimal?
+  priceD30  Decimal?
+  priceD40  Decimal?
+  priceD50  Decimal?
+  lineTotal Decimal
+  product   Product      @relation(fields: [productId], references: [id])
+  note      PurchaseNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+  @@index([productId])
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }
 
 model Importer {

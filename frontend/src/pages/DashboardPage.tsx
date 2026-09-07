@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../services/api";
+import EmptyState from "../components/ui/EmptyState";
+import { useAuthStore } from "../stores/authStore";
 import {
   Package,
   ShoppingCart,
@@ -11,6 +13,8 @@ import {
   RefreshCw,
   PackageX,
   BarChart3,
+  Store,
+  ChevronDown,
 } from "lucide-react";
 import {
   BarChart,
@@ -121,14 +125,20 @@ function formatDate(dateStr: string) {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuthStore();
+  const isTienda = user?.role === "TIENDA";
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [stores, setStores] = useState<{ id: number; name: string }[]>([]);
+  const [locationFilter, setLocationFilter] = useState("");
 
   const fetchDashboard = async () => {
     try {
       setLoading(true);
-      const res = await api.get("/dashboard");
+      const res = await api.get("/dashboard", {
+        params: locationFilter ? { locationId: locationFilter } : {},
+      });
       setData(res.data);
       setError("");
     } catch {
@@ -140,12 +150,40 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchDashboard();
+  }, [locationFilter]);
+
+  useEffect(() => {
+    api
+      .get("/locations")
+      .then((res) => {
+        const tiendas = (res.data.locations || [])
+          .filter((loc: { type: string }) => loc.type === "TIENDA")
+          .map((loc: { id: number; name: string }) => ({ id: loc.id, name: loc.name }));
+        setStores(tiendas);
+      })
+      .catch(() => {});
   }, []);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw size={32} className="text-primary-400 animate-spin" />
+      <div className="space-y-6 animate-pulse" aria-busy="true" aria-label="Cargando el panel">
+        <div>
+          <div className="h-7 w-48 bg-dark-800 rounded-lg mb-3" />
+          <div className="h-4 w-64 bg-dark-800/70 rounded-md" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4 space-y-3">
+              <div className="h-4 w-24 bg-dark-700/60 rounded-md" />
+              <div className="h-8 w-16 bg-dark-700/60 rounded-lg" />
+              <div className="h-3 w-20 bg-dark-700/40 rounded-md" />
+            </div>
+          ))}
+        </div>
+        <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4 space-y-3">
+          <div className="h-4 w-32 bg-dark-700/60 rounded-md" />
+          <div className="h-48 bg-dark-700/40 rounded-xl" />
+        </div>
       </div>
     );
   }
@@ -166,6 +204,8 @@ export default function DashboardPage() {
   }
 
   const { summary } = data;
+
+  const selectedStoreName = stores.find((s) => s.id === Number(locationFilter))?.name;
 
   const mainStats = [
     {
@@ -238,18 +278,44 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
           <p className="text-gray-400 text-sm mt-1">
-            Resumen general del sistema
+            {selectedStoreName
+              ? `Resumen de ${selectedStoreName}`
+              : isTienda
+                ? "Resumen de tu tienda"
+                : "Resumen general del sistema"}
           </p>
         </div>
-        <button
-          onClick={fetchDashboard}
-          className="p-2 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-white hover:border-primary-600/50 transition-all"
-          title="Actualizar"
-        >
-          <RefreshCw size={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          {!isTienda && stores.length > 0 && (
+            <div className="relative">
+              <Store size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+              <select
+                value={locationFilter}
+                onChange={(e) => setLocationFilter(e.target.value)}
+                aria-label="Filtrar por tienda"
+                className="pl-9 pr-8 py-2 bg-dark-800 border border-dark-700/50 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 appearance-none"
+              >
+                <option value="">Todas las tiendas</option>
+                {stores.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            </div>
+          )}
+          <button
+            onClick={fetchDashboard}
+            className="p-2 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all"
+            title="Actualizar"
+            aria-label="Actualizar dashboard"
+          >
+            <RefreshCw size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Main Stats */}
@@ -266,7 +332,7 @@ export default function DashboardPage() {
                 <stat.icon size={18} className={stat.color} />
               </div>
             </div>
-            <p className="text-2xl font-bold text-white">{stat.value}</p>
+            <p className="text-2xl font-bold text-foreground">{stat.value}</p>
             <p className="text-xs text-gray-400 mt-1">{stat.label}</p>
             {stat.sub && (
               <p className="text-xs text-gray-500 mt-0.5">{stat.sub}</p>
@@ -280,22 +346,22 @@ export default function DashboardPage() {
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp size={18} className="text-green-400" />
-            <h3 className="text-lg font-semibold text-white">
+            <h3 className="text-lg font-semibold text-foreground">
               Ventas por Tienda (Mes)
             </h3>
           </div>
           {data.salesByLocation.length > 0 ? (
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={data.salesByLocation}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#9ca3af", fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--dk-700))" />
+                <XAxis dataKey="name" tick={{ fill: "rgb(var(--gray-400))", fontSize: 12 }} />
+                <YAxis tick={{ fill: "rgb(var(--gray-400))", fontSize: 12 }} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "#1e293b",
-                    border: "1px solid #334155",
+                    backgroundColor: "rgb(var(--dk-800))",
+                    border: "1px solid rgb(var(--dk-700))",
                     borderRadius: "12px",
-                    color: "#f1f5f9",
+                    color: "rgb(var(--gray-100))",
                   }}
                   formatter={(value: number) => [formatCurrency(value), "Total"]}
                 />
@@ -310,22 +376,22 @@ export default function DashboardPage() {
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 size={18} className="text-blue-400" />
-            <h3 className="text-lg font-semibold text-white">
+            <h3 className="text-lg font-semibold text-foreground">
               Stock por Ubicación
             </h3>
           </div>
           {data.stockByLocation.length > 0 ? (
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={data.stockByLocation}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#9ca3af", fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--dk-700))" />
+                <XAxis dataKey="name" tick={{ fill: "rgb(var(--gray-400))", fontSize: 11 }} />
+                <YAxis tick={{ fill: "rgb(var(--gray-400))", fontSize: 12 }} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "#1e293b",
-                    border: "1px solid #334155",
+                    backgroundColor: "rgb(var(--dk-800))",
+                    border: "1px solid rgb(var(--dk-700))",
                     borderRadius: "12px",
-                    color: "#f1f5f9",
+                    color: "rgb(var(--gray-100))",
                   }}
                   formatter={(value: number) => [value, "Unidades"]}
                 />
@@ -341,7 +407,7 @@ export default function DashboardPage() {
       {/* Charts Row 2: Sales by Brand + Sales by Vehicle */}
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">
+          <h3 className="text-lg font-semibold text-foreground mb-4">
             Ventas por Marca (Mes)
           </h3>
           {data.salesByBrand.length > 0 ? (
@@ -379,7 +445,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">
+          <h3 className="text-lg font-semibold text-foreground mb-4">
             Ventas por Vehículo/Modelo
           </h3>
           {data.salesByVehicle.length > 0 ? (
@@ -405,10 +471,10 @@ export default function DashboardPage() {
                 </Pie>
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "#1e293b",
-                    border: "1px solid #334155",
+                    backgroundColor: "rgb(var(--dk-800))",
+                    border: "1px solid rgb(var(--dk-700))",
                     borderRadius: "12px",
-                    color: "#f1f5f9",
+                    color: "rgb(var(--gray-100))",
                   }}
                   formatter={(value: number) => [formatCurrency(value), "Total"]}
                 />
@@ -426,7 +492,7 @@ export default function DashboardPage() {
           <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">
             Stock Total
           </p>
-          <p className="text-2xl font-bold text-white">{totalStockAllLocations}</p>
+          <p className="text-2xl font-bold text-foreground">{totalStockAllLocations}</p>
           <p className="text-xs text-gray-500 mt-1">unidades en el sistema</p>
         </div>
         <div className="bg-dark-800/50 border border-blue-500/20 rounded-2xl p-5">
@@ -463,7 +529,7 @@ export default function DashboardPage() {
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
           <div className="flex items-center gap-2 mb-4">
             <ShoppingCart size={18} className="text-green-400" />
-            <h3 className="text-lg font-semibold text-white">Últimas Ventas</h3>
+            <h3 className="text-lg font-semibold text-foreground">Últimas Ventas</h3>
           </div>
           {data.recentSales.length > 0 ? (
             <div className="overflow-x-auto">
@@ -504,7 +570,7 @@ export default function DashboardPage() {
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
           <div className="flex items-center gap-2 mb-4">
             <ArrowLeftRight size={18} className="text-purple-400" />
-            <h3 className="text-lg font-semibold text-white">
+            <h3 className="text-lg font-semibold text-foreground">
               Últimos Movimientos
             </h3>
           </div>
@@ -555,7 +621,7 @@ export default function DashboardPage() {
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
           <div className="flex items-center gap-2 mb-4">
             <Clock size={18} className="text-orange-400" />
-            <h3 className="text-lg font-semibold text-white">
+            <h3 className="text-lg font-semibold text-foreground">
               Solicitudes Pendientes
             </h3>
             {summary.pendingRequests > 0 && (
@@ -584,9 +650,10 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
-            <p className="text-gray-400 text-sm">
-              No hay solicitudes pendientes
-            </p>
+            <EmptyState
+              title="Sin solicitudes pendientes"
+              description="Las solicitudes de tiendas aparecerán aquí."
+            />
           )}
         </div>
 
@@ -594,7 +661,7 @@ export default function DashboardPage() {
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
           <div className="flex items-center gap-2 mb-4">
             <AlertTriangle size={18} className="text-red-400" />
-            <h3 className="text-lg font-semibold text-white">
+            <h3 className="text-lg font-semibold text-foreground">
               Stock Crítico
             </h3>
             {summary.criticalStock > 0 && (
@@ -639,9 +706,10 @@ export default function DashboardPage() {
               </table>
             </div>
           ) : (
-            <p className="text-gray-400 text-sm">
-              No hay productos con stock crítico
-            </p>
+            <EmptyState
+              title="Sin productos con stock crítico"
+              description="Todo el inventario está dentro de los niveles mínimos."
+            />
           )}
         </div>
       </div>

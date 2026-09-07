@@ -25,9 +25,9 @@ export default function PublicFooter() {
           <div>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center">
-                <Car size={22} className="text-white" />
+                <Car size={22} className="text-foreground" />
               </div>
-              <span className="text-lg font-bold text-white">RepuestoPro</span>
+              <span className="text-lg font-bold text-foreground">RepuestoPro</span>
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-4">
               Portal de Importadoras de Autopartes.
@@ -41,7 +41,7 @@ export default function PublicFooter() {
 
           {/* Column 2: Quick Links */}
           <div>
-            <h3 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider">
+            <h3 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
               Enlaces Rápidos
             </h3>
             <ul className="space-y-2">
@@ -49,7 +49,7 @@ export default function PublicFooter() {
                 <li key={link.to}>
                   <Link
                     to={link.to}
-                    className="text-gray-400 hover:text-white text-sm transition-colors"
+                    className="text-gray-400 hover:text-foreground text-sm transition-colors"
                   >
                     {link.label}
                   </Link>
@@ -60,7 +60,7 @@ export default function PublicFooter() {
 
           {/* Column 3: Categories */}
           <div>
-            <h3 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider">
+            <h3 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
               Productos
             </h3>
             <ul className="space-y-2">
@@ -68,7 +68,7 @@ export default function PublicFooter() {
                 <li key={link.to}>
                   <Link
                     to={link.to}
-                    className="text-gray-400 hover:text-white text-sm transition-colors"
+                    className="text-gray-400 hover:text-foreground text-sm transition-colors"
                   >
                     {link.label}
                   </Link>
@@ -79,7 +79,7 @@ export default function PublicFooter() {
 
           {/* Column 4: Contact */}
           <div>
-            <h3 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider">
+            <h3 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
               Contacto
             </h3>
             <ul className="space-y-3">

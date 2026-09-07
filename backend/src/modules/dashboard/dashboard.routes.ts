@@ -13,15 +13,25 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
     // Un usuario TIENDA solo ve los datos de su propia tienda.
+    // Un ADMIN/ALMACEN puede filtrar por ?locationId=N para ver el resumen de una tienda.
     const userLoc = req.user?.locationId ?? null;
     const isTienda = req.user?.role === "TIENDA";
-    const locWhere: any = isTienda && userLoc ? { locationId: userLoc } : {};
+    const queryLocationId =
+      req.query.locationId && !Number.isNaN(Number(req.query.locationId))
+        ? Number(req.query.locationId)
+        : null;
+    const scopeId = isTienda ? userLoc : queryLocationId;
+    const locWhere: any = scopeId ? { locationId: scopeId } : {};
+    const invWhere = scopeId ? { locationId: scopeId } : {};
+    const movementWhere = scopeId
+      ? { OR: [{ fromLocationId: scopeId }, { toLocationId: scopeId }] }
+      : {};
 
     const totalProducts = await prisma.product.count();
 
     const productsWithInventory = await prisma.product.findMany({
-      where: { inventories: { some: {} } },
-      select: { id: true, inventories: { select: { stock: true } } },
+      where: scopeId ? { inventories: { some: invWhere } } : { inventories: { some: {} } },
+      select: { id: true, inventories: { where: invWhere, select: { stock: true } } },
     });
     const productsWithoutStock = productsWithInventory.filter((p) =>
       p.inventories.every((inv) => inv.stock === 0)
@@ -37,7 +47,7 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
 
     const stockAgg = await prisma.inventory.groupBy({
       by: ["locationId"],
-      ...(isTienda && userLoc ? { where: { locationId: userLoc } } : {}),
+      ...(scopeId ? { where: locWhere } : {}),
       _sum: { stock: true },
     });
     const stockByLocation = stockAgg.map((agg) => {
@@ -106,7 +116,7 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       .sort((a, b) => b.totalAmount - a.totalAmount);
 
     const recentSales = await prisma.sale.findMany({
-      ...(isTienda ? { where: locWhere } : {}),
+      where: locWhere,
       take: 10,
       orderBy: { saleDate: "desc" },
       include: {
@@ -118,7 +128,7 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
     });
 
     const recentMovements = await prisma.movement.findMany({
-      ...(isTienda && userLoc ? { where: { OR: [{ fromLocationId: userLoc }, { toLocationId: userLoc }] } } : {}),
+      where: movementWhere,
       take: 10,
       orderBy: { date: "desc" },
       include: {

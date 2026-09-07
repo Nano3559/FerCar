@@ -7,15 +7,18 @@ import {
 import toast from "react-hot-toast";
 import api from "../services/api";
 import ProductImage from "../components/public/ProductImage";
+import ImagePreview from "../components/ui/ImagePreview";
 import { validateYearRanges } from "../utils/yearRanges";
 import Autocomplete from "../components/ui/Autocomplete";
 import ColumnManager from "../components/ui/ColumnManager";
 import { useAuthStore } from "../stores/authStore";
+import { useDialogBehavior } from "../components/ui/useDialog";
+import EmptyState from "../components/ui/EmptyState";
 
 interface Product {
   id: number; itemCode: string; manufacturer: string; name: string;
   brand: string; model: string; year: string; detail: string | null;
-  detalles: string | null; image: string | null; oemCode: string | null;
+  detalles: string | null; image: string | null; images?: string[]; oemCode: string | null;
   factoryCode: string | null; price1: string; price2: string;
   wholesalePrice: string | null; cost: string | null;
   categoryId: number | null; category: string | null; supplierName?: string | null; stock: number;
@@ -27,6 +30,11 @@ interface Filters {
   categories: { id: number; name: string }[];
   models?: string[];
   years?: string[];
+  names?: string[];
+  itemCodes?: string[];
+  oemCodes?: string[];
+  factoryCodes?: string[];
+  detalles?: string[];
 }
 
 interface Location {
@@ -78,12 +86,17 @@ export default function InventoryPage() {
   const [pages, setPages] = useState(1);
 
   const [search, setSearch] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [itemCodeFilter, setItemCodeFilter] = useState("");
   const [brand, setBrand] = useState("");
   const [manufacturer, setManufacturer] = useState("");
   const [model, setModel] = useState("");
   const [year, setYear] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [oemCode, setOemCode] = useState("");
   const [factoryCode, setFactoryCode] = useState("");
+  const [detailFilter, setDetailFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
@@ -105,6 +118,8 @@ export default function InventoryPage() {
   const [stockData, setStockData] = useState<any>(null);
   const [stockLoading, setStockLoading] = useState(false);
   const [stockEdits, setStockEdits] = useState<Record<number, { stock: string; minStock: string; reasonType: string; reason: string }>>({});
+  const [pendingStockId, setPendingStockId] = useState<number | null>(null);
+  const [stockPassword, setStockPassword] = useState("");
   const [stockSaving, setStockSaving] = useState(false);
 
   const [showImportModal, setShowImportModal] = useState(false);
@@ -114,29 +129,35 @@ export default function InventoryPage() {
   const [importLocationId, setImportLocationId] = useState("");
 
   const [imageModal, setImageModal] = useState<Product | null>(null);
+  const [imageIndex, setImageIndex] = useState(0);
+  useEffect(() => { setImageIndex(0); }, [imageModal]);
+
+  const productPanelRef = useDialogBehavior(showModal, () => setShowModal(false));
+  const imagePanelRef = useDialogBehavior(imageModal !== null, () => setImageModal(null));
+  const deletePanelRef = useDialogBehavior(showDeleteConfirm !== null, () => setShowDeleteConfirm(null));
+  const stockPanelRef = useDialogBehavior(showStockModal !== null, () => { setShowStockModal(null); setStockData(null); setPendingStockId(null); setStockPassword(""); });
+  const importPanelRef = useDialogBehavior(showImportModal, () => { setShowImportModal(false); setImportResult(null); });
 
   const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (search) params.set("search", search);
+      if (nameFilter) params.set("name", nameFilter);
+      if (itemCodeFilter) params.set("itemCode", itemCodeFilter);
       if (brand) params.set("brand", brand);
       if (manufacturer) params.set("manufacturer", manufacturer);
       if (model) params.set("model", model);
       if (year) params.set("year", year);
+      if (categoryId) params.set("categoryId", categoryId);
       if (oemCode) params.set("oemCode", oemCode);
       if (factoryCode) params.set("factoryCode", factoryCode);
+      if (detailFilter) params.set("detail", detailFilter);
       params.set("page", String(page));
       params.set("limit", "15");
 
       const res = await api.get(`/products?${params.toString()}`);
-      let products = res.data.products;
-      try {
-        const costs = await api.get("/costs?limit=100");
-        const suppliers = new Map((costs.data.costs || []).map((c: any) => [c.itemCode, c.supplierName]));
-        products = products.map((product: Product) => ({ ...product, supplierName: suppliers.get(product.itemCode) || null }));
-      } catch { /* proveedor es información complementaria */ }
-      setProducts(products);
+      setProducts(res.data.products);
       setTotal(res.data.pagination.total);
       setPages(res.data.pagination.pages);
     } catch {
@@ -144,7 +165,7 @@ export default function InventoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, brand, manufacturer, model, year, oemCode, factoryCode, page]);
+  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, page]);
 
   const fetchFilters = useCallback(async () => {
     try {
@@ -157,7 +178,7 @@ export default function InventoryPage() {
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
   useEffect(() => { api.get("/locations").then((res) => setLocations(res.data.locations || res.data)).catch(() => {}); }, []);
 
-  useEffect(() => { setPage(1); }, [search, brand, manufacturer, model, year, oemCode, factoryCode]);
+  useEffect(() => { setPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -175,7 +196,7 @@ export default function InventoryPage() {
       wholesalePrice: p.wholesalePrice ? String(p.wholesalePrice) : "",
       cost: p.cost ? String(p.cost) : "",
       categoryId: p.categoryId ? String(p.categoryId) : "",
-      image: p.image || "", stock: "", locationId: "",
+      image: [p.image, ...(p.images || [])].filter(Boolean).join("\n"), stock: "", locationId: "",
     });
     setShowModal(true);
   };
@@ -193,6 +214,14 @@ export default function InventoryPage() {
     }
     try {
       setSaving(true);
+      const normalizeImageUrl = (u: string) => {
+      const m = u.match(/^(.*\/)wiki\/File:(.+)$/i);
+      if (m) {
+        return `${m[1]}wiki/Special:FilePath/${encodeURIComponent(m[2].split(/[?#]/)[0].replace(/\s+/g, "_"))}`;
+      }
+      return u;
+    };
+    const urls = form.image.split(/[,\n]+/).map((u) => u.trim()).filter(Boolean).map(normalizeImageUrl);
       const payload = {
         ...form,
         price1: Number(form.price1),
@@ -200,7 +229,8 @@ export default function InventoryPage() {
         wholesalePrice: form.wholesalePrice ? Number(form.wholesalePrice) : null,
         cost: form.cost ? Number(form.cost) : null,
         categoryId: form.categoryId ? Number(form.categoryId) : null,
-        image: form.image || null,
+        image: urls[0] || null,
+        images: urls,
         stock: form.stock ? Number(form.stock) : 0,
         locationId: form.locationId ? Number(form.locationId) : null,
       };
@@ -235,6 +265,8 @@ export default function InventoryPage() {
   const openStock = async (productId: number) => {
     try {
       setShowStockModal(productId);
+      setPendingStockId(null);
+      setStockPassword("");
       setStockLoading(true);
       const res = await api.get(`/inventory/product/${productId}`);
       setStockData(res.data);
@@ -251,13 +283,26 @@ export default function InventoryPage() {
     }
   };
 
-  const saveStockAdjust = async (invId: number) => {
+  const requestStockConfirm = (invId: number) => {
     const edit = stockEdits[invId];
     if (!edit) return;
     const current = stockData?.locations?.find((l: any) => l.id === invId)?.stock;
     const stockChanged = current != null && Number(edit.stock) !== Number(current);
     if (stockChanged && !edit.reasonType) {
       toast.error("Selecciona el motivo del ajuste de stock");
+      return;
+    }
+    setStockPassword("");
+    setPendingStockId(invId);
+  };
+
+  const saveStockAdjust = async () => {
+    if (pendingStockId == null) return;
+    const invId = pendingStockId;
+    const edit = stockEdits[invId];
+    if (!edit) return;
+    if (!stockPassword) {
+      toast.error("Ingresa la contraseña de administrador");
       return;
     }
     try {
@@ -267,8 +312,11 @@ export default function InventoryPage() {
         minStock: Number(edit.minStock),
         reasonType: edit.reasonType,
         reason: edit.reason || null,
+        password: stockPassword,
       });
       toast.success("Stock ajustado");
+      setPendingStockId(null);
+      setStockPassword("");
       const res = await api.get(`/inventory/product/${showStockModal}`);
       setStockData(res.data);
       const edits: Record<number, { stock: string; minStock: string; reasonType: string; reason: string }> = {};
@@ -279,6 +327,7 @@ export default function InventoryPage() {
       fetchProducts();
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Error al ajustar stock");
+      if (err.response?.status === 403) setPendingStockId(null);
     } finally { setStockSaving(false); }
   };
 
@@ -312,13 +361,13 @@ export default function InventoryPage() {
     ? products.filter((p) => allowedCategories.includes(p.category || "") || !p.category)
     : products;
 
-  const allVisibleCount = hasCategoryRestriction ? visibleProducts.length : total;
+  const allVisibleCount = total;
 
   const renderInventoryCell = (p: Product, column: string) => {
     switch (column) {
       case "ID": return <td key={column} className="px-4 py-3 text-gray-400">{p.id}</td>;
       case "Fabricante": return <td key={column} className="px-4 py-3 text-gray-300">{p.manufacturer}</td>;
-      case "Producto": return <td key={column} className="px-4 py-3 text-white font-medium max-w-[200px] truncate">{p.name}</td>;
+      case "Producto": return <td key={column} className="px-4 py-3 text-foreground font-medium max-w-[200px] truncate">{p.name}</td>;
       case "Marca": return <td key={column} className="px-4 py-3 text-gray-300">{p.brand}</td>;
       case "Modelo": return <td key={column} className="px-4 py-3 text-gray-300">{p.model}</td>;
       case "Año": return <td key={column} className="px-4 py-3 text-gray-400">{p.year}</td>;
@@ -328,10 +377,7 @@ export default function InventoryPage() {
       case "Proveedor": return <td key={column} className="px-4 py-3 text-gray-300 text-xs">{p.supplierName || "—"}</td>;
       case "Imagen": return (
         <td key={column} className="px-4 py-3">
-          <button type="button" onClick={() => setImageModal(p)} title="Ver imagen ampliada"
-            className="w-10 h-10 mx-auto bg-dark-900/50 rounded-lg flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-primary-500/50 transition-all cursor-zoom-in">
-            <ProductImage image={p.image} category={p.category} name={p.name} />
-          </button>
+          <ImagePreview image={p.image} category={p.category} name={p.name} onClick={() => setImageModal(p)} className="mx-auto" />
         </td>
       );
       case "Precio 1": return <td key={column} className="px-4 py-3 text-right text-green-400 font-medium">{formatCurrency(p.price1)}</td>;
@@ -347,17 +393,17 @@ export default function InventoryPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Inventario</h1>
+          <h1 className="text-2xl font-bold text-foreground">Inventario</h1>
           <p className="text-gray-400 text-sm mt-1">{allVisibleCount} productos registrados</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={fetchProducts} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-white hover:border-primary-600/50 transition-all" title="Actualizar">
+          <button onClick={fetchProducts} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all" title="Actualizar">
             <RefreshCw size={18} />
           </button>
           <ColumnManager module="inventario" columns={ALL_COLUMNS} onVisibleChange={setVisibleColumns} />
           {canEdit && (
             <>
-              <button onClick={() => { setShowImportModal(true); setImportFile(null); setImportResult(null); }} className="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-green-600/20">
+              <button onClick={() => { setShowImportModal(true); setImportFile(null); setImportResult(null); }} className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
                 <Upload size={18} />
                 <span className="hidden sm:inline">Importar Excel</span>
               </button>
@@ -378,15 +424,16 @@ export default function InventoryPage() {
             <input
               type="text" value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por código, nombre, marca, modelo, OEM..."
-              className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
+              aria-label="Buscar producto"
+              className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
             />
             {search && (
-              <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+              <button onClick={() => setSearch("")} aria-label="Limpiar búsqueda" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-foreground">
                 <X size={16} />
               </button>
             )}
           </div>
-          <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border transition-all ${showFilters ? "bg-primary-600/10 border-primary-600/20 text-primary-400" : "bg-dark-900/50 border-dark-600/50 text-gray-400 hover:text-white"}`}>
+          <button onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border transition-all ${showFilters ? "bg-primary-600/10 border-primary-600/20 text-primary-400" : "bg-dark-900/50 border-dark-600/50 text-gray-400 hover:text-foreground"}`}>
             <Filter size={16} />
             Filtros
             <ChevronDown size={14} className={`transition-transform ${showFilters ? "rotate-180" : ""}`} />
@@ -395,6 +442,20 @@ export default function InventoryPage() {
 
         {showFilters && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 pt-4 border-t border-dark-700/50">
+            <Autocomplete
+              value={nameFilter}
+              onChange={setNameFilter}
+              suggestions={filters.names || []}
+              placeholder="Escribe el nombre..."
+              label="Producto (nombre)"
+            />
+            <Autocomplete
+              value={itemCodeFilter}
+              onChange={setItemCodeFilter}
+              suggestions={filters.itemCodes || []}
+              placeholder="Escribe el código..."
+              label="Código (Item)"
+            />
             <Autocomplete
               value={brand}
               onChange={setBrand}
@@ -411,17 +472,48 @@ export default function InventoryPage() {
             />
             <Autocomplete value={model} onChange={setModel} suggestions={filters.models || []} placeholder="Todos los modelos" label="Modelo" />
             <Autocomplete value={year} onChange={setYear} suggestions={filters.years || []} placeholder="Todos los años (ej. 92)" label="Año / rango" />
-            <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Cód. OEM</label>
-              <input value={oemCode} onChange={(e) => setOemCode(e.target.value)} placeholder="Todos los OEM" className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Cód. Fábrica</label>
-              <input value={factoryCode} onChange={(e) => setFactoryCode(e.target.value)} placeholder="Todos los códigos" className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-            </div>
-            {(brand || manufacturer || model || year || oemCode || factoryCode) && (
-              <div className="flex items-end">
-                <button onClick={() => { setBrand(""); setManufacturer(""); setModel(""); setYear(""); setOemCode(""); setFactoryCode(""); }} className="px-3 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-sm hover:bg-red-500/20 transition-colors">
+            <Autocomplete
+              value={categoryName}
+              onChange={(v) => {
+                setCategoryName(v);
+                const found = filters.categories.find((c) => c.name === v);
+                setCategoryId(found ? String(found.id) : "");
+              }}
+              suggestions={filters.categories.map((c) => c.name)}
+              placeholder="Todas las categorías"
+              label="Categoría"
+            />
+            <Autocomplete
+              value={oemCode}
+              onChange={setOemCode}
+              suggestions={filters.oemCodes || []}
+              placeholder="Todos los OEM"
+              label="Cód. OEM"
+            />
+            <Autocomplete
+              value={factoryCode}
+              onChange={setFactoryCode}
+              suggestions={filters.factoryCodes || []}
+              placeholder="Todos los códigos"
+              label="Cód. Fábrica"
+            />
+            <Autocomplete
+              value={detailFilter}
+              onChange={setDetailFilter}
+              suggestions={filters.detalles || []}
+              placeholder="Detalle, versión, uso..."
+              label="Detalles"
+            />
+            {(nameFilter || itemCodeFilter || brand || manufacturer || model || year || categoryId || oemCode || factoryCode || detailFilter) && (
+              <div className="flex items-end md:col-span-3">
+                <button
+                  onClick={() => {
+                    setNameFilter(""); setItemCodeFilter(""); setBrand(""); setManufacturer("");
+                    setModel(""); setYear(""); setCategoryName(""); setCategoryId("");
+                    setOemCode(""); setFactoryCode(""); setDetailFilter("");
+                  }}
+                  className="px-3 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-sm hover:bg-red-500/20 transition-colors"
+                >
                   Limpiar filtros
                 </button>
               </div>
@@ -437,10 +529,11 @@ export default function InventoryPage() {
             <RefreshCw size={32} className="text-primary-400 animate-spin" />
           </div>
         ) : visibleProducts.length === 0 ? (
-          <div className="p-6 text-center">
-            <Package size={48} className="text-gray-600 mx-auto mb-4" />
-            <p className="text-gray-400">Sin productos registrados</p>
-          </div>
+          <EmptyState
+            title="Sin productos registrados"
+            description="Crea un producto o importa un archivo Excel para comenzar."
+            icon={Package}
+          />
         ) : (
           <>
             {/* Desktop table */}
@@ -471,11 +564,9 @@ export default function InventoryPage() {
               {visibleProducts.map((p) => (
                 <div key={p.id} className="p-4 space-y-2">
                   <div className="flex items-start gap-3">
-                    <button type="button" onClick={() => setImageModal(p)} className="w-12 h-12 bg-dark-900/50 rounded-xl flex items-center justify-center overflow-hidden shrink-0 cursor-zoom-in hover:ring-2 hover:ring-primary-500/50 transition-all">
-                      <ProductImage image={p.image} category={p.category} name={p.name} />
-                    </button>
+                    <ImagePreview image={p.image} category={p.category} name={p.name} onClick={() => setImageModal(p)} className="w-12 h-12 rounded-xl" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-white font-medium text-sm truncate">{p.name}</p>
+                      <p className="text-foreground font-medium text-sm truncate">{p.name}</p>
                       <p className="text-xs text-gray-500">{p.brand} · {p.model} · {p.year}</p>
                       <p className="text-xs text-gray-600">{p.manufacturer}</p>
                     </div>
@@ -486,20 +577,20 @@ export default function InventoryPage() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-green-400 font-medium">{formatCurrency(p.price1)}</span>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => navigate(`/panel/inventario/${p.id}`)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 active:bg-blue-500/10 transition-all">
+                      <button onClick={() => navigate(`/panel/inventario/${p.id}`)} aria-label={`Ver detalle de ${p.name}`} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 active:bg-blue-500/10 transition-all">
                         <Eye size={16} />
                       </button>
                       {canEdit && (
                         <>
-                          <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 active:bg-amber-500/10 transition-all">
+                          <button onClick={() => openEdit(p)} aria-label={`Editar ${p.name}`} className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 active:bg-amber-500/10 transition-all">
                             <Pencil size={16} />
                           </button>
-                          <button onClick={() => setShowDeleteConfirm(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 active:bg-red-500/10 transition-all">
+                          <button onClick={() => setShowDeleteConfirm(p.id)} aria-label={`Eliminar ${p.name}`} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 active:bg-red-500/10 transition-all">
                             <Trash2 size={16} />
                           </button>
                         </>
                       )}
-                      <button onClick={() => openStock(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-purple-400 active:bg-purple-500/10 transition-all">
+                      <button onClick={() => openStock(p.id)} aria-label={`Ver stock de ${p.name}`} className="p-1.5 rounded-lg text-gray-400 hover:text-purple-400 active:bg-purple-500/10 transition-all">
                         <Package size={16} />
                       </button>
                     </div>
@@ -515,7 +606,7 @@ export default function InventoryPage() {
           <div className="flex items-center justify-between px-4 py-3 border-t border-dark-700/50">
             <p className="text-gray-400 text-sm">Página {page} de {pages}</p>
             <div className="flex items-center gap-2">
-              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} aria-label="Página anterior" className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-all">
                 <ChevronLeft size={16} />
               </button>
               {Array.from({ length: Math.min(5, pages) }, (_, i) => {
@@ -523,12 +614,12 @@ export default function InventoryPage() {
                 const p = start + i;
                 if (p > pages) return null;
                 return (
-                  <button key={p} onClick={() => setPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${p === page ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white"}`}>
+                  <button key={p} onClick={() => setPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${p === page ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground"}`}>
                     {p}
                   </button>
                 );
               })}
-              <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages} className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+              <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages} aria-label="Página siguiente" className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-all">
                 <ChevronRight size={16} />
               </button>
             </div>
@@ -539,10 +630,10 @@ export default function InventoryPage() {
       {/* Modal: Crear / Editar Producto */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div ref={productPanelRef} role="dialog" aria-modal="true" aria-label="Nuevo producto" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white">{editingId ? "Editar Producto" : "Nuevo Producto"}</h2>
-              <button onClick={() => setShowModal(false)} className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+              <h2 className="text-lg font-bold text-foreground">{editingId ? "Editar Producto" : "Nuevo Producto"}</h2>
+              <button onClick={() => setShowModal(false)} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>
@@ -568,8 +659,8 @@ export default function InventoryPage() {
                 </div>
               </div>
               <div className="relative">
-                <label className="block text-xs text-gray-400 mb-1.5">Categoría</label>
-                <select value={form.categoryId} onChange={(e) => setField("categoryId", e.target.value)} className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                <label htmlFor="inv-category" className="block text-xs text-gray-400 mb-1.5">Categoría</label>
+                <select id="inv-category" value={form.categoryId} onChange={(e) => setField("categoryId", e.target.value)} className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                   <option value="">Sin categoría</option>
                   {filters.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -578,14 +669,26 @@ export default function InventoryPage() {
               <div className="border-t border-dark-700/50 pt-4">
                 <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Inventario e Imagen</p>
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="URL de Imagen" value={form.image} onChange={(v) => setField("image", v)} placeholder="https://..." />
+                  <div>
+                  <label htmlFor="inv-images" className="block text-xs text-gray-400 mb-1.5">URLs de imágenes (una por línea o separadas por coma)</label>
+                  <textarea
+                    id="inv-images"
+                    value={form.image}
+                    onChange={(e) => setField("image", e.target.value)}
+                    placeholder={"https://...\nhttps://...\nhttps://..."}
+                    rows={3}
+                    className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600 resize-none"
+                  />
+                  <p className="text-[11px] text-gray-600 mt-1">La primera URL es la foto principal. El link debe apuntar directamente al archivo (termina en .jpg, .png, .webp...): haz clic derecho sobre la foto → "Copiar dirección de imagen". Los enlaces de tipo "wiki/File:..." se convierten automáticamente.</p>
+                  <ImageUrlsPreview text={form.image} />
+                </div>
                   {!editingId && (
                     <Field label="Stock inicial" value={form.stock} onChange={(v) => setField("stock", v)} type="number" />
                   )}
                   {!editingId && (
                     <div className="col-span-2">
-                      <label className="block text-xs text-gray-400 mb-1.5">Ubicación inicial</label>
-                      <select value={form.locationId} onChange={(e) => setField("locationId", e.target.value)} className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                      <label htmlFor="inv-location" className="block text-xs text-gray-400 mb-1.5">Ubicación inicial</label>
+                      <select id="inv-location" value={form.locationId} onChange={(e) => setField("locationId", e.target.value)} className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                         <option value="">Sin ubicación</option>
                         {locations.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.type === "ALMACEN" ? "Almacén" : "Tienda"})</option>)}
                       </select>
@@ -595,7 +698,7 @@ export default function InventoryPage() {
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 p-5 border-t border-dark-700/50">
-              <button onClick={() => setShowModal(false)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors">Cancelar</button>
+              <button onClick={() => setShowModal(false)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">Cancelar</button>
               <button onClick={handleSave} disabled={saving} className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50">
                 {saving ? "Guardando..." : editingId ? "Actualizar" : "Crear Producto"}
               </button>
@@ -607,18 +710,58 @@ export default function InventoryPage() {
       {/* Modal: Vista ampliada de imagen */}
       {imageModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setImageModal(null)}>
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div ref={imagePanelRef} role="dialog" aria-modal="true" aria-label="Ver imagen" className="bg-dark-800 border border-dark-700/50 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-3 border-b border-dark-700/50">
               <div className="min-w-0">
-                <p className="text-white font-medium truncate">{imageModal.name}</p>
+                <p className="text-foreground font-medium truncate">{imageModal.name}</p>
                 <p className="text-xs text-gray-500 truncate">{imageModal.brand} · {imageModal.itemCode}</p>
               </div>
-              <button onClick={() => setImageModal(null)} className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+              <button onClick={() => setImageModal(null)} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>
-            <div className="p-4 bg-dark-900/50 flex items-center justify-center min-h-[280px]">
-              <ProductImage image={imageModal.image} category={imageModal.category} name={imageModal.name} className="max-h-[60vh] w-auto" />
+            <div className="p-4 bg-dark-900/50 flex items-center justify-center min-h-[280px] relative">
+              {(() => {
+                const photos = (imageModal.images?.some(Boolean) ? imageModal.images : imageModal.image ? [imageModal.image] : []).filter(Boolean) as string[];
+                if (photos.length <= 1) {
+                  return <ProductImage image={photos[0] || imageModal.image} category={imageModal.category} name={imageModal.name} className="max-h-[60vh] w-auto" />;
+                }
+                return (
+                  <>
+                    {photos.map((src, i) => (
+                      <div key={i} aria-hidden={i !== imageIndex} className={i === imageIndex ? "block" : "hidden"}>
+                        <ProductImage image={src} category={imageModal.category} name={imageModal.name} className="max-h-[60vh] w-auto" />
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setImageIndex((imageIndex - 1 + photos.length) % photos.length)}
+                      aria-label="Foto anterior"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center bg-dark-800/80 hover:bg-dark-700 text-gray-300 hover:text-foreground rounded-full border border-dark-600/50 transition-all"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <button
+                      onClick={() => setImageIndex((imageIndex + 1) % photos.length)}
+                      aria-label="Foto siguiente"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center bg-dark-800/80 hover:bg-dark-700 text-gray-300 hover:text-foreground rounded-full border border-dark-600/50 transition-all"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                      {photos.map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setImageIndex(i)}
+                          aria-label={`Foto ${i + 1}`}
+                          aria-current={i === imageIndex}
+                          className={`w-2 h-2 rounded-full transition-all ${i === imageIndex ? "bg-primary-400 w-4" : "bg-dark-600 hover:bg-dark-500"}`}
+                        />
+                      ))}
+                    </div>
+                    <span className="absolute top-2 right-3 text-xs text-gray-500">{imageIndex + 1} / {photos.length}</span>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -627,12 +770,12 @@ export default function InventoryPage() {
       {/* Modal: Confirmar Eliminación */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl p-6 w-full max-w-sm text-center">
+          <div ref={deletePanelRef} role="dialog" aria-modal="true" aria-label="Confirmar eliminación" className="bg-dark-800 border border-dark-700/50 rounded-2xl p-6 w-full max-w-sm text-center">
             <Trash2 size={40} className="text-red-400 mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-white mb-2">¿Eliminar producto?</h3>
+            <h3 className="text-lg font-bold text-foreground mb-2">¿Eliminar producto?</h3>
             <p className="text-gray-400 text-sm mb-6">Esta acción no se puede deshacer.</p>
             <div className="flex items-center justify-center gap-3">
-              <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors">Cancelar</button>
+              <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">Cancelar</button>
               <button onClick={() => handleDelete(showDeleteConfirm)} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all">Eliminar</button>
             </div>
           </div>
@@ -642,10 +785,10 @@ export default function InventoryPage() {
       {/* Modal: Stock por Ubicación */}
       {showStockModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
+          <div ref={stockPanelRef} role="dialog" aria-modal="true" aria-label="Stock por ubicación" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white">Stock por Ubicación</h2>
-              <button onClick={() => { setShowStockModal(null); setStockData(null); }} className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+              <h2 className="text-lg font-bold text-foreground">Stock por Ubicación</h2>
+              <button onClick={() => { setShowStockModal(null); setStockData(null); }} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>
@@ -657,14 +800,14 @@ export default function InventoryPage() {
               ) : stockData ? (
                 <>
                   <div className="mb-4 p-3 bg-dark-900/50 rounded-xl border border-dark-700/30">
-                    <p className="text-white font-medium">{stockData.stockTotal} unidades totales</p>
+                    <p className="text-foreground font-medium">{stockData.stockTotal} unidades totales</p>
                     {canEdit && <p className="text-xs text-gray-500 mt-1">Haz clic en un campo para ajustar el stock de cada ubicación.</p>}
                   </div>
                   <div className="space-y-3">
                     {stockData.locations.map((loc: any) => {
                       const edit = stockEdits[loc.id] || { stock: String(loc.stock), minStock: String(loc.minStock), reasonType: "", reason: "" };
                       return (
-                        <div key={loc.locationId} className="p-3 bg-dark-900/50 rounded-xl border border-dark-700/30">
+                        <div key={loc.id} className="p-3 bg-dark-900/50 rounded-xl border border-dark-700/30">
                           <div className="flex items-center justify-between mb-2">
                             <div>
                               <p className="text-sm text-gray-200">{loc.locationName}</p>
@@ -672,42 +815,74 @@ export default function InventoryPage() {
                             </div>
                             {canEdit && (
                               <button
-                                onClick={() => saveStockAdjust(loc.id)}
+                                onClick={() => requestStockConfirm(loc.id)}
                                 disabled={stockSaving}
-                                className="px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white text-xs font-medium transition-all disabled:opacity-50"
+                                className="px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium transition-all disabled:opacity-50"
                               >
                                 Guardar ajuste
                               </button>
                             )}
                           </div>
+                          {canEdit && pendingStockId === loc.id && (
+                            <div className="mt-3 p-3 rounded-xl border border-primary-500/40 bg-dark-800/60">
+                              <p className="text-xs text-gray-300 mb-2">Para aplicar el cambio introduce la contraseña de administrador:</p>
+                              <input
+                                type="password"
+                                value={stockPassword}
+                                onChange={(e) => setStockPassword(e.target.value)}
+                                autoComplete="current-password"
+                                aria-label="Contraseña de administrador"
+                                placeholder="Contraseña de administrador"
+                                className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-600/50 rounded-lg text-foreground text-sm focus:outline-none focus:border-primary-500 placeholder-gray-600"
+                              />
+                              <div className="flex gap-2 mt-2">
+                                <button
+                                  onClick={saveStockAdjust}
+                                  disabled={stockSaving || !stockPassword}
+                                  className="px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium transition-all disabled:opacity-50"
+                                >
+                                  {stockSaving ? "Guardando..." : "Confirmar y guardar"}
+                                </button>
+                                <button
+                                  onClick={() => setPendingStockId(null)}
+                                  className="px-3 py-1.5 rounded-lg bg-dark-800 border border-dark-600/50 text-gray-300 hover:bg-dark-700 text-xs font-medium transition-all"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            </div>
+                          )}
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-[11px] text-gray-500 mb-0.5">Stock</label>
+                              <label htmlFor={`loc-stock-${loc.id}`} className="block text-xs text-gray-500 mb-0.5">Stock</label>
                               <input
+                                id={`loc-stock-${loc.id}`}
                                 type="number" min={0} disabled={!canEdit}
                                 value={edit.stock}
                                 onChange={(e) => setStockEdits((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], stock: e.target.value } }))}
-                                className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 disabled:opacity-60"
+                                className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-foreground text-sm focus:outline-none focus:border-primary-500 disabled:opacity-60"
                               />
                             </div>
                             <div>
-                              <label className="block text-[11px] text-gray-500 mb-0.5">Stock mínimo</label>
+                              <label htmlFor={`loc-min-${loc.id}`} className="block text-xs text-gray-500 mb-0.5">Stock mínimo</label>
                               <input
+                                id={`loc-min-${loc.id}`}
                                 type="number" min={0} disabled={!canEdit}
                                 value={edit.minStock}
                                 onChange={(e) => setStockEdits((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], minStock: e.target.value } }))}
-                                className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 disabled:opacity-60"
+                                className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-foreground text-sm focus:outline-none focus:border-primary-500 disabled:opacity-60"
                               />
                             </div>
                           </div>
                           {canEdit && (
                             <div className="mt-2 grid grid-cols-1 gap-2">
                               <div>
-                                <label className="block text-[11px] text-gray-500 mb-0.5">Motivo</label>
+                                <label htmlFor={`loc-razon-${loc.id}`} className="block text-xs text-gray-500 mb-0.5">Motivo</label>
                                 <select
+                                  id={`loc-razon-${loc.id}`}
                                   value={edit.reasonType}
                                   onChange={(e) => setStockEdits((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], reasonType: e.target.value } }))}
-                                  className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500"
+                                  className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-foreground text-sm focus:outline-none focus:border-primary-500"
                                 >
                                   <option value="">Sin motivo</option>
                                   <option value="COMPRA">Compra</option>
@@ -717,13 +892,14 @@ export default function InventoryPage() {
                                 </select>
                               </div>
                               <div>
-                                <label className="block text-[11px] text-gray-500 mb-0.5">Observación (opcional)</label>
+                                <label className="block text-xs text-gray-500 mb-0.5">Observación (opcional)</label>
                                 <input
                                   type="text"
                                   value={edit.reason}
                                   onChange={(e) => setStockEdits((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], reason: e.target.value } }))}
                                   placeholder="Detalle del ajuste..."
-                                  className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500"
+                                  aria-label="Detalle del ajuste"
+                                  className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-foreground text-sm focus:outline-none focus:border-primary-500"
                                 />
                               </div>
                             </div>
@@ -742,35 +918,35 @@ export default function InventoryPage() {
       {/* Modal: Importar Excel */}
       {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
+          <div ref={importPanelRef} role="dialog" aria-modal="true" aria-label="Importar productos desde Excel" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white">Importar Productos desde Excel</h2>
-              <button onClick={() => { setShowImportModal(false); setImportResult(null); }} className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+              <h2 className="text-lg font-bold text-foreground">Importar Productos desde Excel</h2>
+              <button onClick={() => { setShowImportModal(false); setImportResult(null); }} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>
             <div className="p-5 space-y-4">
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
                 <p className="text-blue-400 text-xs font-medium mb-1">Columnas aceptadas:</p>
-       <p className="text-gray-400 text-xs">Codigo fabrica, Descripcion, Fabricante, Marca, Modelo, Años, Detalle, Codigo OEM, Codigo fabrica, Categoría, Precio 1, Precio 2, Precio mayor, Costo, Stock, Detalles</p>
+       <p className="text-gray-400 text-xs">Codigo fabrica, Descripcion, Fabricante, Marca, Modelo, Años, Detalle, Codigo OEM, Categoría, Precio 1, Precio 2, Precio mayor, Costo, Stock, Detalles</p>
               </div>
                 {!importResult ? (
                   <div className="space-y-3">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Ubicación de los productos</label>
-                    <select value={importLocationId} onChange={(e) => setImportLocationId(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                    <label htmlFor="import-loc" className="block text-xs text-gray-400 mb-1">Ubicación de los productos</label>
+                    <select id="import-loc" value={importLocationId} onChange={(e) => setImportLocationId(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
                       <option value="">Todas las ubicaciones (stock 0)</option>
                       {locations.map((location) => <option key={location.id} value={location.id}>{location.name} ({location.type})</option>)}
                     </select>
-                    <p className="text-[11px] text-gray-600 mt-1">Si eliges una ubicación, la columna Stock se asigna allí.</p>
+                    <p className="text-xs text-gray-600 mt-1">Si eliges una ubicación, la columna Stock se asigna allí.</p>
                   </div>
                   <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-dark-600/50 rounded-xl cursor-pointer hover:border-primary-500/50 transition-colors bg-dark-900/30">
                     <div className="flex flex-col items-center gap-2">
                       {importFile ? (
                         <>
                           <FileSpreadsheet size={32} className="text-green-400" />
-                          <span className="text-sm text-white">{importFile.name}</span>
+                          <span className="text-sm text-foreground">{importFile.name}</span>
                           <span className="text-xs text-gray-500">{(importFile.size / 1024).toFixed(1)} KB</span>
                         </>
                       ) : (
@@ -780,7 +956,7 @@ export default function InventoryPage() {
                         </>
                       )}
                     </div>
-                    <input type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
+                    <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
                   </label>
                 </div>
               ) : (
@@ -810,11 +986,11 @@ export default function InventoryPage() {
               )}
             </div>
             <div className="flex items-center justify-end gap-3 p-5 border-t border-dark-700/50">
-              <button onClick={() => { setShowImportModal(false); setImportResult(null); }} className="px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors">
+              <button onClick={() => { setShowImportModal(false); setImportResult(null); }} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">
                 {importResult ? "Cerrar" : "Cancelar"}
               </button>
               {!importResult && (
-                <button onClick={handleImportExcel} disabled={!importFile || importing} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2">
+                <button onClick={handleImportExcel} disabled={!importFile || importing} className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2">
                   {importing ? <><RefreshCw size={16} className="animate-spin" /> Importando...</> : <><Upload size={16} /> Importar</>}
                 </button>
               )}
@@ -830,14 +1006,42 @@ function Field({ label, value, onChange, type = "text", placeholder, disabled, c
   label: string; value: string; onChange: (v: string) => void;
   type?: string; placeholder?: string; disabled?: boolean; className?: string;
 }) {
+  const inputId = `inv-field-${label.replace(/[^a-zA-Z0-9]+/g, "-")}`;
   return (
     <div className={className}>
-      <label className="block text-xs text-gray-400 mb-1.5">{label}</label>
+      <label htmlFor={inputId} className="block text-xs text-gray-400 mb-1.5">{label}</label>
       <input
+        id={inputId}
         type={type} value={value} onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder} disabled={disabled}
-        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none placeholder-gray-600 disabled:opacity-50"
+        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none placeholder-gray-600 disabled:opacity-50"
       />
+    </div>
+  );
+}
+
+function ImageUrlsPreview({ text }: { text: string }) {
+  const urls = text.split(/[,\n]+/).map((u) => u.trim()).filter(Boolean);
+  if (urls.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mt-2" aria-live="polite">
+      {urls.map((u, i) => (
+        <div key={i} title={u} className="relative w-12 h-12 rounded-lg overflow-hidden bg-dark-900/50 border border-dark-700">
+          <img
+            src={u}
+            alt={`Vista previa foto ${i + 1}`}
+            loading="lazy"
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.opacity = "0.2";
+              (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
+            }}
+          />
+          <div className="absolute inset-0 hidden items-center justify-center bg-red-500/20">
+            <X size={14} className="text-red-400" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

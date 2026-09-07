@@ -280,7 +280,7 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Reportes</h1>
+        <h1 className="text-2xl font-bold text-foreground">Reportes</h1>
         <p className="text-gray-400 text-sm mt-1">Informes y estadísticas del sistema</p>
       </div>
 
@@ -300,7 +300,7 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-4">
           <p className="text-gray-400 text-xs mb-1">Total Ventas</p>
-          <p className="text-2xl font-bold text-amber-400">{formatBs(activeTab === "diario" ? dailyTotal : salesSummary.totalSales || inventoryData?.totalStock || monthlyData?.summary?.totalSales || 0)}</p>
+          <p className="text-2xl font-bold text-emerald-400">{formatBs(activeTab === "diario" ? dailyTotal : salesSummary.totalSales || inventoryData?.totalStock || monthlyData?.summary?.totalSales || 0)}</p>
           <p className="text-xs text-gray-500 mt-1">{activeTab === "ventas" ? `${salesSummary.count} registros` : activeTab === "diario" ? `${dailyCount} ventas` : activeTab === "inventario" ? `${inventoryData?.totalProducts || 0} productos` : `${monthlyData?.summary?.totalLocations || 0} ubicaciones`}</p>
         </div>
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-4">
@@ -318,21 +318,21 @@ export default function ReportsPage() {
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-          <input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Buscar..."
-            className="pl-9 pr-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500 w-48" />
+          <input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Buscar..." aria-label="Buscar"
+            className="pl-9 pr-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 w-48" />
         </div>
         <select value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)}
-          className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500">
+          className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
           <option value="">Todas las ubicaciones</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
         {activeTab !== "mensual" ? (
           <>
             <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
-              className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+              className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
             <span className="text-gray-500 text-sm">→</span>
             <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)}
-              className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+              className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
             {activeTab === "ventas" && (
               <label className="inline-flex items-center gap-2 px-3 py-2 text-sm text-gray-300">
                 <input type="checkbox" checked={filterNoInvoice} onChange={(e) => setFilterNoInvoice(e.target.checked)} className="accent-primary-600" />
@@ -342,14 +342,14 @@ export default function ReportsPage() {
           </>
         ) : (
           <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)}
-            className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+            className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
         )}
         {activeTab === "ventas" && (
           <>
-            <input value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)} placeholder="Marca" className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500 w-32" />
-            <input value={filterModel} onChange={(e) => setFilterModel(e.target.value)} placeholder="Modelo" className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500 w-32" />
-            <input value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} placeholder="Producto" className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500 w-32" />
-            <select value={filterSupplier} onChange={(e) => setFilterSupplier(e.target.value)} className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500 max-w-40">
+            <input value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)} placeholder="Marca" aria-label="Filtrar por marca" className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 w-32" />
+            <input value={filterModel} onChange={(e) => setFilterModel(e.target.value)} placeholder="Modelo" aria-label="Filtrar por modelo" className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 w-32" />
+            <input value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} placeholder="Producto" aria-label="Filtrar por producto" className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 w-32" />
+            <select value={filterSupplier} onChange={(e) => setFilterSupplier(e.target.value)} className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 max-w-40">
               <option value="">Proveedor</option>
               {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
             </select>
@@ -360,9 +360,9 @@ export default function ReportsPage() {
       {activeTab === "ventas" && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-            <h3 className="text-white font-medium">Reporte de Ventas</h3>
+            <h3 className="text-foreground font-medium">Reporte de Ventas</h3>
             <div className="flex items-center gap-2">
-              <button onClick={fetchSales} className="p-1.5 text-gray-400 hover:text-white rounded-lg transition-all"><RefreshCw size={14} /></button>
+              <button onClick={fetchSales} className="p-1.5 text-gray-400 hover:text-foreground rounded-lg transition-all"><RefreshCw size={14} /></button>
               <button onClick={() => exportCSV(filteredSales.map((s) => ({
                 ID: s.id, Fecha: formatDate(s.date), Tipo: s.type, Total: s.total,
                 Ubicacion: s.location?.name || "N/A", Cliente: s.customer?.name || "N/A", Vendedor: s.user?.name || "N/A",
@@ -404,11 +404,11 @@ export default function ReportsPage() {
                       <td className="px-4 py-3 text-gray-300 font-mono text-xs">#{s.id}</td>
                       <td className="px-4 py-3 text-gray-300">{formatDate(s.date)}</td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : "bg-blue-500/10 text-blue-400"}`}>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : "bg-emerald-500/10 text-emerald-400"}`}>
                           {s.type === "MAYOR" ? "Mayor" : "Normal"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-amber-400 font-medium text-right">{formatBs(s.total)}</td>
+                      <td className="px-4 py-3 text-emerald-400 font-medium text-right">{formatBs(s.total)}</td>
                       <td className="px-4 py-3 text-gray-300">{s.location?.name || "N/A"}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{s.customer?.name || "N/A"}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{s.user?.name || "N/A"}</td>
@@ -424,9 +424,9 @@ export default function ReportsPage() {
       {activeTab === "diario" && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-            <h3 className="text-white font-medium">Reporte Diario por Tienda</h3>
+            <h3 className="text-foreground font-medium">Reporte Diario por Tienda</h3>
             <div className="flex items-center gap-2">
-              <button onClick={fetchDaily} className="p-1.5 text-gray-400 hover:text-white rounded-lg transition-all"><RefreshCw size={14} /></button>
+              <button onClick={fetchDaily} className="p-1.5 text-gray-400 hover:text-foreground rounded-lg transition-all"><RefreshCw size={14} /></button>
               <button onClick={() => exportCSV(dailyData.flatMap((g) => g.stores.map((st) => ({
                 Fecha: formatDate(g.date), Tienda: st.locationName,
                 "N° Ventas": st.saleCount, Total: st.total, Devoluciones: st.returns,
@@ -453,8 +453,8 @@ export default function ReportsPage() {
               {dailyData.map((g) => (
                 <div key={g.date} className="border border-dark-700/50 rounded-xl overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-2 bg-dark-900/40 border-b border-dark-700/50">
-                    <span className="text-white font-medium text-sm">{formatDate(g.date)}</span>
-                    <span className="text-xs text-gray-400">{g.saleCount} ventas · <span className="text-amber-400 font-medium">{formatBs(g.total)}</span></span>
+                    <span className="text-foreground font-medium text-sm">{formatDate(g.date)}</span>
+                    <span className="text-xs text-gray-400">{g.saleCount} ventas · <span className="text-emerald-400 font-medium">{formatBs(g.total)}</span></span>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -469,9 +469,9 @@ export default function ReportsPage() {
                       <tbody>
                         {g.stores.map((st) => (
                           <tr key={st.locationName} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                            <td className="px-4 py-2 text-white font-medium">{st.locationName}</td>
+                            <td className="px-4 py-2 text-foreground font-medium">{st.locationName}</td>
                             <td className="px-4 py-2 text-gray-300 text-center">{st.saleCount}</td>
-                            <td className="px-4 py-2 text-amber-400 font-medium text-right">{formatBs(st.total)}</td>
+                            <td className="px-4 py-2 text-emerald-400 font-medium text-right">{formatBs(st.total)}</td>
                             <td className="px-4 py-2 text-red-400 text-right">{formatBs(st.returns)}</td>
                           </tr>
                         ))}
@@ -489,7 +489,7 @@ export default function ReportsPage() {
                             <span key={name} className="inline-flex items-center gap-2 px-3 py-1 bg-dark-900/30 border border-dark-700/30 rounded-lg text-xs">
                               <span className="text-gray-200">{name}</span>
                               <span className="text-gray-500">x{totalQty}</span>
-                              <span className="text-amber-400 font-medium">{formatBs(totalSub)}</span>
+                              <span className="text-emerald-400 font-medium">{formatBs(totalSub)}</span>
                             </span>
                           );
                         })}
@@ -506,9 +506,9 @@ export default function ReportsPage() {
       {activeTab === "inventario" && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-            <h3 className="text-white font-medium">Reporte de Inventario</h3>
+            <h3 className="text-foreground font-medium">Reporte de Inventario</h3>
             <div className="flex items-center gap-2">
-              <button onClick={fetchInventory} className="p-1.5 text-gray-400 hover:text-white rounded-lg transition-all"><RefreshCw size={14} /></button>
+              <button onClick={fetchInventory} className="p-1.5 text-gray-400 hover:text-foreground rounded-lg transition-all"><RefreshCw size={14} /></button>
               <button onClick={() => exportCSV(filteredInventory.map((i) => ({
                 Codigo: i.product.itemCode, Producto: i.product.name, Marca: i.product.brand, Modelo: i.product.model,
                 Ubicacion: i.location.name, Stock: i.stock, Minimo: i.minStock, Estado: i.status,
@@ -548,7 +548,7 @@ export default function ReportsPage() {
                   ) : filteredInventory.map((i) => (
                     <tr key={i.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
                       <td className="px-4 py-3 text-gray-300 font-mono text-xs">{i.product.itemCode}</td>
-                      <td className="px-4 py-3 text-white font-medium">{i.product.name}</td>
+                      <td className="px-4 py-3 text-foreground font-medium">{i.product.name}</td>
                       <td className="px-4 py-3 text-gray-300">{i.product.brand}</td>
                       <td className="px-4 py-3 text-gray-300">{i.location.name}</td>
                       <td className="px-4 py-3 text-center">
@@ -580,9 +580,9 @@ export default function ReportsPage() {
       {activeTab === "mensual" && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-            <h3 className="text-white font-medium">Reporte Mensual por Tienda</h3>
+            <h3 className="text-foreground font-medium">Reporte Mensual por Tienda</h3>
             <div className="flex items-center gap-2">
-              <button onClick={fetchMonthly} className="p-1.5 text-gray-400 hover:text-white rounded-lg transition-all"><RefreshCw size={14} /></button>
+              <button onClick={fetchMonthly} className="p-1.5 text-gray-400 hover:text-foreground rounded-lg transition-all"><RefreshCw size={14} /></button>
               <button onClick={() => exportCSV(filteredMonthly.map((m) => ({
                 Tienda: m.location.name, Ventas: m.summary.totalSales, Devoluciones: m.summary.totalReturns,
                 Netas: m.summary.netSales, "N° Ventas": m.summary.saleCount, Promedio: m.summary.averagePerSale,
@@ -616,7 +616,7 @@ export default function ReportsPage() {
                       <th className="text-right px-4 py-3 text-gray-400 font-medium">Total Ventas</th>
                       <th className="text-right px-4 py-3 text-gray-400 font-medium">Devoluciones</th>
                       <th className="text-right px-4 py-3 text-gray-400 font-medium">Neto</th>
-                      <th className="text-right px-4 py-3 text-amber-400 font-medium">Costo Mercadería</th>
+                      <th className="text-right px-4 py-3 text-emerald-400 font-medium">Costo Mercadería</th>
                       <th className="text-right px-4 py-3 text-red-400 font-medium">Costo Tienda (+10%)</th>
                       <th className="text-right px-4 py-3 text-green-400 font-medium">Utilidad</th>
                     </tr>
@@ -629,12 +629,12 @@ export default function ReportsPage() {
                       const utilidad = (m.summary.netSales - storeCost);
                       return (
                       <tr key={idx} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                        <td className="px-4 py-3 text-white font-medium">{m.location.name}</td>
+                        <td className="px-4 py-3 text-foreground font-medium">{m.location.name}</td>
                         <td className="px-4 py-3 text-gray-300 text-center">{m.summary.saleCount}</td>
-                        <td className="px-4 py-3 text-amber-400 font-medium text-right">{formatBs(m.summary.totalSales)}</td>
+                        <td className="px-4 py-3 text-emerald-400 font-medium text-right">{formatBs(m.summary.totalSales)}</td>
                         <td className="px-4 py-3 text-red-400 text-right">{formatBs(m.summary.totalReturns)}</td>
                         <td className="px-4 py-3 text-green-400 font-medium text-right">{formatBs(m.summary.netSales)}</td>
-                        <td className="px-4 py-3 text-amber-400/70 text-right">{formatBs(m.costs?.productsCost ?? 0)}</td>
+                        <td className="px-4 py-3 text-emerald-400/70 text-right">{formatBs(m.costs?.productsCost ?? 0)}</td>
                         <td className="px-4 py-3 text-red-400/80 text-right">{formatBs(storeCost)}</td>
                         <td className="px-4 py-3 text-green-400 font-medium text-right">{formatBs(utilidad)}</td>
                       </tr>
@@ -645,16 +645,16 @@ export default function ReportsPage() {
               </div>
               {filteredMonthly.length > 0 && filteredMonthly[0]?.topProducts?.length > 0 && (
                 <div className="p-4 border-t border-dark-700/50">
-                  <h4 className="text-white font-medium text-sm mb-3">Productos Más Vendidos</h4>
+                  <h4 className="text-foreground font-medium text-sm mb-3">Productos Más Vendidos</h4>
                   <div className="space-y-2">
                     {filteredMonthly[0].topProducts.slice(0, 5).map((tp, i) => (
                       <div key={i} className="flex items-center justify-between p-2 bg-dark-900/30 rounded-lg">
                         <div>
-                          <span className="text-white text-sm">{tp.product.name}</span>
+                          <span className="text-foreground text-sm">{tp.product.name}</span>
                           <span className="text-gray-500 text-xs ml-2">{tp.product.brand}</span>
                         </div>
                         <div className="text-right">
-                          <span className="text-amber-400 text-sm font-medium">{formatBs(tp.totalRevenue)}</span>
+                          <span className="text-emerald-400 text-sm font-medium">{formatBs(tp.totalRevenue)}</span>
                           <span className="text-gray-500 text-xs ml-2">{tp.quantitySold} uds</span>
                         </div>
                       </div>

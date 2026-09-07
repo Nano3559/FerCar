@@ -100,7 +100,7 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
         className={`p-2.5 rounded-xl border transition-all flex items-center gap-2 text-sm ${
           open
             ? "bg-primary-600/10 border-primary-600/20 text-primary-400"
-            : "bg-dark-800 border-dark-700/50 text-gray-400 hover:text-white hover:border-primary-600/50"
+            : "bg-dark-800 border-dark-700/50 text-gray-400 hover:text-foreground hover:border-primary-600/50"
         }`}
         title="Configurar columnas"
       >
@@ -112,8 +112,8 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-2 z-50 bg-dark-900 border border-dark-700/50 rounded-2xl shadow-2xl w-80 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-dark-700/50">
-              <h3 className="text-sm font-bold text-white">Columnas visibles</h3>
-              <button onClick={() => setOpen(false)} className="p-1 text-gray-400 hover:text-white rounded-lg hover:bg-dark-700 transition-colors">
+              <h3 className="text-sm font-bold text-foreground">Columnas visibles</h3>
+              <button onClick={() => setOpen(false)} className="p-1 text-gray-400 hover:text-foreground rounded-lg hover:bg-dark-700 transition-colors">
                 <X size={16} />
               </button>
             </div>
@@ -182,13 +182,13 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
             </div>
 
             <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-dark-700/50">
-              <button onClick={reset} className="px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors">
+              <button onClick={reset} className="px-3 py-1.5 text-xs text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-colors">
                 Restablecer
               </button>
               <button
                 onClick={save}
                 disabled={saving}
-                className="flex items-center gap-1.5 px-4 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-medium transition-all disabled:opacity-50"
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-medium transition-all disabled:opacity-50"
               >
                 <Check size={14} /> {saving ? "Guardando..." : "Aplicar"}
               </button>

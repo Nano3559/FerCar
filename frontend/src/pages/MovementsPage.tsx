@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
+import { useDialogBehavior } from "../components/ui/useDialog";
 
 interface Product {
   id: number; itemCode: string; name: string; brand: string; model: string; stock: number;
@@ -54,6 +55,9 @@ export default function MovementsPage() {
 
   // Observation modal
   const [obsModal, setObsModal] = useState<{ open: boolean; observation: string; movementId: number }>({ open: false, observation: "", movementId: 0 });
+
+  const formPanelRef = useDialogBehavior(showForm, () => setShowForm(false));
+  const obsPanelRef = useDialogBehavior(obsModal.open, () => setObsModal({ open: false, observation: "", movementId: 0 }));
 
   const fetchLocations = useCallback(async () => {
     try {
@@ -163,12 +167,12 @@ export default function MovementsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Movimientos</h1>
+          <h1 className="text-2xl font-bold text-foreground">Movimientos</h1>
           <p className="text-gray-400 text-sm mt-1">{total} movimientos registrados</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={fetchMovements}
-            className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-white hover:border-primary-600/50 transition-all" title="Actualizar">
+            className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all" title="Actualizar">
             <RefreshCw size={18} />
           </button>
           <button onClick={() => { resetForm(); setShowForm(true); }}
@@ -180,9 +184,9 @@ export default function MovementsPage() {
 
       {/* Filters */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4">
-        <button onClick={() => setShowFilters(!showFilters)}
+        <button onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border transition-all ${
-            showFilters ? "bg-primary-600/10 border-primary-600/20 text-primary-400" : "bg-dark-900/50 border-dark-600/50 text-gray-400 hover:text-white"
+            showFilters ? "bg-primary-600/10 border-primary-600/20 text-primary-400" : "bg-dark-900/50 border-dark-600/50 text-gray-400 hover:text-foreground"
           }`}>
           <Calendar size={16} /> Filtros
           <ChevronDown size={14} className={`transition-transform ${showFilters ? "rotate-180" : ""}`} />
@@ -193,17 +197,17 @@ export default function MovementsPage() {
             <div>
               <label className="block text-xs text-gray-500 mb-1">Desde fecha</label>
               <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)}
-                className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Hasta fecha</label>
               <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)}
-                className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
             </div>
             <div className="relative">
               <label className="block text-xs text-gray-500 mb-1">Ubicación origen</label>
               <select value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
-                className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                 <option value="">Todas</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
               </select>
@@ -212,7 +216,7 @@ export default function MovementsPage() {
             <div className="relative">
               <label className="block text-xs text-gray-500 mb-1">Ubicación destino</label>
               <select value={filterTo} onChange={(e) => setFilterTo(e.target.value)}
-                className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                 <option value="">Todas</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
               </select>
@@ -270,7 +274,7 @@ export default function MovementsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="text-white text-sm font-medium">{m.product.name}</p>
+                        <p className="text-foreground text-sm font-medium">{m.product.name}</p>
                         <p className="text-xs text-gray-500">{m.product.itemCode} · {m.product.brand}</p>
                       </td>
                       <td className="px-4 py-3">
@@ -325,7 +329,7 @@ export default function MovementsPage() {
                     </span>
                   </div>
                   <div>
-                    <p className="text-white text-sm font-medium">{m.product.name}</p>
+                    <p className="text-foreground text-sm font-medium">{m.product.name}</p>
                     <p className="text-xs text-gray-500">{m.product.itemCode} · {m.product.brand}</p>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
@@ -357,7 +361,7 @@ export default function MovementsPage() {
                 <p className="text-gray-400 text-sm">Página {page} de {pages}</p>
                 <div className="flex items-center gap-2">
                   <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-                    className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white disabled:opacity-30 transition-all">
+                    className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30 transition-all">
                     <ChevronLeft size={16} />
                   </button>
                   {Array.from({ length: Math.min(5, pages) }, (_, i) => {
@@ -367,14 +371,14 @@ export default function MovementsPage() {
                     return (
                       <button key={pg} onClick={() => setPage(pg)}
                         className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
-                          pg === page ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white"
+                          pg === page ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground"
                         }`}>
                         {pg}
                       </button>
                     );
                   })}
                   <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages}
-                    className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white disabled:opacity-30 transition-all">
+                    className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30 transition-all">
                     <ChevronRight size={16} />
                   </button>
                 </div>
@@ -387,11 +391,11 @@ export default function MovementsPage() {
       {/* ============ MODAL: Nuevo Movimiento ============ */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <div ref={formPanelRef} role="dialog" aria-modal="true" aria-label="Nuevo movimiento" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white">Nuevo Movimiento</h2>
-              <button onClick={() => setShowForm(false)}
-                className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+              <h2 className="text-lg font-bold text-foreground">Nuevo Movimiento</h2>
+              <button onClick={() => setShowForm(false)} aria-label="Cerrar"
+                className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>
@@ -399,12 +403,12 @@ export default function MovementsPage() {
             <div className="p-5 space-y-4">
               {/* Producto */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1.5">Producto *</label>
+                <label htmlFor="mov-producto" className="block text-xs text-gray-400 mb-1.5">Producto *</label>
                 {selectedProduct ? (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between p-3 bg-dark-900/50 border border-primary-600/20 rounded-xl">
                       <div>
-                        <p className="text-sm text-white font-medium">{selectedProduct.name}</p>
+                        <p className="text-sm text-foreground font-medium">{selectedProduct.name}</p>
                         <p className="text-xs text-gray-500">{selectedProduct.brand} · {selectedProduct.itemCode}</p>
                       </div>
                       <button onClick={() => { setSelectedProduct(null); setProductSearch(""); setProductStock(null); }}
@@ -436,16 +440,16 @@ export default function MovementsPage() {
                 ) : (
                   <div className="relative">
                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                    <input ref={searchInputRef} type="text" value={productSearch}
+                    <input id="mov-producto" ref={searchInputRef} type="text" value={productSearch}
                       onChange={(e) => handleProductSearch(e.target.value)}
                       placeholder="Buscar producto..."
-                      className="w-full pl-9 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                      className="w-full pl-9 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                     {productResults.length > 0 && (
                       <div className="absolute z-10 w-full mt-1 bg-dark-800 border border-dark-700/50 rounded-xl max-h-48 overflow-y-auto shadow-xl">
                         {productResults.map((p) => (
                           <button key={p.id} onClick={() => selectProduct(p)}
                             className="w-full text-left px-3 py-2.5 hover:bg-dark-700/50 transition-colors border-b border-dark-700/30 last:border-0">
-                            <p className="text-sm text-white">{p.name}</p>
+                            <p className="text-sm text-foreground">{p.name}</p>
                             <p className="text-xs text-gray-500">{p.brand} · {p.itemCode} · Stock: {p.stock}</p>
                           </button>
                         ))}
@@ -460,7 +464,7 @@ export default function MovementsPage() {
                 <div className="relative">
                   <label className="block text-xs text-gray-400 mb-1.5">Origen *</label>
                   <select value={fromLocationId} onChange={(e) => setFromLocationId(e.target.value)}
-                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                     <option value="">Seleccionar</option>
                     {fromLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
@@ -472,7 +476,7 @@ export default function MovementsPage() {
                 <div className="relative">
                   <label className="block text-xs text-gray-400 mb-1.5">Destino *</label>
                   <select value={toLocationId} onChange={(e) => setToLocationId(e.target.value)}
-                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                     <option value="">Seleccionar</option>
                     {toLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
@@ -482,24 +486,24 @@ export default function MovementsPage() {
 
               {/* Cantidad */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1.5">Cantidad *</label>
-                <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)}
+                <label htmlFor="mov-cantidad" className="block text-xs text-gray-400 mb-1.5">Cantidad *</label>
+                <input id="mov-cantidad" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)}
                   placeholder="Cantidad a mover" min="1"
-                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
               </div>
 
               {/* Observación */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1.5">Observación</label>
-                <textarea value={observation} onChange={(e) => setObservation(e.target.value)}
+                <label htmlFor="mov-observacion" className="block text-xs text-gray-400 mb-1.5">Observación</label>
+                <textarea id="mov-observacion" value={observation} onChange={(e) => setObservation(e.target.value)}
                   placeholder="Motivo del movimiento (opcional)" rows={2}
-                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600 resize-none" />
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600 resize-none" />
               </div>
             </div>
 
             <div className="flex items-center justify-end gap-3 p-5 border-t border-dark-700/50">
               <button onClick={() => setShowForm(false)}
-                className="px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors">
+                className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">
                 Cancelar
               </button>
               <button onClick={handleSubmit} disabled={submitting}
@@ -514,11 +518,11 @@ export default function MovementsPage() {
       {/* ============ MODAL: Observación ============ */}
       {obsModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md">
+          <div ref={obsPanelRef} role="dialog" aria-modal="true" aria-label="Observación" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white">Observación</h2>
-              <button onClick={() => setObsModal({ open: false, observation: "", movementId: 0 })}
-                className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+              <h2 className="text-lg font-bold text-foreground">Observación</h2>
+              <button onClick={() => setObsModal({ open: false, observation: "", movementId: 0 })} aria-label="Cerrar"
+                className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>

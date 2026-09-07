@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import { authenticate, authorize, requireTiendaLocation } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
 
@@ -88,11 +89,21 @@ router.get("/product/:productId", async (req: AuthRequest, res: Response) => {
   }
 });
 
-// PUT /:id — Actualizar stock manualmente con motivo (solo ADMIN)
+// PUT /:id — Actualizar stock manualmente con motivo (solo ADMIN + contraseña)
 router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const { stock, minStock, reasonType, reason } = req.body;
+    const { stock, minStock, reasonType, reason, password } = req.body;
+
+    if (!password || typeof password !== "string") {
+      return res.status(400).json({ message: "Ingresa la contraseña de administrador para modificar el stock" });
+    }
+
+    const admin = await prisma.user.findUnique({ where: { id: req.user!.userId } });
+    const passwordOk = admin ? await bcrypt.compare(password, admin.password) : false;
+    if (!passwordOk) {
+      return res.status(403).json({ message: "Contraseña de administrador incorrecta" });
+    }
 
     const existing = await prisma.inventory.findUnique({ where: { id } });
     if (!existing) {

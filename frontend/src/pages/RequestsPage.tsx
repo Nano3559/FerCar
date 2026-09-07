@@ -6,6 +6,7 @@ import {
 import toast from "react-hot-toast";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
+import { useDialogBehavior } from "../components/ui/useDialog";
 
 interface Product {
   id: number; itemCode: string; name: string; brand: string; model: string;
@@ -85,6 +86,10 @@ export default function RequestsPage() {
   const [saving, setSaving] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showHistory, setShowHistory] = useState<RequestRecord | null>(null);
+
+  const newPanelRef = useDialogBehavior(showNew, () => { setShowNew(false); clearProduct(); });
+  const historyPanelRef = useDialogBehavior(showHistory !== null, () => setShowHistory(null));
+  const infoPanelRef = useDialogBehavior(showInfo, () => setShowInfo(false));
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -203,14 +208,14 @@ export default function RequestsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Solicitudes</h1>
+          <h1 className="text-2xl font-bold text-foreground">Solicitudes</h1>
           <p className="text-gray-400 text-sm mt-1">{total} solicitudes</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setShowInfo(true)} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-blue-400 hover:border-blue-500/30 transition-all" title="¿Cómo funciona?">
             <Info size={18} />
           </button>
-          <button onClick={fetchRequests} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-white hover:border-primary-600/50 transition-all" title="Actualizar">
+          <button onClick={fetchRequests} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all" title="Actualizar">
             <RefreshCw size={18} />
           </button>
           <button onClick={() => setShowNew(true)} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-primary-600/20">
@@ -220,14 +225,14 @@ export default function RequestsPage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button onClick={() => setFilterStatus("")} className={`px-3 py-2 rounded-xl text-sm border transition-all ${!filterStatus ? "bg-primary-600/10 border-primary-600/20 text-primary-400" : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-white"}`}>
+        <button onClick={() => setFilterStatus("")} className={`px-3 py-2 rounded-xl text-sm border transition-all ${!filterStatus ? "bg-primary-600/10 border-primary-600/20 text-primary-400" : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-foreground"}`}>
           Todas
         </button>
         {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
           const Icon = cfg.icon;
           return (
             <button key={key} onClick={() => setFilterStatus(key)}
-              className={`px-3 py-2 rounded-xl text-sm border transition-all flex items-center gap-1.5 ${filterStatus === key ? `${cfg.bg} ${cfg.color}` : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-white"}`}>
+              className={`px-3 py-2 rounded-xl text-sm border transition-all flex items-center gap-1.5 ${filterStatus === key ? `${cfg.bg} ${cfg.color}` : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-foreground"}`}>
               <Icon size={14} /> {cfg.label}
             </button>
           );
@@ -270,11 +275,11 @@ export default function RequestsPage() {
                       <td className="px-4 py-3 text-gray-400">{r.id}</td>
                       <td className="px-4 py-3 text-gray-300">{new Date(r.date).toLocaleDateString("es-BO")}</td>
                       <td className="px-4 py-3">
-                        <p className="text-white font-medium">{r.product.name}</p>
+                        <p className="text-foreground font-medium">{r.product.name}</p>
                         <p className="text-xs text-gray-500">{r.product.itemCode}</p>
                       </td>
                       <td className="px-4 py-3 text-gray-300">{r.location.name}</td>
-                      <td className="px-4 py-3 text-center text-white font-medium">{r.quantity}</td>
+                      <td className="px-4 py-3 text-center text-foreground font-medium">{r.quantity}</td>
                       <td className="px-4 py-3 text-gray-400">{r.requestedBy.name}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs max-w-[120px] truncate" title={r.note || ""}>
                         {r.note || "—"}
@@ -299,7 +304,7 @@ export default function RequestsPage() {
                                 >
                                   <ActionIcon size={15} />
                                 </button>
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-dark-950 border border-dark-700 rounded-lg text-xs text-white whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-xl z-10">
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-dark-950 border border-dark-700 rounded-lg text-xs text-foreground whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-xl z-10">
                                   {action.label}
                                 </div>
                               </div>
@@ -320,7 +325,7 @@ export default function RequestsPage() {
             <p className="text-gray-400 text-sm">Página {page} de {pages}</p>
             <div className="flex items-center gap-2">
               <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-                className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white disabled:opacity-30 transition-all">
+                className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30 transition-all">
                 <ChevronLeft size={16} />
               </button>
               {Array.from({ length: Math.min(5, pages) }, (_, i) => {
@@ -329,13 +334,13 @@ export default function RequestsPage() {
                 if (p > pages) return null;
                 return (
                   <button key={p} onClick={() => setPage(p)}
-                    className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${p === page ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white"}`}>
+                    className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${p === page ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground"}`}>
                     {p}
                   </button>
                 );
               })}
               <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages}
-                className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white disabled:opacity-30 transition-all">
+                className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30 transition-all">
                 <ChevronRight size={16} />
               </button>
             </div>
@@ -345,31 +350,32 @@ export default function RequestsPage() {
 
       {showNew && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
+          <div ref={newPanelRef} role="dialog" aria-modal="true" aria-label="Nueva solicitud" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white">Nueva Solicitud</h2>
-              <button onClick={() => { setShowNew(false); clearProduct(); }}
-                className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+              <h2 className="text-lg font-bold text-foreground">Nueva Solicitud</h2>
+              <button onClick={() => { setShowNew(false); clearProduct(); }} aria-label="Cerrar"
+                className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>
             <div className="p-5 space-y-4">
               <div ref={searchRef}>
-                <label className="block text-xs text-gray-400 mb-1.5">Producto *</label>
+                <label htmlFor="req-producto" className="block text-xs text-gray-400 mb-1.5">Producto *</label>
                 <div className="relative">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
                   <input
+                    id="req-producto"
                     type="text"
                     value={searchProd}
                     onChange={(e) => { setSearchProd(e.target.value); if (selectedProduct) setSelectedProduct(null); doSearch(e.target.value); }}
                     onFocus={() => { if (searchResults.length > 0) setSearchFocused(true); }}
                     placeholder="Escribe código, nombre o marca..."
                     disabled={!!selectedProduct}
-                    className="w-full pl-9 pr-9 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-500 disabled:opacity-50"
+                    className="w-full pl-9 pr-9 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-500 disabled:opacity-50"
                   />
                   {searchProd && !selectedProduct && (
                     <button onClick={() => { setSearchProd(""); setSearchResults([]); }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors">
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-foreground transition-colors">
                       <X size={16} />
                     </button>
                   )}
@@ -385,7 +391,7 @@ export default function RequestsPage() {
                     {searchResults.map((p) => (
                       <button key={p.id} onClick={() => selectProduct(p)}
                         className="w-full text-left px-3 py-3 hover:bg-primary-600/10 transition-colors border-b border-dark-700/30 last:border-0">
-                        <p className="text-sm text-white font-medium truncate">{p.name}</p>
+                        <p className="text-sm text-foreground font-medium truncate">{p.name}</p>
                         <p className="text-xs text-gray-500">{p.itemCode} · {p.brand} · Stock: {p.stock}</p>
                       </button>
                     ))}
@@ -395,10 +401,10 @@ export default function RequestsPage() {
                 {selectedProduct && (
                   <div className="mt-2 p-3 bg-primary-600/10 border border-primary-600/20 rounded-xl flex items-center justify-between">
                     <div className="min-w-0">
-                      <p className="text-sm text-white font-medium truncate">{selectedProduct.name}</p>
+                      <p className="text-sm text-foreground font-medium truncate">{selectedProduct.name}</p>
                       <p className="text-xs text-gray-400">{selectedProduct.itemCode} · Stock: {selectedProduct.stock}</p>
                     </div>
-                    <button onClick={clearProduct} className="ml-3 p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-all">
+                    <button onClick={clearProduct} className="ml-3 p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
                       <X size={14} />
                     </button>
                   </div>
@@ -408,7 +414,7 @@ export default function RequestsPage() {
               <div className="relative">
                 <label className="block text-xs text-gray-400 mb-1.5">Ubicación solicitante *</label>
                 <select value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)}
-                  className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                  className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                   <option value="">Seleccionar tienda</option>
                   {locations.filter((l) => l.type === "TIENDA").map((l) => (
                     <option key={l.id} value={l.id}>{l.name}</option>
@@ -420,18 +426,18 @@ export default function RequestsPage() {
               <div>
                 <label className="block text-xs text-gray-400 mb-1.5">Cantidad *</label>
                 <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} min="1"
-                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
               </div>
 
               <div>
-                <label className="block text-xs text-gray-400 mb-1.5">Nota (opcional)</label>
-                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
+                <label htmlFor="req-nota" className="block text-xs text-gray-400 mb-1.5">Nota (opcional)</label>
+                <textarea id="req-nota" value={note} onChange={(e) => setNote(e.target.value)} rows={2}
                   placeholder="Observaciones adicionales..."
-                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none placeholder-gray-600" />
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none placeholder-gray-600" />
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 p-5 border-t border-dark-700/50">
-              <button onClick={() => { setShowNew(false); clearProduct(); }} className="px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors">Cancelar</button>
+              <button onClick={() => { setShowNew(false); clearProduct(); }} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">Cancelar</button>
               <button onClick={handleCreate} disabled={saving || !selectedProduct}
                 className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 <Send size={16} /> {saving ? "Creando..." : "Crear Solicitud"}
@@ -443,18 +449,18 @@ export default function RequestsPage() {
 
       {showHistory && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
+          <div ref={historyPanelRef} role="dialog" aria-modal="true" aria-label="Historial de solicitud" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                 <History size={20} className="text-blue-400" /> Historial — Solicitud #{showHistory.id}
               </h2>
-              <button onClick={() => setShowHistory(null)} className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+              <button onClick={() => setShowHistory(null)} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>
             <div className="p-5">
               <div className="mb-4 p-3 bg-dark-900/50 rounded-xl border border-dark-700/30">
-                <p className="text-white font-medium">{showHistory.product.name}</p>
+                <p className="text-foreground font-medium">{showHistory.product.name}</p>
                 <p className="text-xs text-gray-400">{showHistory.product.itemCode} · Cantidad: {showHistory.quantity} · {showHistory.location.name}</p>
                 {showHistory.note && <p className="text-xs text-gray-400 mt-1 italic">Nota: {showHistory.note}</p>}
               </div>
@@ -469,7 +475,7 @@ export default function RequestsPage() {
                           <Icon size={14} className={cfg.color} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-white">
+                          <p className="text-sm text-foreground">
                             {h.previousStatus ? (
                               <>{STATUS_CONFIG[h.previousStatus]?.label || h.previousStatus} → <span className={`font-medium ${cfg.color}`}>{cfg.label}</span></>
                             ) : (
@@ -494,18 +500,18 @@ export default function RequestsPage() {
 
       {showInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
+          <div ref={infoPanelRef} role="dialog" aria-modal="true" aria-label="Cómo funciona" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2"><Info size={20} className="text-blue-400" /> ¿Cómo funciona?</h2>
-              <button onClick={() => setShowInfo(false)} className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all"><X size={18} /></button>
+              <h2 className="text-lg font-bold text-foreground flex items-center gap-2"><Info size={20} className="text-blue-400" /> ¿Cómo funciona?</h2>
+              <button onClick={() => setShowInfo(false)} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-4 text-sm text-gray-300">
               <div>
-                <h4 className="text-white font-semibold mb-1">¿Para qué sirve?</h4>
+                <h4 className="text-foreground font-semibold mb-1">¿Para qué sirve?</h4>
                 <p>Cuando una tienda se queda sin stock de un producto, desde aquí se pide al almacén que lo envíe.</p>
               </div>
               <div>
-                <h4 className="text-white font-semibold mb-1">Flujo de estados:</h4>
+                <h4 className="text-foreground font-semibold mb-1">Flujo de estados:</h4>
                 <div className="space-y-1.5 ml-1">
                   <p className="flex items-center gap-2"><Clock size={14} className="text-yellow-400" /> <strong className="text-yellow-400">Pendiente</strong> — Solicitud creada</p>
                   <p className="flex items-center gap-2"><Package size={14} className="text-blue-400" /> <strong className="text-blue-400">Recibido por Inventario</strong> — Inventario tomó conocimiento</p>
@@ -515,7 +521,7 @@ export default function RequestsPage() {
                 </div>
               </div>
               <div>
-                <h4 className="text-white font-semibold mb-1">¿Quién puede cambiar el estado?</h4>
+                <h4 className="text-foreground font-semibold mb-1">¿Quién puede cambiar el estado?</h4>
                 <p><strong className="text-blue-400">Inventario/Admin:</strong> Recibir, Preparar, Entregar</p>
                 <p><strong className="text-green-400">Tienda/Admin:</strong> Confirmar recepción</p>
               </div>

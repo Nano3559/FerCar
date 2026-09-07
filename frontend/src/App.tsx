@@ -21,6 +21,8 @@ import CostsPage from "./pages/CostsPage";
 import PricesPage from "./pages/PricesPage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
+import DespatchListPage from "./pages/DespatchListPage";
+import PurchaseNotesPage from "./pages/PurchaseNotesPage";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 const ALL = ["ADMIN", "INVENTARIO", "TIENDA"];
@@ -37,9 +39,9 @@ export default function App() {
         position="top-right"
         toastOptions={{
           style: {
-            background: "#1e293b",
-            color: "#f1f5f9",
-            border: "1px solid #334155",
+            background: "rgb(var(--dk-800))",
+            color: "rgb(var(--gray-100))",
+            border: "1px solid rgb(var(--dk-700))",
           },
         }}
       />
@@ -114,6 +116,13 @@ export default function App() {
             </RoleRoute>
           } />
 
+          {/* Lista de Despacho — todos los roles */}
+          <Route path="despachos" element={
+            <RoleRoute allowedRoles={ALL} module="despachos">
+              <DespatchListPage />
+            </RoleRoute>
+          } />
+
           {/* Costos — solo ADMIN */}
           <Route path="costos" element={
             <RoleRoute allowedRoles={["ADMIN"]} module="costos">
@@ -125,6 +134,13 @@ export default function App() {
           <Route path="precios" element={
             <RoleRoute allowedRoles={["ADMIN"]} module="precios">
               <PricesPage />
+            </RoleRoute>
+          } />
+
+          {/* Notas de Compra — solo ADMIN */}
+          <Route path="notas-compra" element={
+            <RoleRoute allowedRoles={["ADMIN"]} module="notas-compra">
+              <PurchaseNotesPage />
             </RoleRoute>
           } />
 

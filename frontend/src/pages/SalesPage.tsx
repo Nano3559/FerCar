@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
 import ColumnManager from "../components/ui/ColumnManager";
+import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -144,22 +145,25 @@ export default function SalesPage() {
   const [showConfirmed, setShowConfirmed] = useState(false);
   const [lastSale, setLastSale] = useState<SaleRecord | null>(null);
 
+  const paymentPanelRef = useDialogBehavior(showPayment, () => setShowPayment(false));
+  const confirmedPanelRef = useDialogBehavior(showConfirmed && lastSale !== null, () => { setShowConfirmed(false); setLastSale(null); });
+
   const formatBs = (v: number) =>
     `Bs. ${v.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const renderCartCell = (c: CartItem, column: string) => {
-    if (column === "Producto") return <td key={column} className="px-5 py-3"><p className="text-white font-medium text-sm">{c.name}</p><p className="text-xs text-gray-500">{c.brand} · {c.itemCode}</p></td>;
+    if (column === "Producto") return <td key={column} className="px-5 py-3"><p className="text-foreground font-medium text-sm">{c.name}</p><p className="text-xs text-gray-500">{c.brand} · {c.itemCode}</p></td>;
     if (column === "Precio") return (
       <td key={column} className="px-4 py-3 text-right">
         {c.price2 > 0 && c.price2 !== c.price1 ? (
           <div className="flex items-center justify-end gap-1">
             <button
               onClick={() => changePriceTier(c.productId, 1, String(c.price1), String(c.price2))}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-all ${c.priceTier === 1 ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white"}`}
+              className={`px-2 py-1 rounded-lg text-xs font-medium transition-all ${c.priceTier === 1 ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground"}`}
             >Mayorista</button>
             <button
               onClick={() => changePriceTier(c.productId, 2, String(c.price1), String(c.price2))}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-all ${c.priceTier === 2 ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white"}`}
+              className={`px-2 py-1 rounded-lg text-xs font-medium transition-all ${c.priceTier === 2 ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground"}`}
             >Minorista</button>
           </div>
         ) : (
@@ -167,7 +171,7 @@ export default function SalesPage() {
         )}
       </td>
     );
-    if (column === "Cantidad") return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1.5"><button onClick={() => updateQuantity(c.productId, c.quantity - 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Minus size={14} /></button><span className="w-10 text-center text-white text-sm font-medium">{c.quantity}</span><button onClick={() => updateQuantity(c.productId, c.quantity + 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Plus size={14} /></button></div><p className="text-center text-xs text-gray-600 mt-0.5">disp: {c.availableStock}</p></td>;
+    if (column === "Cantidad") return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1.5"><button onClick={() => updateQuantity(c.productId, c.quantity - 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Minus size={14} /></button><span className="w-10 text-center text-foreground text-sm font-medium">{c.quantity}</span><button onClick={() => updateQuantity(c.productId, c.quantity + 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Plus size={14} /></button></div><p className="text-center text-xs text-gray-600 mt-0.5">disp: {c.availableStock}</p></td>;
     if (column === "Subtotal") return <td key={column} className="px-4 py-3 text-right text-green-400 font-medium">{formatBs(c.unitPrice * c.quantity)}</td>;
     if (column === "Eliminar") return <td key={column} className="px-5 py-3 text-center"><button onClick={() => removeItem(c.productId)} className="p-1.5 rounded-lg text-gray-500 hover:text-red-400"><Trash2 size={14} /></button></td>;
     return null;
@@ -415,7 +419,7 @@ export default function SalesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Ventas</h1>
+          <h1 className="text-2xl font-bold text-foreground">Ventas</h1>
           <p className="text-gray-400 text-sm mt-1">
             {showHistory ? `${histTotal} ventas registradas` : `${cart.length} producto(s) en carrito`}
           </p>
@@ -425,7 +429,7 @@ export default function SalesPage() {
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${
             showHistory
               ? "bg-primary-600/10 border-primary-600/20 text-primary-400"
-              : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-white"
+              : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-foreground"
           }`}
         >
           {showHistory ? <><ShoppingCart size={16} /> Nueva Venta</> : <><Clock size={16} /> Historial</>}
@@ -444,7 +448,7 @@ export default function SalesPage() {
             {isAdmin ? (
               <div className="relative flex-1 sm:max-w-xs">
                 <select value={selectedLocationId} onChange={(e) => setSelectedLocationId(Number(e.target.value) || "")}
-                  className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                  className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                   <option value="">Seleccionar tienda</option>
                   {locations.filter((l) => l.type === "TIENDA").map((l) => (
                     <option key={l.id} value={l.id}>{l.name}</option>
@@ -453,7 +457,7 @@ export default function SalesPage() {
                 <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
               </div>
             ) : (
-              <span className="text-white text-sm font-medium">
+              <span className="text-foreground text-sm font-medium">
                 {locations.find((l) => l.id === selectedLocationId)?.name || "Cargando..."}
               </span>
             )}
@@ -467,7 +471,7 @@ export default function SalesPage() {
             </div>
             <div className="relative flex-1 sm:max-w-xs">
               <select value={selectedSeller} onChange={(e) => setSelectedSeller(e.target.value)}
-                className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                 <option value="">Seleccionar vendedor</option>
                 <option value="Vendedor 1">Vendedor 1</option>
                 <option value="Vendedor 2">Vendedor 2</option>
@@ -486,11 +490,12 @@ export default function SalesPage() {
                   ref={searchInputRef}
                   type="text" value={search} onChange={(e) => handleSearchChange(e.target.value)}
                   placeholder="Buscar producto por código, nombre, marca, modelo..."
-                  className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
+                  aria-label="Buscar producto"
+                  className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
                 />
                 {search && (
                   <button onClick={() => { setSearch(""); handleSearchChange(""); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-foreground">
                     <X size={16} />
                   </button>
                 )}
@@ -500,11 +505,12 @@ export default function SalesPage() {
                 <input
                   type="text" value={oemSearch} onChange={(e) => handleOemChange(e.target.value)}
                   placeholder="Buscar por código OEM"
-                  className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
+                  aria-label="Buscar por código OEM"
+                  className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
                 />
                 {oemSearch && (
                   <button onClick={() => { setOemSearch(""); handleOemChange(""); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-foreground">
                     <X size={16} />
                   </button>
                 )}
@@ -516,7 +522,7 @@ export default function SalesPage() {
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                   <span className="text-xs text-gray-500 uppercase tracking-wider">Filtros:</span>
                   <button onClick={applyFilters}
-                    className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-medium transition-all">
+                    className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-medium transition-all">
                     Aplicar filtros
                   </button>
                   <button onClick={clearAllFilters}
@@ -525,16 +531,16 @@ export default function SalesPage() {
                   </button>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                  <input value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)} placeholder="Marca"
-                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                  <input value={filterManufacturer} onChange={(e) => setFilterManufacturer(e.target.value)} placeholder="Fabricante"
-                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                  <input value={filterModel} onChange={(e) => setFilterModel(e.target.value)} placeholder="Modelo"
-                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                  <input value={filterYear} onChange={(e) => setFilterYear(e.target.value)} placeholder="Año / rango"
-                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  <input value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)} placeholder="Marca" aria-label="Filtrar por marca"
+                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  <input value={filterManufacturer} onChange={(e) => setFilterManufacturer(e.target.value)} placeholder="Fabricante" aria-label="Filtrar por fabricante"
+                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  <input value={filterModel} onChange={(e) => setFilterModel(e.target.value)} placeholder="Modelo" aria-label="Filtrar por modelo"
+                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  <input value={filterYear} onChange={(e) => setFilterYear(e.target.value)} placeholder="Año / rango" aria-label="Filtrar por año o rango"
+                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
                   <select value={filterCategoryId} onChange={(e) => setFilterCategoryId(e.target.value)}
-                    className="w-full appearance-none px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                    className="w-full appearance-none px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                     <option value="">Categoría</option>
                     {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
@@ -552,7 +558,7 @@ export default function SalesPage() {
                       className="w-full flex items-center justify-between px-4 py-3 bg-dark-900/50 border border-dark-700/30 rounded-xl hover:border-primary-500/30 hover:bg-dark-800/50 transition-all"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-white font-medium truncate">{p.name}</p>
+                        <p className="text-sm text-foreground font-medium truncate">{p.name}</p>
                         <p className="text-xs text-gray-500 truncate">{p.brand} · {p.model} · {p.itemCode}</p>
                         <p className={`text-xs font-medium mt-0.5 ${p.stock <= 3 ? "text-yellow-400" : "text-gray-500"}`}>
                           Stock: {p.stock}
@@ -563,7 +569,7 @@ export default function SalesPage() {
                           <div className="flex flex-col items-end gap-1">
                             <button
                               onClick={() => addToCart(p, 1)}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white text-xs font-medium transition-all"
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium transition-all"
                             >
                               <Plus size={12} /> Mayorista: {formatBs(Number(p.price1))}
                             </button>
@@ -577,7 +583,7 @@ export default function SalesPage() {
                         ) : (
                           <button
                             onClick={() => addToCart(p, 1)}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white text-xs font-medium transition-all"
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium transition-all"
                           >
                             <Plus size={12} /> {formatBs(Number(p.price1))}
                           </button>
@@ -641,7 +647,7 @@ export default function SalesPage() {
                     <div key={c.productId} className="p-4 space-y-2">
                       <div className="flex items-start justify-between">
                         <div className="min-w-0 flex-1">
-                          <p className="text-white font-medium text-sm truncate">{c.name}</p>
+                          <p className="text-foreground font-medium text-sm truncate">{c.name}</p>
                           <p className="text-xs text-gray-500">{c.brand} · {c.itemCode}</p>
                         </div>
                         <button onClick={() => removeItem(c.productId)}
@@ -652,12 +658,12 @@ export default function SalesPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <button onClick={() => updateQuantity(c.productId, c.quantity - 1)}
-                            className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 active:text-white transition-all">
+                            className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 active:text-foreground transition-all">
                             <Minus size={14} />
                           </button>
-                          <span className="w-10 text-center text-white text-sm font-medium">{c.quantity}</span>
+                          <span className="w-10 text-center text-foreground text-sm font-medium">{c.quantity}</span>
                           <button onClick={() => updateQuantity(c.productId, c.quantity + 1)}
-                            className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 active:text-white transition-all">
+                            className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 active:text-foreground transition-all">
                             <Plus size={14} />
                           </button>
                           <span className="text-xs text-gray-600 ml-1">máx: {c.availableStock}</span>
@@ -695,18 +701,18 @@ export default function SalesPage() {
               <div className="flex-1">
                 <label className="block text-xs text-gray-500 mb-1">Desde</label>
                 <input type="date" value={histDateFrom} onChange={(e) => setHistDateFrom(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
               </div>
               <div className="flex-1">
                 <label className="block text-xs text-gray-500 mb-1">Hasta</label>
                 <input type="date" value={histDateTo} onChange={(e) => setHistDateTo(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
               </div>
               <div className="flex-1">
                 <label className="block text-xs text-gray-500 mb-1">Vendedor</label>
                 <div className="relative">
                   <select value={histSeller} onChange={(e) => setHistSeller(e.target.value)}
-                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                     <option value="">Todos</option>
                     <option value="Vendedor 1">Vendedor 1</option>
                     <option value="Vendedor 2">Vendedor 2</option>
@@ -717,7 +723,7 @@ export default function SalesPage() {
               </div>
               {(histDateFrom || histDateTo || histSeller) && (
                 <button onClick={() => { setHistDateFrom(""); setHistDateTo(""); setHistSeller(""); }}
-                  className="px-4 py-2.5 text-sm text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl border border-dark-600/50 transition-all">
+                  className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl border border-dark-600/50 transition-all">
                   Limpiar
                 </button>
               )}
@@ -793,7 +799,7 @@ export default function SalesPage() {
                             {isHistCol("Tipo") && (
                               <td className="px-4 py-3 text-center">
                                 <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                                  s.type === "MAYOR" ? "bg-blue-500/10 text-blue-400" : "bg-green-500/10 text-green-400"
+                                  s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : "bg-emerald-500/10 text-emerald-400"
                                 }`}>
                                   {s.type === "MAYOR" ? "Mayor" : "Normal"}
                                 </span>
@@ -839,7 +845,7 @@ export default function SalesPage() {
                                         ) : s.items.map((item) => (
                                           <tr key={item.id} className="border-b border-dark-700/20">
                                             <td className="px-2 py-1.5">
-                                              <span className="text-white">{item.product?.name || "Producto"}</span>
+                                              <span className="text-foreground">{item.product?.name || "Producto"}</span>
                                               {item.product?.brand && <span className="text-gray-500 ml-2">{item.product.brand}</span>}
                                             </td>
                                             <td className="px-2 py-1.5 text-gray-400 font-mono">{item.product?.itemCode || "—"}</td>
@@ -866,7 +872,7 @@ export default function SalesPage() {
                     <p className="text-gray-400 text-sm">Página {histPage} de {histPages}</p>
                     <div className="flex items-center gap-2">
                       <button onClick={() => setHistPage((p) => Math.max(1, p - 1))} disabled={histPage === 1}
-                        className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white disabled:opacity-30 transition-all">
+                        className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30 transition-all">
                         <ChevronLeft size={16} />
                       </button>
                       {Array.from({ length: Math.min(5, histPages) }, (_, i) => {
@@ -876,14 +882,14 @@ export default function SalesPage() {
                         return (
                           <button key={pg} onClick={() => setHistPage(pg)}
                             className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
-                              pg === histPage ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white"
+                              pg === histPage ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground"
                             }`}>
                             {pg}
                           </button>
                         );
                       })}
                       <button onClick={() => setHistPage((p) => Math.min(histPages, p + 1))} disabled={histPage === histPages}
-                        className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white disabled:opacity-30 transition-all">
+                        className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30 transition-all">
                         <ChevronRight size={16} />
                       </button>
                     </div>
@@ -898,11 +904,11 @@ export default function SalesPage() {
       {/* ============ PAYMENT MODAL ============ */}
       {showPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div ref={paymentPanelRef} role="dialog" aria-modal="true" aria-label="Registrar pago" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white">Registrar Pago</h2>
-              <button onClick={() => !processing && setShowPayment(false)}
-                className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+              <h2 className="text-lg font-bold text-foreground">Registrar Pago</h2>
+              <button onClick={() => !processing && setShowPayment(false)} aria-label="Cerrar"
+                className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>
@@ -944,7 +950,7 @@ export default function SalesPage() {
                       <div className="relative flex-1">
                         <select value={p.method}
                           onChange={(e) => updatePayment(i, "method", e.target.value)}
-                          className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                          className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                           <option value="EFECTIVO">Efectivo</option>
                           <option value="QR">QR</option>
                           <option value="TRANSFERENCIA">Transferencia</option>
@@ -954,10 +960,10 @@ export default function SalesPage() {
                       </div>
                       <input type="number" value={p.amount}
                         onChange={(e) => updatePayment(i, "amount", e.target.value)}
-                        placeholder="Monto" min="0" step="0.01"
-                        className="w-32 px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                        placeholder="Monto" min="0" step="0.01" aria-label={`Monto del pago ${i + 1}`}
+                        className="w-32 px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
                       {payments.length > 1 && (
-                        <button onClick={() => removePayment(i)}
+                        <button onClick={() => removePayment(i)} aria-label="Quitar método de pago"
                           className="p-2 text-gray-500 hover:text-red-400 transition-all">
                           <X size={14} />
                         </button>
@@ -969,7 +975,7 @@ export default function SalesPage() {
 
               {/* Facturación */}
               <div className="border-t border-dark-700/50 pt-5">
-                <button onClick={() => setRequiereFactura(!requiereFactura)}
+                <button onClick={() => setRequiereFactura(!requiereFactura)} aria-expanded={requiereFactura}
                   className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
                     requiereFactura
                       ? "bg-primary-600/10 border-primary-600/30 text-primary-300"
@@ -985,26 +991,26 @@ export default function SalesPage() {
                 {requiereFactura && (
                   <div className="mt-3 space-y-3 pl-1">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Nombre / Razón Social *</label>
-                      <input type="text" value={customerData.name}
+                      <label htmlFor="venta-nombre" className="block text-xs text-gray-500 mb-1">Nombre / Razón Social *</label>
+                      <input id="venta-nombre" type="text" value={customerData.name}
                         onChange={(e) => setCustomerData((prev) => ({ ...prev, name: e.target.value }))}
                         placeholder="Nombre del cliente"
-                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">CI / NIT</label>
-                        <input type="text" value={customerData.nit}
+                        <label htmlFor="venta-nit" className="block text-xs text-gray-500 mb-1">CI / NIT</label>
+                        <input id="venta-nit" type="text" value={customerData.nit}
                           onChange={(e) => setCustomerData((prev) => ({ ...prev, nit: e.target.value }))}
                           placeholder="CI o NIT"
-                          className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                          className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Celular</label>
-                        <input type="text" value={customerData.phone}
+                        <label htmlFor="venta-cel" className="block text-xs text-gray-500 mb-1">Celular</label>
+                        <input id="venta-cel" type="text" value={customerData.phone}
                           onChange={(e) => setCustomerData((prev) => ({ ...prev, phone: e.target.value }))}
                           placeholder="Celular"
-                          className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                          className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                       </div>
                     </div>
                   </div>
@@ -1014,13 +1020,13 @@ export default function SalesPage() {
 
             <div className="flex items-center justify-end gap-3 p-5 border-t border-dark-700/50">
               <button onClick={() => setShowPayment(false)} disabled={processing}
-                className="px-4 py-2.5 text-sm text-gray-400 hover:text-white disabled:opacity-50">
+                className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground disabled:opacity-50">
                 Cancelar
               </button>
               <button onClick={confirmSale} disabled={processing || Math.abs(totalPaid - cartTotal) > 0.01}
                 className={`px-6 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
                   Math.abs(totalPaid - cartTotal) <= 0.01
-                    ? "bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/20"
+                    ? "bg-primary-600 hover:bg-primary-700 text-white shadow-lg shadow-primary-600/20"
                     : "bg-dark-700 text-gray-500"
                 }`}>
                 {processing ? <><RefreshCw size={16} className="animate-spin" /> Procesando...</> : <><Check size={16} /> Confirmar Venta</>}
@@ -1033,11 +1039,11 @@ export default function SalesPage() {
       {/* ============ CONFIRMATION MODAL ============ */}
       {showConfirmed && lastSale && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div id="sale-confirm-modal" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md p-6 text-center">
+          <div ref={confirmedPanelRef} id="sale-confirm-modal" role="dialog" aria-modal="true" aria-label="Venta registrada" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md p-6 text-center">
             <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
               <Check size={32} className="text-green-400" />
             </div>
-            <h3 className="text-xl font-bold text-white mb-1">¡Venta Registrada!</h3>
+            <h3 className="text-xl font-bold text-foreground mb-1">¡Venta Registrada!</h3>
             <p className="text-gray-400 text-sm mb-2">
               Venta #{lastSale.id} · {new Date(lastSale.saleDate).toLocaleString("es-BO")}
               {lastSale.seller && <span className="ml-2 text-primary-400">· {lastSale.seller}</span>}
@@ -1047,7 +1053,7 @@ export default function SalesPage() {
             {lastSale.customer && (
               <div className="bg-dark-900/50 border border-dark-700/30 rounded-xl p-3 mb-4 text-left">
                 <p className="text-xs text-gray-500 mb-1">Cliente (Factura)</p>
-                <p className="text-sm text-white">{lastSale.customer.name}</p>
+                <p className="text-sm text-foreground">{lastSale.customer.name}</p>
                 {lastSale.customer.nit && <p className="text-xs text-gray-400">NIT: {lastSale.customer.nit}</p>}
               </div>
             )}
@@ -1078,11 +1084,11 @@ export default function SalesPage() {
 
             <div className="flex gap-3">
               <button onClick={() => { setShowConfirmed(false); setLastSale(null); }}
-                className="flex-1 bg-dark-700 hover:bg-dark-600 text-white py-3 rounded-xl text-sm font-medium transition-all">
+                className="flex-1 bg-dark-700 hover:bg-dark-600 text-foreground py-3 rounded-xl text-sm font-medium transition-all">
                 Cerrar
               </button>
               <button onClick={downloadSalePDF}
-                className="flex-1 bg-primary-600 hover:bg-primary-500 text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
+                className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
                 <FileText size={16} /> Descargar PDF
               </button>
             </div>

@@ -126,6 +126,13 @@ router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) =
       if (roleRecord) finalRoleId = roleRecord.id;
     }
 
+    if (req.user?.userId === id && finalRoleId && Number(finalRoleId) !== existing.roleId) {
+      const targetRole = await prisma.roleModel.findUnique({ where: { id: Number(finalRoleId) } });
+      if (targetRole && targetRole.name !== "ADMIN") {
+        return res.status(400).json({ message: "No puedes cambiar tu propio rol" });
+      }
+    }
+
     const updateData: any = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;

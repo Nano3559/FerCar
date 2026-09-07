@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
+import { useDialogBehavior } from "../components/ui/useDialog";
 
 interface Sale {
   id: number; saleDate: string; total: number; type: string;
@@ -57,6 +58,8 @@ export default function ReturnsPage() {
   const [retPages, setRetPages] = useState(1);
   const [retTotal, setRetTotal] = useState(0);
   const [showInfo, setShowInfo] = useState(false);
+
+  const infoPanelRef = useDialogBehavior(showInfo, () => setShowInfo(false));
 
   const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
@@ -172,14 +175,14 @@ export default function ReturnsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Devoluciones</h1>
+          <h1 className="text-2xl font-bold text-foreground">Devoluciones</h1>
           <p className="text-gray-400 text-sm mt-1">{retTotal} devoluciones registradas</p>
         </div>
         <div className="flex items-center gap-3 self-start">
           <button onClick={() => setShowInfo(true)} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-blue-400 hover:border-blue-500/30 transition-all" title="¿Cómo funciona?">
             <Info size={18} />
           </button>
-          <button onClick={fetchReturns} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-white hover:border-primary-600/50 transition-all" title="Actualizar">
+          <button onClick={fetchReturns} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all" title="Actualizar">
             <RefreshCw size={18} />
           </button>
         </div>
@@ -207,7 +210,7 @@ export default function ReturnsPage() {
                   className="w-full flex items-center justify-between px-3 py-2.5 bg-dark-900/50 border border-dark-700/30 rounded-xl hover:border-primary-500/30 hover:bg-dark-800/50 transition-all text-left"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-white font-medium">Venta #{rs.id}</p>
+                    <p className="text-sm text-foreground font-medium">Venta #{rs.id}</p>
                     <p className="text-xs text-gray-500">
                       {new Date(rs.saleDate).toLocaleDateString("es-BO")} · {rs.location.name}
                       {rs.seller && <span className="ml-1 text-primary-400">· {rs.seller}</span>}
@@ -234,7 +237,8 @@ export default function ReturnsPage() {
               type="number" value={searchId} onChange={(e) => setSearchId(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && searchSaleById()}
               placeholder="ID de la venta..."
-              className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
+              aria-label="Buscar venta por ID"
+              className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-500 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
             />
           </div>
           <button onClick={() => searchSaleById()} disabled={searching}
@@ -250,11 +254,11 @@ export default function ReturnsPage() {
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-white font-semibold">Venta #{sale.id}</h3>
+              <h3 className="text-foreground font-semibold">Venta #{sale.id}</h3>
               <p className="text-gray-400 text-sm">{new Date(sale.saleDate).toLocaleDateString("es-BO")} · {sale.location.name} · {sale.type}</p>
             </div>
             <div className="text-right">
-              <p className="text-white font-semibold">{formatBs(Number(sale.total))}</p>
+              <p className="text-foreground font-semibold">{formatBs(Number(sale.total))}</p>
               {sale.customer && <p className="text-gray-400 text-xs">{sale.customer.name}</p>}
             </div>
           </div>
@@ -268,7 +272,7 @@ export default function ReturnsPage() {
                 <div key={item.id} className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${selectedItem === item.productId ? "bg-primary-600/10 border-primary-600/30" : "bg-dark-900/50 border-dark-700/30 hover:border-dark-600"}`}
                   onClick={() => maxQty > 0 && selectItem(item)}>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white font-medium truncate">{item.product.name}</p>
+                    <p className="text-sm text-foreground font-medium truncate">{item.product.name}</p>
                     <p className="text-xs text-gray-500">{item.product.itemCode} · {item.product.brand} · {item.quantity} vendidos</p>
                   </div>
                   <div className="text-right ml-3">
@@ -289,17 +293,17 @@ export default function ReturnsPage() {
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Cantidad *</label>
                   <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} min="1"
-                    className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                    className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Monto (Bs.) *</label>
                   <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min="0" step="0.01"
-                    className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                    className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
                 </div>
                 <div className="relative">
                   <label className="block text-xs text-gray-400 mb-1">Método *</label>
                   <select value={method} onChange={(e) => setMethod(e.target.value)}
-                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                     <option value="EFECTIVO">Efectivo</option>
                     <option value="QR">QR</option>
                     <option value="TRANSFERENCIA">Transferencia</option>
@@ -317,7 +321,7 @@ export default function ReturnsPage() {
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Motivo *</label>
                 <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder="Describe el motivo de la devolución..."
-                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600 resize-none" />
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600 resize-none" />
               </div>
             </div>
           )}
@@ -327,10 +331,10 @@ export default function ReturnsPage() {
       {/* Historial de devoluciones */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
         <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-          <h3 className="text-white font-semibold">Historial de Devoluciones</h3>
+          <h3 className="text-foreground font-semibold">Historial de Devoluciones</h3>
           <div className="relative">
             <select value={retSeller} onChange={(e) => setRetSeller(e.target.value)}
-              className="appearance-none px-3 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-white text-xs focus:ring-2 focus:ring-primary-500 outline-none pr-6">
+              className="appearance-none px-3 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-xs focus:ring-2 focus:ring-primary-500 outline-none pr-6">
               <option value="">Todos los vendedores</option>
               <option value="Vendedor 1">Vendedor 1</option>
               <option value="Vendedor 2">Vendedor 2</option>
@@ -369,7 +373,7 @@ export default function ReturnsPage() {
                   <tr key={r.id} className="border-b border-dark-700/30 last:border-0 hover:bg-dark-900/30 transition-colors">
                     <td className="px-4 py-3 text-gray-400">{r.id}</td>
                     <td className="px-4 py-3 text-gray-300">{new Date(r.date).toLocaleDateString("es-BO")}</td>
-                    <td className="px-4 py-3 text-white">{r.product.name}</td>
+                    <td className="px-4 py-3 text-foreground">{r.product.name}</td>
                     <td className="px-4 py-3 text-gray-400">#{r.saleId}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{r.sale?.seller || "—"}</td>
                     <td className="px-4 py-3 text-center text-yellow-400 font-medium">{r.quantity}</td>
@@ -388,7 +392,7 @@ export default function ReturnsPage() {
             <p className="text-gray-400 text-sm">Página {retPage} de {retPages}</p>
             <div className="flex items-center gap-2">
               <button onClick={() => setRetPage((p) => Math.max(1, p - 1))} disabled={retPage === 1}
-                className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white disabled:opacity-30 transition-all">
+                className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30 transition-all">
                 <ChevronLeft size={16} />
               </button>
               {Array.from({ length: Math.min(5, retPages) }, (_, i) => {
@@ -397,13 +401,13 @@ export default function ReturnsPage() {
                 if (p > retPages) return null;
                 return (
                   <button key={p} onClick={() => setRetPage(p)}
-                    className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${p === retPage ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white"}`}>
+                    className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${p === retPage ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground"}`}>
                     {p}
                   </button>
                 );
               })}
               <button onClick={() => setRetPage((p) => Math.min(retPages, p + 1))} disabled={retPage === retPages}
-                className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-white disabled:opacity-30 transition-all">
+                className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30 transition-all">
                 <ChevronRight size={16} />
               </button>
             </div>
@@ -414,18 +418,18 @@ export default function ReturnsPage() {
       {/* Modal: Info */}
       {showInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
+          <div ref={infoPanelRef} role="dialog" aria-modal="true" aria-label="Cómo funciona" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2"><Info size={20} className="text-blue-400" /> ¿Cómo funciona?</h2>
-              <button onClick={() => setShowInfo(false)} className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all"><X size={18} /></button>
+              <h2 className="text-lg font-bold text-foreground flex items-center gap-2"><Info size={20} className="text-blue-400" /> ¿Cómo funciona?</h2>
+              <button onClick={() => setShowInfo(false)} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-4 text-sm text-gray-300">
               <div>
-                <h4 className="text-white font-semibold mb-1">¿Para qué sirve?</h4>
+                <h4 className="text-foreground font-semibold mb-1">¿Para qué sirve?</h4>
                 <p>Cuando un cliente devuelve un producto, desde aquí se registra para que el stock se actualice automáticamente.</p>
               </div>
               <div>
-                <h4 className="text-white font-semibold mb-1">¿Cómo registrar una devolución?</h4>
+                <h4 className="text-foreground font-semibold mb-1">¿Cómo registrar una devolución?</h4>
                 <ol className="list-decimal list-inside space-y-1 ml-1">
                   <li>Busca la venta original por su <strong>número de ID</strong>.</li>
                   <li>Selecciona el producto que el cliente devuelve.</li>
@@ -435,11 +439,11 @@ export default function ReturnsPage() {
                 </ol>
               </div>
               <div>
-                <h4 className="text-white font-semibold mb-1">¿Qué pasa después?</h4>
+                <h4 className="text-foreground font-semibold mb-1">¿Qué pasa después?</h4>
                 <p>El producto vuelve al stock de la tienda automáticamente. En el historial de abajo puedes ver todas las devoluciones registradas.</p>
               </div>
               <div>
-                <h4 className="text-white font-semibold mb-1">¿Puedo devolver todo?</h4>
+                <h4 className="text-foreground font-semibold mb-1">¿Puedo devolver todo?</h4>
                 <p>Solo se puede devolver lo que aún no fue devuelto. Si un producto ya fue devuelto completamente, aparece marcado y no se puede seleccionar de nuevo.</p>
               </div>
             </div>

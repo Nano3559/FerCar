@@ -97,15 +97,15 @@ function ProductCardPlaceholder({ product }: { product: FeaturedProduct }) {
       <div className="p-4">
         {product.category && (
           <span
-            className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-md border mb-2 uppercase tracking-wider ${catClass}`}
+            className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-md border mb-2 uppercase tracking-wider ${catClass}`}
           >
             {product.category}
           </span>
         )}
-        <h3 className="text-sm font-semibold text-white mb-1 leading-snug line-clamp-2">
+        <h3 className="text-sm font-semibold text-foreground mb-1 leading-snug line-clamp-2">
           {product.name}
         </h3>
-        <p className="text-[11px] text-gray-500 mb-2">
+        <p className="text-xs text-gray-500 mb-2">
           {product.brand} {product.model}
         </p>
         <div className="flex items-center justify-between">
@@ -153,7 +153,7 @@ export default function LandingPage() {
               </span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-[1.1] tracking-tight mb-6">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-foreground leading-[1.1] tracking-tight mb-6">
               Portal de Importadoras de
               <br />
               <span className="text-gradient">Autopartes</span>
@@ -171,7 +171,7 @@ export default function LandingPage() {
             <div className="flex flex-wrap items-center gap-4">
               <button
                 onClick={() => navigate("/productos")}
-                className="bg-primary-600 hover:bg-primary-500 text-white px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:shadow-xl hover:shadow-primary-600/25 flex items-center gap-2.5"
+                className="bg-primary-600 hover:bg-primary-700 text-white px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:shadow-xl hover:shadow-primary-600/25 flex items-center gap-2.5"
               >
                 Ver productos
                 <ArrowRight size={16} />
@@ -197,10 +197,10 @@ export default function LandingPage() {
                 key={s.l}
                 className="bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-4 text-center"
               >
-                <p className="text-xl sm:text-2xl font-bold text-white">
+                <p className="text-xl sm:text-2xl font-bold text-foreground">
                   {s.n}
                 </p>
-                <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-1">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mt-1">
                   {s.l}
                 </p>
               </div>
@@ -213,7 +213,7 @@ export default function LandingPage() {
       <section className="py-20 sm:py-24 bg-dark-950">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
               Por qu&eacute; elegirnos?
             </h2>
             <p className="text-gray-400 max-w-xl mx-auto">
@@ -229,7 +229,7 @@ export default function LandingPage() {
                 <div className="w-12 h-12 bg-primary-600/10 rounded-xl flex items-center justify-center mb-4 mx-auto group-hover:bg-primary-600/15 transition-colors">
                   <b.icon size={24} className="text-primary-400" />
                 </div>
-                <h3 className="text-base font-semibold text-white mb-2">
+                <h3 className="text-base font-semibold text-foreground mb-2">
                   {b.title}
                 </h3>
                 <p className="text-gray-400 text-sm leading-relaxed">
@@ -246,7 +246,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-10">
             <div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+              <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-2">
                 Productos destacados
               </h2>
               <p className="text-gray-400 text-sm">
@@ -290,7 +290,7 @@ export default function LandingPage() {
       {/* ENCUENTRA LO QUE NECESITAS */}
       <section className="py-20 sm:py-24 bg-dark-900/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+          <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
             Encuentra la pieza que necesitas
           </h2>
           <p className="text-gray-400 max-w-xl mx-auto mb-12">
@@ -321,7 +321,7 @@ export default function LandingPage() {
 
           <button
             onClick={() => navigate("/productos")}
-            className="bg-primary-600 hover:bg-primary-500 text-white px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:shadow-xl hover:shadow-primary-600/25 flex items-center gap-2.5 mx-auto"
+            className="bg-primary-600 hover:bg-primary-700 text-white px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:shadow-xl hover:shadow-primary-600/25 flex items-center gap-2.5 mx-auto"
           >
             <Search size={16} />
             Buscar productos
@@ -337,7 +337,7 @@ export default function LandingPage() {
               <div className="w-12 h-12 bg-primary-600/10 rounded-xl flex items-center justify-center mb-5">
                 <Users size={24} className="text-primary-400" />
               </div>
-              <h3 className="text-xl font-bold text-white mb-3">
+              <h3 className="text-xl font-bold text-foreground mb-3">
                 Venta por mayor
               </h3>
               <p className="text-gray-400 text-sm leading-relaxed">
@@ -349,7 +349,7 @@ export default function LandingPage() {
               <div className="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-5">
                 <Store size={24} className="text-accent" />
               </div>
-              <h3 className="text-xl font-bold text-white mb-3">
+              <h3 className="text-xl font-bold text-foreground mb-3">
                 Venta por menor
               </h3>
               <p className="text-gray-400 text-sm leading-relaxed">
@@ -365,7 +365,7 @@ export default function LandingPage() {
       <section className="py-20 sm:py-24 bg-dark-900/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="max-w-2xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
               &iquest;No encuentras el repuesto que necesitas?
             </h2>
             <p className="text-gray-400 mb-8 leading-relaxed">
@@ -375,7 +375,7 @@ export default function LandingPage() {
             </p>
             <button
               onClick={() => navigate("/contacto")}
-              className="bg-primary-600 hover:bg-primary-500 text-white px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:shadow-xl hover:shadow-primary-600/25 inline-flex items-center gap-2.5"
+              className="bg-primary-600 hover:bg-primary-700 text-white px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:shadow-xl hover:shadow-primary-600/25 inline-flex items-center gap-2.5"
             >
               Contactarnos
               <ArrowRight size={16} />

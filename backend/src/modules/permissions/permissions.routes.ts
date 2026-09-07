@@ -11,6 +11,7 @@ router.use(authenticate);
 const AVAILABLE_MODULES = [
   "inventario", "ventas", "ventas-mayor", "devoluciones",
   "solicitudes", "movimientos", "costos", "precios", "reportes", "configuracion",
+  "despachos", "notas-compra",
 ];
 
 const DEFAULT_COLUMNS: Record<string, string[]> = {
@@ -44,6 +45,102 @@ router.get("/roles", async (_req: AuthRequest, res: Response) => {
 // GET /roles/modules — Módulos disponibles
 router.get("/roles/modules", (_req: AuthRequest, res: Response) => {
   res.json({ modules: AVAILABLE_MODULES, defaultColumns: DEFAULT_COLUMNS });
+});
+
+// POST /roles — Crear rol (solo ADMIN)
+router.post("/roles", authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, permissions, columnConfig } = req.body;
+    const roleName = String(name || "").trim().toUpperCase();
+    if (!roleName) {
+      return res.status(400).json({ message: "El nombre del rol es obligatorio" });
+    }
+    if (roleName === "ADMIN") {
+      return res.status(400).json({ message: "El rol ADMIN es reservado" });
+    }
+
+    const existing = await prisma.roleModel.findUnique({ where: { name: roleName } });
+    if (existing) {
+      return res.status(400).json({ message: "Ya existe un rol con ese nombre" });
+    }
+
+    const perms = Array.isArray(permissions)
+      ? permissions.filter((p: string) => AVAILABLE_MODULES.includes(p))
+      : [];
+
+    const created = await prisma.roleModel.create({
+      data: {
+        name: roleName,
+        permissions: perms,
+        columnConfig: columnConfig && typeof columnConfig === "object" ? columnConfig : {},
+      },
+    });
+
+    if (req.user) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.userId,
+          action: "CREATE_ROLE",
+          targetType: "ROLE",
+          targetId: created.id,
+          newValue: { name: roleName, permissions: perms },
+        },
+      });
+    }
+
+    res.status(201).json({
+      id: created.id,
+      name: created.name,
+      permissions: created.permissions,
+      columnConfig: created.columnConfig || {},
+      userCount: 0,
+    });
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      return res.status(400).json({ message: "Ya existe un rol con ese nombre" });
+    }
+    console.error("Error al crear rol:", error);
+    res.status(500).json({ message: error.message || "Error interno del servidor" });
+  }
+});
+
+// DELETE /roles/:id — Eliminar rol (solo ADMIN, sin usuarios asignados)
+router.delete("/roles/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const roleId = Number(req.params.id);
+    if (isNaN(roleId)) return res.status(400).json({ message: "ID inválido" });
+
+    const role = await prisma.roleModel.findUnique({
+      where: { id: roleId },
+      include: { _count: { select: { users: true } } },
+    });
+    if (!role) return res.status(404).json({ message: "Rol no encontrado" });
+    if (role.name === "ADMIN") {
+      return res.status(400).json({ message: "El rol ADMIN no se puede eliminar" });
+    }
+    if (role._count.users > 0) {
+      return res.status(400).json({ message: "No se puede eliminar: tiene usuarios asignados" });
+    }
+
+    await prisma.roleModel.delete({ where: { id: roleId } });
+
+    if (req.user) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.userId,
+          action: "DELETE_ROLE",
+          targetType: "ROLE",
+          targetId: roleId,
+          oldValue: { name: role.name },
+        },
+      });
+    }
+
+    res.json({ message: "Rol eliminado" });
+  } catch (error) {
+    console.error("Error al eliminar rol:", error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
 });
 
 // PUT /roles/:id/permissions — Actualizar permisos de módulos

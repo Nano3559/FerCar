@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { User, Bell, Menu, CheckCheck, X } from "lucide-react";
+import { User, Bell, Menu, CheckCheck, X, Sun, Moon, Monitor } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
+import { useThemeStore } from "../../stores/themeStore";
+import { useDialogBehavior } from "../ui/useDialog";
 import api from "../../services/api";
 
 interface Notification {
@@ -15,10 +17,12 @@ interface HeaderProps {
 
 export default function Header({ onMenuClick }: HeaderProps) {
   const { user } = useAuthStore();
+  const { mode, setMode } = useThemeStore();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
+  const notifRef = useDialogBehavior(showNotifs, () => setShowNotifs(false));
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -32,8 +36,17 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchNotifications();
+    }, 30000);
+    const onVisibility = () => {
+      if (!document.hidden) fetchNotifications();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [fetchNotifications]);
 
   const markAsRead = async (id: number) => {
@@ -66,20 +79,56 @@ export default function Header({ onMenuClick }: HeaderProps) {
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuClick}
-          className="p-2 text-gray-400 hover:text-white hover:bg-dark-800 rounded-xl transition-all md:hidden"
+          className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-800 rounded-xl transition-all md:hidden"
         >
           <Menu size={20} />
         </button>
       </div>
       <div className="flex items-center gap-4">
+        <div
+          className="flex items-center gap-1 p-1 bg-dark-800/60 border border-dark-700/50 rounded-xl"
+          role="group"
+          aria-label="Tema de la interfaz"
+        >
+          <button
+            onClick={() => setMode("light")}
+            title="Tema claro"
+            aria-label="Tema claro"
+            aria-pressed={mode === "light"}
+            className={`p-1.5 rounded-lg transition-all ${mode === "light" ? "bg-dark-700/60 text-gray-100" : "text-gray-400 hover:text-gray-200 hover:bg-dark-700/30"}`}
+          >
+            <Sun size={16} />
+          </button>
+          <button
+            onClick={() => setMode("dark")}
+            title="Tema oscuro"
+            aria-label="Tema oscuro"
+            aria-pressed={mode === "dark"}
+            className={`p-1.5 rounded-lg transition-all ${mode === "dark" ? "bg-dark-700/60 text-gray-100" : "text-gray-400 hover:text-gray-200 hover:bg-dark-700/30"}`}
+          >
+            <Moon size={16} />
+          </button>
+          <button
+            onClick={() => setMode("system")}
+            title="Sigue el tema del sistema"
+            aria-label="Tema del sistema"
+            aria-pressed={mode === "system"}
+            className={`p-1.5 rounded-lg transition-all ${mode === "system" ? "bg-dark-700/60 text-gray-100" : "text-gray-400 hover:text-gray-200 hover:bg-dark-700/30"}`}
+          >
+            <Monitor size={16} />
+          </button>
+        </div>
+
         <div className="relative">
           <button
             onClick={() => setShowNotifs(!showNotifs)}
-            className="relative p-2 text-gray-400 hover:text-white hover:bg-dark-800 rounded-xl transition-all"
+            aria-label="Notificaciones"
+            aria-expanded={showNotifs}
+            className="relative p-2 text-gray-400 hover:text-foreground hover:bg-dark-800 rounded-xl transition-all"
           >
             <Bell size={20} />
             {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-primary-600 text-white text-[10px] font-bold rounded-full px-1">
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-primary-600 text-white text-xs font-bold rounded-full px-1">
                 {unreadCount > 99 ? "99+" : unreadCount}
               </span>
             )}
@@ -87,17 +136,17 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
           {showNotifs && (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowNotifs(false)} />
-              <div className="absolute right-0 top-12 z-50 w-80 max-h-96 bg-dark-800 border border-dark-700/50 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="fixed inset-0 z-40" onClick={() => setShowNotifs(false)} aria-hidden="true" />
+              <div ref={notifRef} role="dialog" aria-label="Notificaciones" className="absolute right-0 top-12 z-50 w-80 max-h-96 bg-dark-800 border border-dark-700/50 rounded-2xl shadow-2xl overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-dark-700/50">
-                  <h4 className="text-white font-medium text-sm">Notificaciones</h4>
+                  <h4 className="text-foreground font-medium text-sm">Notificaciones</h4>
                   <div className="flex items-center gap-2">
                     {unreadCount > 0 && (
-                      <button onClick={markAllRead} className="text-xs text-primary-400 hover:text-primary-300 transition-colors">
+                      <button onClick={markAllRead} aria-label="Marcar todas como leídas" className="text-xs text-primary-400 hover:text-primary-300 transition-colors">
                         <CheckCheck size={14} />
                       </button>
                     )}
-                    <button onClick={() => setShowNotifs(false)} className="text-gray-400 hover:text-white transition-colors">
+                    <button onClick={() => setShowNotifs(false)} aria-label="Cerrar notificaciones" className="text-gray-400 hover:text-foreground transition-colors">
                       <X size={14} />
                     </button>
                   </div>
@@ -107,22 +156,23 @@ export default function Header({ onMenuClick }: HeaderProps) {
                     <div className="px-4 py-8 text-center text-gray-500 text-sm">Sin notificaciones</div>
                   ) : (
                     notifications.map((n) => (
-                      <div
+                      <button
                         key={n.id}
+                        type="button"
                         onClick={() => openNotification(n)}
-                        className={`px-4 py-3 border-b border-dark-700/30 cursor-pointer transition-colors ${
+                        className={`w-full text-left px-4 py-3 border-b border-dark-700/30 cursor-pointer transition-colors ${
                           n.read ? "hover:bg-dark-700/20" : "bg-primary-600/5 hover:bg-primary-600/10"
                         }`}
                       >
                         <div className="flex items-start gap-2">
                           {!n.read && <span className="w-2 h-2 mt-1.5 bg-primary-500 rounded-full flex-shrink-0" />}
                           <div className="flex-1 min-w-0">
-                            <p className={`text-xs font-medium ${n.read ? "text-gray-400" : "text-white"}`}>{n.title}</p>
-                            <p className="text-xs text-gray-500 mt-0.5 truncate">{n.message}</p>
-                            <p className="text-[10px] text-gray-600 mt-1">{new Date(n.createdAt).toLocaleString("es-BO")}</p>
+                            <span className={`block text-xs font-medium ${n.read ? "text-gray-400" : "text-foreground"}`}>{n.title}</span>
+                            <span className="block text-xs text-gray-500 mt-0.5 truncate">{n.message}</span>
+                            <span className="block text-xs text-gray-600 mt-1">{new Date(n.createdAt).toLocaleString("es-BO")}</span>
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))
                   )}
                 </div>
@@ -136,7 +186,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
             <User size={18} className="text-primary-400" />
           </div>
           <div className="hidden sm:block">
-            <p className="text-sm font-medium text-white">{user?.name || "Usuario"}</p>
+            <p className="text-sm font-medium text-foreground">{user?.name || "Usuario"}</p>
             <p className="text-xs text-gray-500">{user?.role || "Sin rol"}</p>
           </div>
         </div>

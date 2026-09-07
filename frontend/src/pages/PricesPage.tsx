@@ -102,7 +102,7 @@ export default function PricesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Precios</h1>
+          <h1 className="text-2xl font-bold text-foreground">Precios</h1>
           <p className="text-gray-400 text-sm mt-1">Cálculo desde el costo: Precio 1 (mayorista) y Precio 2 (minorista) con márgenes configurables</p>
         </div>
         <div className="flex gap-2">
@@ -111,7 +111,7 @@ export default function PricesPage() {
             <RefreshCw size={16} />
           </button>
           <button onClick={exportExcel}
-            className="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-green-600/20">
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
             <Download size={16} /> Exportar Excel
           </button>
         </div>
@@ -124,7 +124,7 @@ export default function PricesPage() {
           <div className="relative">
             <FileText size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
             <select value={costId} onChange={(e) => setCostId(e.target.value)}
-              className="w-full pl-9 pr-3 py-2.5 bg-dark-900/50 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500 appearance-none">
+              className="w-full pl-9 pr-3 py-2.5 bg-dark-900/50 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 appearance-none">
               <option value="">Todas las facturas (todo el inventario)</option>
               {invoices.map((i) => (
                 <option key={i.id} value={i.id}>
@@ -137,12 +137,12 @@ export default function PricesPage() {
         <div>
           <label className="block text-xs text-gray-400 mb-1.5">Margen Precio 1 (%) — mayorista</label>
           <input type="number" min="0" value={margin1} onChange={(e) => setMargin1(e.target.value)}
-            className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+            className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
         </div>
         <div>
           <label className="block text-xs text-gray-400 mb-1.5">Margen Precio 2 (%) — minorista</label>
           <input type="number" min="0" value={margin2} onChange={(e) => setMargin2(e.target.value)}
-            className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500" />
+            className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
         </div>
       </div>
 
@@ -152,10 +152,11 @@ export default function PricesPage() {
           <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por producto, código, marca o modelo..."
-            className="w-full pl-10 pr-4 py-2.5 bg-dark-800 border border-dark-700 rounded-xl text-white text-sm focus:outline-none focus:border-primary-500 transition-all" />
+            aria-label="Buscar precios"
+            className="w-full pl-10 pr-4 py-2.5 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 transition-all" />
         </div>
         <button onClick={applyPrices} disabled={applying}
-          className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
+          className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
           <Check size={16} /> {applying ? "Aplicando..." : "Aplicar precios"}
         </button>
       </div>
@@ -188,7 +189,7 @@ export default function PricesPage() {
                   ) : prices.map((p) => (
                     <tr key={p.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
                       <td className="px-3 py-3 text-gray-300 font-mono text-xs">{p.itemCode}</td>
-                      <td className="px-3 py-3 text-white font-medium">{p.productName}</td>
+                      <td className="px-3 py-3 text-foreground font-medium">{p.productName}</td>
                       <td className="px-3 py-3 text-gray-300">{p.brand}</td>
                       <td className="px-3 py-3 text-gray-300">{p.model}</td>
                       <td className="px-3 py-3 text-amber-400 font-medium text-right">{formatBs(p.cost)}</td>
@@ -206,12 +207,12 @@ export default function PricesPage() {
                 <span className="text-xs text-gray-500">{total} productos</span>
                 <div className="flex items-center gap-2">
                   <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
-                    className="p-1.5 text-gray-400 hover:text-white disabled:opacity-30 rounded-lg transition-all">
+                    className="p-1.5 text-gray-400 hover:text-foreground disabled:opacity-30 rounded-lg transition-all">
                     <ChevronLeft size={16} />
                   </button>
                   <span className="text-xs text-gray-400">{page}/{pages}</span>
                   <button onClick={() => setPage(Math.min(pages, page + 1))} disabled={page === pages}
-                    className="p-1.5 text-gray-400 hover:text-white disabled:opacity-30 rounded-lg transition-all">
+                    className="p-1.5 text-gray-400 hover:text-foreground disabled:opacity-30 rounded-lg transition-all">
                     <ChevronRight size={16} />
                   </button>
                 </div>

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   ArrowLeft, Edit3, Save, X, Truck, Store,
-  ChevronDown, RefreshCw,
+  ChevronDown, ChevronRight, RefreshCw,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -148,14 +148,23 @@ export default function ProductDetailPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumbs */}
+      <nav aria-label="Ruta de navegación" className="flex items-center gap-2 text-sm text-gray-500">
+        <Link to="/panel" className="hover:text-foreground transition-colors">Inicio</Link>
+        <ChevronRight size={14} className="text-gray-600" />
+        <Link to="/panel/inventario" className="hover:text-foreground transition-colors">Inventario</Link>
+        <ChevronRight size={14} className="text-gray-600" />
+        <span className="text-foreground">{product.name}</span>
+      </nav>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate("/panel/inventario")} className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-xl transition-all">
+          <button onClick={() => navigate("/panel/inventario")} aria-label="Volver al inventario" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-white">{product.name}</h1>
+            <h1 className="text-2xl font-bold text-foreground">{product.name}</h1>
             <p className="text-gray-400 text-sm mt-1">{product.itemCode} · {product.brand} · {product.model}</p>
           </div>
         </div>
@@ -168,7 +177,7 @@ export default function ProductDetailPage() {
           )}
           {editing ? (
             <>
-              <button onClick={() => setEditing(false)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors flex items-center gap-2">
+              <button onClick={() => setEditing(false)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors flex items-center gap-2">
                 <X size={16} /> Cancelar
               </button>
               <button onClick={handleSave} disabled={saving} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50">
@@ -177,7 +186,7 @@ export default function ProductDetailPage() {
             </>
           ) : (
             canEdit && (
-              <button onClick={() => setEditing(true)} className="bg-dark-800 border border-dark-700/50 text-gray-300 hover:text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2">
+              <button onClick={() => setEditing(true)} className="bg-dark-800 border border-dark-700/50 text-gray-300 hover:text-foreground px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2">
                 <Edit3 size={16} /> Editar
               </button>
             )
@@ -216,7 +225,7 @@ export default function ProductDetailPage() {
 
           {/* Códigos */}
           <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
-            <h3 className="text-white font-semibold mb-4">Códigos</h3>
+            <h3 className="text-foreground font-semibold mb-4">Códigos</h3>
             {editing ? (
               <div className="grid grid-cols-2 gap-3">
                 <Input label="Código Item *" value={form.itemCode} onChange={(v) => setField("itemCode", v)} disabled />
@@ -237,7 +246,7 @@ export default function ProductDetailPage() {
 
           {/* Precios */}
           <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
-            <h3 className="text-white font-semibold mb-4">Precios</h3>
+            <h3 className="text-foreground font-semibold mb-4">Precios</h3>
             {editing ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <Input label="Precio Mayorista (Bs.) *" value={form.price1} onChange={(v) => setField("price1", v)} type="number" />
@@ -258,7 +267,7 @@ export default function ProductDetailPage() {
           {/* Importadores */}
           {product.importers.length > 0 && (
             <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
-              <h3 className="text-white font-semibold mb-4">Importadores</h3>
+              <h3 className="text-foreground font-semibold mb-4">Importadores</h3>
               <div className="space-y-2">
                 {product.importers.map((imp) => (
                   <div key={imp.id} className="flex items-center justify-between p-3 bg-dark-900/50 rounded-xl border border-dark-700/30">
@@ -278,7 +287,7 @@ export default function ProductDetailPage() {
         <div className="space-y-6">
           <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-semibold">Stock Total</h3>
+              <h3 className="text-foreground font-semibold">Stock Total</h3>
               <span className={`text-2xl font-bold ${product.stock === 0 ? "text-red-400" : product.stock <= 10 ? "text-yellow-400" : "text-green-400"}`}>
                 {product.stock}
               </span>
@@ -347,7 +356,7 @@ function Input({ label, value, onChange, type = "text", disabled, className = ""
         <label className="block text-xs text-gray-400 mb-1.5">{label}</label>
         <div className="relative">
           <select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}
-            className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8 disabled:opacity-50">
+            className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8 disabled:opacity-50">
             <option value="">Sin categoría</option>
             {options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
@@ -361,7 +370,7 @@ function Input({ label, value, onChange, type = "text", disabled, className = ""
       <label className="block text-xs text-gray-400 mb-1.5">{label}</label>
       <input
         type={type} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}
-        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none disabled:opacity-50"
+        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none disabled:opacity-50"
       />
     </div>
   );
