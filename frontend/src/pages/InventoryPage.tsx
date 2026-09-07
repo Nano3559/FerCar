@@ -564,25 +564,11 @@ export default function InventoryPage() {
         {showFilters && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 pt-4 border-t border-dark-700/50">
             <Autocomplete
-              value={nameFilter}
-              onChange={setNameFilter}
-              suggestions={filters.names || []}
-              placeholder="Escribe el nombre..."
-              label="Producto (nombre)"
-            />
-            <Autocomplete
               value={itemCodeFilter}
               onChange={setItemCodeFilter}
               suggestions={filters.itemCodes || []}
               placeholder="Escribe el código..."
               label="Código (Item)"
-            />
-            <Autocomplete
-              value={brand}
-              onChange={setBrand}
-              suggestions={filters.brands}
-              placeholder="Todas las marcas"
-              label="Marca"
             />
             <Autocomplete
               value={manufacturer}
@@ -591,8 +577,6 @@ export default function InventoryPage() {
               placeholder="Todos los fabricantes"
               label="Fabricante"
             />
-            <Autocomplete value={model} onChange={setModel} suggestions={filters.models || []} placeholder="Todos los modelos" label="Modelo" />
-            <Autocomplete value={year} onChange={setYear} suggestions={filters.years || []} placeholder="Todos los años (ej. 92)" label="Año / rango" />
             <Autocomplete
               value={categoryName}
               onChange={(v) => {
@@ -603,6 +587,29 @@ export default function InventoryPage() {
               suggestions={filters.categories.map((c) => c.name)}
               placeholder="Todas las categorías"
               label="Categoría"
+            />
+            <Autocomplete
+              value={nameFilter}
+              onChange={setNameFilter}
+              suggestions={filters.names || []}
+              placeholder="Escribe el nombre..."
+              label="Producto (nombre)"
+            />
+            <Autocomplete
+              value={brand}
+              onChange={setBrand}
+              suggestions={filters.brands}
+              placeholder="Todas las marcas"
+              label="Marca"
+            />
+            <Autocomplete value={model} onChange={setModel} suggestions={filters.models || []} placeholder="Todos los modelos" label="Modelo" />
+            <Autocomplete value={year} onChange={setYear} suggestions={filters.years || []} placeholder="Todos los años (ej. 92)" label="Año / rango" />
+            <Autocomplete
+              value={detailFilter}
+              onChange={setDetailFilter}
+              suggestions={filters.detalles || []}
+              placeholder="Detalle, versión, uso..."
+              label="Detalles"
             />
             <Autocomplete
               value={oemCode}
@@ -617,13 +624,6 @@ export default function InventoryPage() {
               suggestions={filters.factoryCodes || []}
               placeholder="Todos los códigos"
               label="Cód. Fábrica"
-            />
-            <Autocomplete
-              value={detailFilter}
-              onChange={setDetailFilter}
-              suggestions={filters.detalles || []}
-              placeholder="Detalle, versión, uso..."
-              label="Detalles"
             />
             {(nameFilter || itemCodeFilter || brand || manufacturer || model || year || categoryId || oemCode || factoryCode || detailFilter) && (
               <div className="flex items-end md:col-span-3">
