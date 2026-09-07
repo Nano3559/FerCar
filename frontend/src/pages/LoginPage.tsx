@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
 import api from "../services/api";
 import toast from "react-hot-toast";
-import { Car, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -49,8 +49,8 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-md px-4">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-600/20">
-            <Car size={32} className="text-foreground" />
+          <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-600/20 overflow-hidden">
+            <img src="/fercar-logo.png" alt="RepuestoPro" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-foreground">RepuestoPro</h1>
           <p className="text-gray-400 text-sm mt-1">Sistema de Inventario y Ventas</p>

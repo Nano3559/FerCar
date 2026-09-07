@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { Car, ArrowRight, Menu, X } from "lucide-react";
+import { ArrowRight, Menu, X } from "lucide-react";
 import { useState } from "react";
 
 const navLinks = [
@@ -17,8 +17,8 @@ export default function PublicNavbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <button type="button" onClick={() => navigate("/")} className="flex items-center gap-3 cursor-pointer bg-transparent p-0 border-0">
-            <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20">
-              <Car size={22} className="text-foreground" />
+            <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20 overflow-hidden">
+              <img src="/fercar-logo.png" alt="RepuestoPro" className="w-full h-full object-contain" />
             </div>
             <span className="text-xl font-bold text-foreground">RepuestoPro</span>
           </button>

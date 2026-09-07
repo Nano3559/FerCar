@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Package, ShoppingCart, TrendingUp,
   ArrowLeftRight, DollarSign, BarChart3, Settings,
-  RotateCcw, Send, Tags, Car, LogOut, X, ListChecks, ClipboardList,
+  RotateCcw, Send, Tags, LogOut, X, ListChecks, ClipboardList,
 } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { useNavigate } from "react-router-dom";
@@ -69,8 +69,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         <div className="p-5 border-b border-dark-700/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20">
-                <Car size={22} className="text-foreground" />
+              <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20 overflow-hidden">
+                <img src="/fercar-logo.png" alt="RepuestoPro" className="w-full h-full object-contain" />
               </div>
               <div>
                 <h1 className="text-lg font-bold text-foreground">RepuestoPro</h1>

@@ -1,4 +1,4 @@
-import { Car, Phone, Mail, MapPin, Clock, MessageCircle } from "lucide-react";
+import { Phone, Mail, MapPin, Clock, MessageCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const quickLinks = [
@@ -24,8 +24,8 @@ export default function PublicFooter() {
           {/* Column 1: Logo & Description */}
           <div>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center">
-                <Car size={22} className="text-foreground" />
+              <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center overflow-hidden">
+                <img src="/fercar-logo.png" alt="RepuestoPro" className="w-full h-full object-contain" />
               </div>
               <span className="text-lg font-bold text-foreground">RepuestoPro</span>
             </div>
