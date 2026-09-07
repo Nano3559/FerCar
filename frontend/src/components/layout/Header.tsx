@@ -75,7 +75,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   };
 
   return (
-    <header className="h-16 bg-dark-900/50 border-b border-dark-700/50 flex items-center justify-between px-4 md:px-6 backdrop-blur-sm">
+    <header className="h-16 bg-dark-900/50 border-b border-dark-700/50 flex items-center justify-between px-4 md:px-6">
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuClick}
@@ -137,7 +137,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           {showNotifs && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowNotifs(false)} aria-hidden="true" />
-              <div ref={notifRef} role="dialog" aria-label="Notificaciones" className="absolute right-0 top-12 z-50 w-80 max-h-96 bg-dark-800 border border-dark-700/50 rounded-2xl shadow-2xl overflow-hidden">
+              <div ref={notifRef} role="dialog" aria-label="Notificaciones" className="absolute right-0 top-full mt-1 z-50 w-80 max-h-96 bg-dark-800 border border-dark-700/50 rounded-2xl shadow-2xl overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-dark-700/50">
                   <h4 className="text-foreground font-medium text-sm">Notificaciones</h4>
                   <div className="flex items-center gap-2">

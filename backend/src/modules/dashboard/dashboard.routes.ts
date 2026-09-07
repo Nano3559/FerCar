@@ -138,7 +138,7 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
     // Por vendedor / tipo / ubicación
     const sellerMap = new Map<number, { userId: number; name: string; count: number; total: number; units: number }>();
     const typeMap = new Map<string, { type: string; count: number; total: number }>();
-    const locMap = new Map<number, { locationId: number; name: string; count: number; total: number }>();
+    const locMap = new Map<number, { locationId: number; name: string; type: string | null; count: number; total: number }>();
     for (const s of sales) {
       const seller = sellerMap.get(s.userId) || { userId: s.userId, name: sellerNameMap.get(s.userId) || "Desconocido", count: 0, total: 0, units: 0 };
       seller.count += 1;
@@ -154,6 +154,7 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
       const lc = locMap.get(s.locationId) || {
         locationId: s.locationId,
         name: locations.find((l) => l.id === s.locationId)?.name || "Desconocido",
+        type: locations.find((l) => l.id === s.locationId)?.type || null,
         count: 0,
         total: 0,
       };
@@ -163,7 +164,9 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
     }
     const salesBySeller = Array.from(sellerMap.values()).sort((a, b) => b.total - a.total);
     const salesByType = Array.from(typeMap.values()).sort((a, b) => b.total - a.total);
-    const salesByLocation = Array.from(locMap.values()).sort((a, b) => b.total - a.total);
+    const salesByLocation = Array.from(locMap.values())
+      .filter((l) => l.type === "TIENDA")
+      .sort((a, b) => b.total - a.total);
 
     const bestSeller = salesBySeller.length ? { ...salesBySeller[0] } : null;
 
@@ -318,15 +321,18 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       _count: true,
       _sum: { total: true },
     });
-    const salesByLocation = salesByLocationAgg.map((agg) => {
-      const loc = locations.find((l) => l.id === agg.locationId);
-      return {
-        locationId: agg.locationId,
-        name: loc?.name || "Desconocido",
-        count: agg._count,
-        total: Number(agg._sum.total || 0),
-      };
-    });
+    const salesByLocation = salesByLocationAgg
+      .map((agg) => {
+        const loc = locations.find((l) => l.id === agg.locationId);
+        return {
+          locationId: agg.locationId,
+          name: loc?.name || "Desconocido",
+          type: loc?.type || "TIENDA",
+          count: agg._count,
+          total: Number(agg._sum.total || 0),
+        };
+      })
+      .filter((l) => l.type === "TIENDA");
 
     const saleItems = await prisma.saleItem.findMany({
       where: { sale: { saleDate: { gte: startOfMonth }, ...locWhere, ...userWhere } },
