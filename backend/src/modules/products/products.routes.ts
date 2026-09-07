@@ -699,12 +699,12 @@ const INVOICE_SCALE = [20, 30, 40, 50, 60, 70, 80];
 // Selecciona la hoja de la factura: prefiere la que tenga columna de costo
 // de fábrica o QTY (evita tomar otras hojas como el inventario inicial).
 const pickInvoiceSheet = (workbook: XLSX.WorkBook): XLSX.WorkSheet => {
-  const hasInvoiceCols = (name: string) => {
+const hasInvoiceCols = (name: string) => {
     const ws = workbook.Sheets[name];
-    const rows = XLSX.utils.sheet_to_json(ws, { range: 1 });
+    const rows = XLSX.utils.sheet_to_json(ws);
     if (!rows.length) return false;
     const keys = Object.keys(rows[0] as any).map((k) => k.toLowerCase());
-    return keys.some((k) => (k.includes("costo") && k.includes("fabric"))) || keys.includes("qty");
+    return keys.some((k) => (k.includes("costo") && k.includes("fabric"))) || keys.includes("qty") || keys.includes("cantidad");
   };
   const found = workbook.SheetNames.find(hasInvoiceCols);
   return found ? workbook.Sheets[found] : workbook.Sheets[workbook.SheetNames[0]];
