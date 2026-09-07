@@ -696,6 +696,20 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
 
 const INVOICE_SCALE = [20, 30, 40, 50, 60, 70, 80];
 
+// Selecciona la hoja de la factura: prefiere la que tenga columna de costo
+// de fábrica o QTY (evita tomar otras hojas como el inventario inicial).
+const pickInvoiceSheet = (workbook: XLSX.WorkBook): XLSX.WorkSheet => {
+  const hasInvoiceCols = (name: string) => {
+    const ws = workbook.Sheets[name];
+    const rows = XLSX.utils.sheet_to_json(ws, { range: 1 });
+    if (!rows.length) return false;
+    const keys = Object.keys(rows[0] as any).map((k) => k.toLowerCase());
+    return keys.some((k) => (k.includes("costo") && k.includes("fabric"))) || keys.includes("qty");
+  };
+  const found = workbook.SheetNames.find(hasInvoiceCols);
+  return found ? workbook.Sheets[found] : workbook.Sheets[workbook.SheetNames[0]];
+};
+
 const findProductByCodes = async (itemCode: string, oemCode: string, factoryCode: string) => {
   let product = null;
   let matchedBy = "itemCode";
@@ -743,7 +757,7 @@ router.post("/invoice-guide", authenticate, authorize("ADMIN"), upload.single("f
     if (tiendaMargin < 0 || tiendaMargin > 200) return res.status(400).json({ message: "El margen de tienda debe estar entre 0 y 200" });
 
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const sheet = pickInvoiceSheet(workbook);
     const rows = XLSX.utils.sheet_to_json(sheet);
     if (rows.length === 0) return res.status(400).json({ message: "El archivo está vacío" });
 
@@ -828,7 +842,7 @@ router.post("/import-invoice", authenticate, authorize("ADMIN"), upload.single("
     }
 
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const sheet = pickInvoiceSheet(workbook);
     const rows = XLSX.utils.sheet_to_json(sheet);
     if (rows.length === 0) return res.status(400).json({ message: "El archivo está vacío" });
 
