@@ -38,7 +38,7 @@ export default function WholesalePage() {
   const [showHistory, setShowHistory] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
-  const [lastWholesaleSale, setLastWholesaleSale] = useState<{ id: number; saleDate: string; total: number; items: WholesaleItem[]; clientName: string; pedido: string; deliveryPlace: string; paymentMethod: string; facturaNIT: string } | null>(null);
+  const [lastWholesaleSale, setLastWholesaleSale] = useState<{ id: number; saleDate: string; total: number; items: WholesaleItem[]; clientName: string; pedido: string; deliveryPlace: string; paymentMethod: string; facturaNIT: string; origen: string; quienRecoge: string; telefono: string; envioExterior: boolean } | null>(null);
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -61,6 +61,10 @@ export default function WholesalePage() {
   const [customDeliveryPlace, setCustomDeliveryPlace] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("TRANSFERENCIA");
   const [facturaNIT, setFacturaNIT] = useState("");
+  const [origen, setOrigen] = useState("");
+  const [quienRecoge, setQuienRecoge] = useState("");
+  const [telefono, setTelefono] = useState("");
+  const [envioExterior, setEnvioExterior] = useState(false);
 
   const formatBs = (v: number) =>
     `Bs. ${v.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -141,6 +145,11 @@ export default function WholesalePage() {
         customerData: { name: clientName, nit: facturaNIT || null },
         paraQuien: pedido,
         lugarEntrega: finalDeliveryPlace,
+        origen: origen || undefined,
+        envioExterior,
+        quienRecoge: quienRecoge || undefined,
+        telefono: telefono || undefined,
+        crearSolicitud: true,
         items: items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -149,7 +158,7 @@ export default function WholesalePage() {
         payments: [{ method: paymentMethod, amount: total }],
       };
       const response = await api.post("/wholesale", payload);
-      setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, pedido, deliveryPlace: finalDeliveryPlace, paymentMethod, facturaNIT });
+      setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, pedido, deliveryPlace: finalDeliveryPlace, paymentMethod, facturaNIT, origen, quienRecoge, telefono, envioExterior });
       toast.success("Venta por mayor registrada");
       setShowConfirm(false);
       setShowForm(false);
@@ -165,6 +174,33 @@ export default function WholesalePage() {
     setItems([]); setClientName(""); setPedido(""); setDeliveryPlace("Cochabamba");
     setCustomDeliveryPlace("");
     setPaymentMethod("TRANSFERENCIA"); setFacturaNIT("");
+    setOrigen(""); setQuienRecoge(""); setTelefono(""); setEnvioExterior(false);
+  };
+
+  const useImportedItems = () => {
+    const importedItems: WholesaleItem[] = (importResult?.items || []).map((it: any) => ({
+      productId: it.productId, itemCode: it.itemCode, name: it.name, brand: it.brand,
+      model: it.model, year: it.year, detail: it.detail,
+      quantity: it.quantity, unitPrice: Number(it.unitPrice), subtotal: Number(it.subtotal),
+    }));
+    if (!importedItems.length) return;
+    setItems((prev) => {
+      const map = new Map(prev.map((i) => [i.productId, i]));
+      for (const it of importedItems) {
+        const found = map.get(it.productId);
+        if (found) {
+          found.quantity += it.quantity;
+          found.subtotal = found.quantity * found.unitPrice;
+        } else {
+          map.set(it.productId, it);
+        }
+      }
+      return Array.from(map.values());
+    });
+    setShowImportModal(false);
+    setImportResult(null);
+    setImportFile(null);
+    setShowForm(true);
   };
 
   const handleImportExcel = async () => {
@@ -174,11 +210,15 @@ export default function WholesalePage() {
       setImportResult(null);
       const formData = new FormData();
       formData.append("file", importFile);
-      const res = await api.post("/wholesale/import", formData, {
+      const res = await api.post("/wholesale/import-order", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setImportResult(res.data);
-      toast.success(`Importación completada: ${res.data.imported} productos importados`);
+      if (res.data.items?.length) {
+        toast.success(`${res.data.items.length} productos leídos del pedido`);
+      } else {
+        toast.error("No se pudo leer ningún producto del archivo");
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Error al importar archivo");
     } finally {
@@ -362,6 +402,32 @@ export default function WholesalePage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="wholesale-origen" className="block text-xs text-gray-400 mb-1">Origen</label>
+                <input id="wholesale-origen" value={origen} onChange={(e) => setOrigen(e.target.value)} placeholder="Ej: Cochabamba, Argentina..."
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+              <div>
+                <label htmlFor="wholesale-telefono" className="block text-xs text-gray-400 mb-1">N° de celular</label>
+                <input id="wholesale-telefono" type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="75612345"
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={envioExterior} onChange={(e) => setEnvioExterior(e.target.checked)}
+                    className="w-4 h-4 accent-primary-600" />
+                  <span className="text-sm text-foreground">¿Envío fuera de Bolivia?</span>
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="wholesale-quien-recoge" className="block text-xs text-gray-400 mb-1">Quién recoge el pedido</label>
+              <input id="wholesale-quien-recoge" value={quienRecoge} onChange={(e) => setQuienRecoge(e.target.value)} placeholder="Nombre de la persona que recoge"
+                className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+            </div>
+
             <div className="relative">
 <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
             <input value={searchProd} onChange={(e) => handleSearch(e.target.value)}
@@ -463,6 +529,10 @@ export default function WholesalePage() {
                 <div className="flex justify-between text-sm"><span className="text-gray-400">Cliente:</span><span className="text-foreground">{clientName}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-400">Para quién:</span><span className="text-foreground">{pedido || "No especificado"}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-400">Entrega:</span><span className="text-foreground">{finalDeliveryPlace}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Origen:</span><span className="text-foreground">{origen || "No especificado"}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Quién recoge:</span><span className="text-foreground">{quienRecoge || "No especificado"}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Celular:</span><span className="text-foreground">{telefono || "No especificado"}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Envío fuera de Bolivia:</span><span className="text-foreground">{envioExterior ? "Sí" : "No"}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-400">Factura/NIT:</span><span className="text-foreground">{facturaNIT || "No especificado"}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-400">Pago:</span><span className="text-foreground">{paymentMethod}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-400">Productos:</span><span className="text-foreground">{items.length}</span></div>
@@ -510,6 +580,10 @@ export default function WholesalePage() {
                 <span>Fecha: <strong className="text-foreground">{formatDate(lastWholesaleSale.saleDate)}</strong></span>
                 <span>Para quién: <strong className="text-foreground">{lastWholesaleSale.pedido || "No especificado"}</strong></span>
                 <span>Entrega: <strong className="text-foreground">{lastWholesaleSale.deliveryPlace}</strong></span>
+                <span>Origen: <strong className="text-foreground">{lastWholesaleSale.origen || "No especificado"}</strong></span>
+                <span>Quién recoge: <strong className="text-foreground">{lastWholesaleSale.quienRecoge || "No especificado"}</strong></span>
+                <span>Celular: <strong className="text-foreground">{lastWholesaleSale.telefono || "No especificado"}</strong></span>
+                <span>Envío fuera de Bolivia: <strong className="text-foreground">{lastWholesaleSale.envioExterior ? "Sí" : "No"}</strong></span>
                 <span>Factura/NIT: <strong className="text-foreground">{lastWholesaleSale.facturaNIT || "No especificado"}</strong></span>
                 <span>Pago: <strong className="text-foreground">{lastWholesaleSale.paymentMethod}</strong></span>
               </div>
@@ -545,19 +619,20 @@ export default function WholesalePage() {
         </div>
       )}
 
-      {/* Modal: Importar Excel */}
+      {/* Modal: Importar pedido Excel */}
       {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div ref={importPanelRef} role="dialog" aria-modal="true" aria-label="Importar productos mayoristas" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
+          <div ref={importPanelRef} role="dialog" aria-modal="true" aria-label="Importar pedido mayorista por Excel" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg">
             <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-foreground">Importar Productos Mayoristas</h2>
+              <h2 className="text-lg font-bold text-foreground">Importar Pedido desde Excel</h2>
               <button onClick={() => { setShowImportModal(false); setImportResult(null); }} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
                 <X size={18} />
               </button>
             </div>
             <div className="p-5 space-y-4">
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
-                <p className="text-blue-400 text-xs font-medium mb-1">El Excel debe contener columnas con: código, producto, marca, modelo, año, detalle, precio mayorista</p>
+                <p className="text-blue-400 text-xs font-medium mb-1">El Excel debe contener columnas: Codigo Item / Codigo OEM / Codigo Fabrica / QTY</p>
+                <p className="text-gray-400 text-xs">Los productos se agregan al pedido con el Precio Mayor autocompletado.</p>
               </div>
               {!importResult ? (
                 <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-dark-600/50 rounded-xl cursor-pointer hover:border-primary-500/50 transition-colors bg-dark-900/30">
@@ -581,17 +656,21 @@ export default function WholesalePage() {
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3 text-center">
                     <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3">
-                      <p className="text-2xl font-bold text-green-400">{importResult.imported || 0}</p>
-                      <p className="text-xs text-gray-400">Importados</p>
+                      <p className="text-2xl font-bold text-green-400">{importResult.valid || 0}</p>
+                      <p className="text-xs text-gray-400">Productos leídos</p>
                     </div>
                     <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
                       <p className="text-2xl font-bold text-red-400">{importResult.errors?.length || 0}</p>
                       <p className="text-xs text-gray-400">Errores</p>
                     </div>
                   </div>
-                  {importResult.details?.errors?.length > 0 && (
+                  <div className="bg-dark-900/50 rounded-xl p-3">
+                    <p className="text-xs text-gray-400 mb-1">Total del pedido importado:</p>
+                    <p className="text-lg font-bold text-emerald-400">{formatBs(Number(importResult.total) || 0)}</p>
+                  </div>
+                  {importResult.errors?.length > 0 && (
                     <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3 max-h-32 overflow-y-auto">
-                      {importResult.details.errors.map((e: string, i: number) => (
+                      {importResult.errors.map((e: string, i: number) => (
                         <p key={i} className="text-xs text-red-400">{e}</p>
                       ))}
                     </div>
@@ -601,11 +680,16 @@ export default function WholesalePage() {
             </div>
             <div className="flex items-center justify-end gap-3 p-5 border-t border-dark-700/50">
               <button onClick={() => { setShowImportModal(false); setImportResult(null); }} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">
-                {importResult ? "Cerrar" : "Cancelar"}
+                {importResult ? (importResult.valid ? "Cancelar" : "Cerrar") : "Cancelar"}
               </button>
               {!importResult && (
                 <button onClick={handleImportExcel} disabled={!importFile || importing} className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2">
                   {importing ? <><RefreshCw size={16} className="animate-spin" /> Importando...</> : <><Upload size={16} /> Importar</>}
+                </button>
+              )}
+              {importResult && importResult.valid > 0 && (
+                <button onClick={useImportedItems} className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2">
+                  <Check size={16} /> Usar en la venta
                 </button>
               )}
             </div>

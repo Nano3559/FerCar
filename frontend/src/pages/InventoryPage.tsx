@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search, Plus, Filter, ChevronDown, Eye, Pencil, Trash2,
-  Package, RefreshCw, X, ChevronLeft, ChevronRight, Upload, FileSpreadsheet,
+  Package, RefreshCw, X, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -129,6 +129,21 @@ export default function InventoryPage() {
   const [importLocationId, setImportLocationId] = useState("");
   const [dragActive, setDragActive] = useState(false);
 
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [invFile, setInvFile] = useState<File | null>(null);
+  const [invDragActive, setInvDragActive] = useState(false);
+  const [invLocationId, setInvLocationId] = useState("");
+  const [invGastos, setInvGastos] = useState("0");
+  const [invExchangeRate, setInvExchangeRate] = useState("6.96");
+  const [invTiendaMargin, setInvTiendaMargin] = useState("0");
+  const [invGuide, setInvGuide] = useState<any[] | null>(null);
+  const [invGuideMeta, setInvGuideMeta] = useState<any>(null);
+  const [invPrices, setInvPrices] = useState<{ price1: number; price2: number; mayor: number }[]>([]);
+  const [invPreviewing, setInvPreviewing] = useState(false);
+  const [invSaving, setInvSaving] = useState(false);
+  const [invSavingResult, setInvSavingResult] = useState<any>(null);
+  const [invExporting, setInvExporting] = useState(false);
+
   const [imageModal, setImageModal] = useState<Product | null>(null);
   const [imageIndex, setImageIndex] = useState(0);
   useEffect(() => { setImageIndex(0); }, [imageModal]);
@@ -138,6 +153,7 @@ export default function InventoryPage() {
   const deletePanelRef = useDialogBehavior(showDeleteConfirm !== null, () => setShowDeleteConfirm(null));
   const stockPanelRef = useDialogBehavior(showStockModal !== null, () => { setShowStockModal(null); setStockData(null); setPendingStockId(null); setStockPassword(""); });
   const importPanelRef = useDialogBehavior(showImportModal, () => { setShowImportModal(false); setImportResult(null); });
+  const invoicePanelRef = useDialogBehavior(showInvoiceModal, () => { setShowInvoiceModal(false); setInvFile(null); setInvGuide(null); setInvSavingResult(null); });
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -356,6 +372,106 @@ export default function InventoryPage() {
     }
   };
 
+  const openInvoiceModal = () => {
+    setShowInvoiceModal(true);
+    setInvFile(null);
+    setInvGuide(null);
+    setInvGuideMeta(null);
+    setInvSavingResult(null);
+    const almacenes = locations.filter((l) => l.type === "ALMACEN");
+    setInvLocationId((prev) => prev || (almacenes[0] ? String(almacenes[0].id) : ""));
+  };
+
+  const previewInvoice = async () => {
+    if (!invFile) { toast.error("Selecciona el archivo de la factura"); return; }
+    if (!invLocationId) { toast.error("Selecciona el almacén de destino"); return; }
+    const tc = parseFloat(invExchangeRate);
+    if (!tc || tc <= 0) { toast.error("El tipo de cambio debe ser mayor a 0"); return; }
+    try {
+      setInvPreviewing(true);
+      setInvSavingResult(null);
+      const formData = new FormData();
+      formData.append("file", invFile);
+      formData.append("exchangeRate", String(tc));
+      formData.append("gastosPer", invGastos || "0");
+      formData.append("tiendaMargin", invTiendaMargin || "0");
+      const res = await api.post("/products/invoice-guide", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setInvGuide(res.data.rows);
+      setInvGuideMeta(res.data);
+      setInvPrices((res.data.rows as any[]).map((r: any) => ({
+        price1: Number(r.oldPrice1) || 0,
+        price2: Number(r.oldPrice2) || 0,
+        mayor: Number(r.oldMayor) || 0,
+      })));
+      if (res.data.errors?.length) {
+        toast.error(`${res.data.errors.length} filas con errores`);
+      } else {
+        toast.success(`Guía generada: ${res.data.valid} productos`);
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al generar la guía");
+    } finally {
+      setInvPreviewing(false);
+    }
+  };
+
+  const updateInvPrice = (index: number, field: "price1" | "price2" | "mayor", value: number) => {
+    setInvPrices((prev) => prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
+  };
+
+  const saveInvoice = async () => {
+    if (!invFile || !invGuide) return;
+    try {
+      setInvSaving(true);
+      const formData = new FormData();
+      formData.append("file", invFile);
+      formData.append("exchangeRate", invExchangeRate);
+      formData.append("gastosPer", invGastos || "0");
+      formData.append("tiendaMargin", invTiendaMargin || "0");
+      formData.append("locationId", invLocationId);
+      formData.append("prices", JSON.stringify(invPrices));
+      const res = await api.post("/products/import-invoice", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setInvSavingResult(res.data);
+      toast.success(`Factura guardada: ${res.data.imported} creados, ${res.data.updated} actualizados`);
+      fetchProducts();
+      fetchFilters();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al guardar la factura");
+    } finally {
+      setInvSaving(false);
+    }
+  };
+
+  const exportOferta = async () => {
+    if (!invGuide) return;
+    try {
+      setInvExporting(true);
+      const rows = invGuide.map((r: any, i: number) => ({
+        itemCode: r.itemCode, fabricante: r.fabricante, productName: r.productName, marca: r.marca,
+        modelo: r.modelo, año: r.año, detalle: r.detalle, oemCode: r.oemCode, factoryCode: r.factoryCode,
+        mayor: invPrices[i]?.mayor || 0,
+      }));
+      const res = await api.post("/products/export-oferta", { rows }, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `oferta_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Oferta exportada en Excel");
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al exportar la oferta");
+    } finally {
+      setInvExporting(false);
+    }
+  };
+
   const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ ...prev, [field]: value }));
 
   const visibleProducts = hasCategoryRestriction
@@ -404,9 +520,13 @@ export default function InventoryPage() {
           <ColumnManager module="inventario" columns={ALL_COLUMNS} onVisibleChange={setVisibleColumns} />
           {canEdit && (
             <>
-              <button onClick={() => { setShowImportModal(true); setImportFile(null); setImportResult(null); }} className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
-                <Upload size={18} />
+              <button onClick={() => { setShowImportModal(true); setImportFile(null); setImportResult(null); }} className="flex items-center gap-2 px-4 py-2.5 bg-dark-700 hover:bg-dark-600 border border-dark-600 text-gray-200 rounded-xl text-sm font-medium transition-all">
+                <FileSpreadsheet size={18} />
                 <span className="hidden sm:inline">Importar Excel</span>
+              </button>
+              <button onClick={openInvoiceModal} className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
+                <Upload size={18} />
+                <span className="hidden sm:inline">Importar Factura</span>
               </button>
               <button onClick={openCreate} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-primary-600/20">
                 <Plus size={18} />
@@ -916,6 +1036,213 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* Modal: Importar Factura (guía de precios + stock) */}
+      {showInvoiceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div ref={invoicePanelRef} role="dialog" aria-modal="true" aria-label="Importar factura con guía de precios" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-6xl max-h-[92vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-dark-700/50 sticky top-0 bg-dark-800 z-10">
+              <div>
+                <h2 className="text-lg font-bold text-foreground">Importar por Factura</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Hoja con columnas: Codigo Item, Proveedor, Fabricante, Producto, Marca, Modelo, Año, Detalle, Codigo OEM, Codigo Fabrica, QTY, COSTO UNITARIO FABRICA</p>
+              </div>
+              <button onClick={() => { setShowInvoiceModal(false); setInvFile(null); setInvGuide(null); setInvSavingResult(null); }} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {invSavingResult ? (
+                <div className="space-y-4">
+                  <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
+                    <p className="text-green-400 font-medium mb-1">Factura guardada correctamente</p>
+                    <p className="text-xs text-gray-400">{invSavingResult.detail} · Almacén: {invSavingResult.location}</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3">
+                      <p className="text-2xl font-bold text-green-400">{invSavingResult.imported || 0}</p>
+                      <p className="text-xs text-gray-400">Creados</p>
+                    </div>
+                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+                      <p className="text-2xl font-bold text-blue-400">{invSavingResult.updated || 0}</p>
+                      <p className="text-xs text-gray-400">Actualizados</p>
+                    </div>
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                      <p className="text-2xl font-bold text-red-400">{invSavingResult.errors || 0}</p>
+                      <p className="text-xs text-gray-400">Errores</p>
+                    </div>
+                  </div>
+                  {invSavingResult.details?.errors?.length > 0 && (
+                    <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3 max-h-32 overflow-y-auto">
+                      {invSavingResult.details.errors.map((e: string, i: number) => (
+                        <p key={i} className="text-xs text-red-400">{e}</p>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex justify-end">
+                    <button onClick={() => { setShowInvoiceModal(false); setInvFile(null); setInvGuide(null); setInvSavingResult(null); }}
+                      className="px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all">
+                      Listo
+                    </button>
+                  </div>
+                </div>
+              ) : !invGuide ? (
+                <div className="space-y-4">
+                  <label
+                    onDragOver={(e) => { e.preventDefault(); setInvDragActive(true); }}
+                    onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setInvDragActive(false); }}
+                    onDrop={(e) => { e.preventDefault(); setInvDragActive(false); const file = e.dataTransfer.files?.[0] ?? null; if (file) setInvFile(file); }}
+                    className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-xl cursor-pointer transition-colors bg-dark-900/30 ${invDragActive ? "border-primary-400 bg-primary-500/10" : "border-dark-600/50 hover:border-primary-500/50"}`}>
+                    <div className="flex flex-col items-center gap-2">
+                      {invFile ? (
+                        <>
+                          <FileSpreadsheet size={32} className="text-green-400" />
+                          <span className="text-sm text-foreground">{invFile.name}</span>
+                          <span className="text-xs text-gray-500">{(invFile.size / 1024).toFixed(1)} KB</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload size={32} className="text-gray-500" />
+                          <span className="text-sm text-gray-400">Arrastra la factura aquí o haz clic para seleccionar (.xlsx / .xls)</span>
+                        </>
+                      )}
+                    </div>
+                    <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => setInvFile(e.target.files?.[0] || null)} />
+                  </label>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div>
+                      <label htmlFor="inv-loc" className="block text-xs text-gray-400 mb-1">Almacén de destino *</label>
+                      <select id="inv-loc" value={invLocationId} onChange={(e) => setInvLocationId(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                        <option value="">Seleccionar almacén...</option>
+                        {locations.filter((l) => l.type === "ALMACEN").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        {locations.filter((l) => l.type !== "ALMACEN").map((l) => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="inv-tc" className="block text-xs text-gray-400 mb-1">Tipo de cambio (Bs/$)</label>
+                      <input id="inv-tc" type="number" step="0.01" min="0" value={invExchangeRate} onChange={(e) => setInvExchangeRate(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                    </div>
+                    <div>
+                      <label htmlFor="inv-gastos" className="block text-xs text-gray-400 mb-1">% gastos (flete, impuestos...)</label>
+                      <input id="inv-gastos" type="number" step="0.1" min="0" value={invGastos} onChange={(e) => setInvGastos(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                    </div>
+                    <div>
+                      <label htmlFor="inv-tienda" className="block text-xs text-gray-400 mb-1">% A tienda (margen tienda)</label>
+                      <input id="inv-tienda" type="number" step="0.1" min="0" value={invTiendaMargin} onChange={(e) => setInvTiendaMargin(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                    </div>
+                  </div>
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+                    <p className="text-blue-400 text-xs">Costo = CU(fábrica) × TC × (1 + %gastos/100) · Costo Tienda = Costo × (1 + %A tienda/100) · 20%–80% = Costo × (1 + X/100). Precio Mayor, Precio 1 y Precio 2 se ajustan a mano en la siguiente pantalla (se muestra el precio antiguo si el producto ya existe).</p>
+                  </div>
+                  <div className="flex justify-end">
+                    <button onClick={previewInvoice} disabled={!invFile || invPreviewing}
+                      className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2">
+                      {invPreviewing ? <><RefreshCw size={16} className="animate-spin" /> Generando...</> : <><Upload size={16} /> Previsualizar</>}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <p className="text-sm text-gray-400">
+                      {invGuide.length} productos · TC {invGuideMeta?.exchangeRate} · gastos {invGuideMeta?.gastosPer}% · margen tienda {invGuideMeta?.tiendaMargin}% · <span className="text-yellow-400">Editá el Precio Mayor, Precio 1 y Precio 2 antes de guardar</span>
+                    </p>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setInvGuide(null); setInvSavingResult(null); }}
+                        className="px-4 py-2 text-sm text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
+                        Volver
+                      </button>
+                      <button onClick={exportOferta} disabled={invExporting}
+                        className="px-4 py-2 flex items-center gap-2 bg-dark-700 hover:bg-dark-600 text-gray-200 rounded-xl text-sm transition-all disabled:opacity-50">
+                        {invExporting ? <><RefreshCw size={14} className="animate-spin" /> Generando...</> : <><Download size={14} /> Exportar oferta</>}
+                      </button>
+                      <button onClick={saveInvoice} disabled={invSaving}
+                        className="px-4 py-2 flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-50">
+                        {invSaving ? <><RefreshCw size={14} className="animate-spin" /> Guardando...</> : <><Upload size={14} /> Guardar todo</>}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto border border-dark-700/50 rounded-xl">
+                    <table className="w-full text-xs whitespace-nowrap">
+                      <thead>
+                        <tr className="border-b border-dark-700/50 bg-dark-900/50">
+                          <th className="text-left px-3 py-2 text-gray-400 font-medium">Código</th>
+                          <th className="text-left px-3 py-2 text-gray-400 font-medium">Producto</th>
+                          <th className="text-center px-2 py-2 text-gray-400 font-medium">Qty</th>
+                          <th className="text-right px-2 py-2 text-gray-400 font-medium">Costo Fáb.</th>
+                          <th className="text-right px-2 py-2 text-gray-400 font-medium">Costo</th>
+                          <th className="text-right px-2 py-2 text-gray-400 font-medium">Costo Tienda</th>
+                          {[20, 30, 40, 50, 60, 70, 80].map((pct) => (
+                            <th key={pct} className="text-right px-2 py-2 text-gray-400 font-medium">{pct}%</th>
+                          ))}
+                          <th className="text-right px-2 py-2 text-gray-400 font-medium">P. Mayor</th>
+                          <th className="text-right px-2 py-2 text-gray-400 font-medium">Precio 1</th>
+                          <th className="text-right px-2 py-2 text-gray-400 font-medium">Precio 2</th>
+                          <th className="text-center px-2 py-2 text-gray-400 font-medium">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {invGuide.map((r: any, i: number) => {
+                          const base = invPrices[i] || { price1: 0, price2: 0, mayor: 0 };
+                          return (
+                            <tr key={i} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
+                              <td className="px-3 py-2 text-gray-300 font-mono">{r.itemCode || "—"}</td>
+                              <td className="px-3 py-2 text-foreground">
+                                {r.productName || "Sin nombre"}
+                                <span className="block text-[10px] text-gray-500">{r.marca} · {r.modelo} · {r.año}{r.detalle ? ` · ${r.detalle}` : ""}</span>
+                              </td>
+                              <td className="px-2 py-2 text-center text-gray-300">{r.qty}</td>
+                              <td className="px-2 py-2 text-right text-gray-300">{r.costoUnitario.toFixed(2)}</td>
+                              <td className="px-2 py-2 text-right text-gray-300">{r.costo.toFixed(2)}</td>
+                              <td className="px-2 py-2 text-right text-gray-300">{r.costoTienda.toFixed(2)}</td>
+                              {[20, 30, 40, 50, 60, 70, 80].map((pct) => (
+                                <td key={pct} className="px-2 py-2 text-right text-gray-300">{r.prices[`p${pct}`].toFixed(2)}</td>
+                              ))}
+                              <td className="px-2 py-2">
+                                <input type="number" step="0.01" min="0" value={base.mayor}
+                                  onChange={(e) => updateInvPrice(i, "mayor", Number(e.target.value))}
+                                  className="w-24 px-2 py-1 bg-dark-900/50 border border-dark-700 rounded-lg text-foreground text-xs text-right focus:outline-none focus:border-primary-500" />
+                                {r.oldMayor > 0 && <span className="block text-[10px] text-gray-500">ant.: {r.oldMayor}</span>}
+                              </td>
+                              <td className="px-2 py-2">
+                                <input type="number" step="0.01" min="0" value={base.price1}
+                                  onChange={(e) => updateInvPrice(i, "price1", Number(e.target.value))}
+                                  className="w-24 px-2 py-1 bg-dark-900/50 border border-dark-700 rounded-lg text-foreground text-xs text-right focus:outline-none focus:border-primary-500" />
+                                {r.oldPrice1 > 0 && <span className="block text-[10px] text-gray-500">ant.: {r.oldPrice1}</span>}
+                              </td>
+                              <td className="px-2 py-2">
+                                <input type="number" step="0.01" min="0" value={base.price2}
+                                  onChange={(e) => updateInvPrice(i, "price2", Number(e.target.value))}
+                                  className="w-24 px-2 py-1 bg-dark-900/50 border border-dark-700 rounded-lg text-foreground text-xs text-right focus:outline-none focus:border-primary-500" />
+                                {r.oldPrice2 > 0 && <span className="block text-[10px] text-gray-500">ant.: {r.oldPrice2}</span>}
+                              </td>
+                              <td className="px-2 py-2 text-center">
+                                {r.exists ? <span className="text-blue-400 text-[10px]">existente</span> : <span className="text-green-400 text-[10px]">nuevo</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {invGuideMeta?.errors?.length > 0 && (
+                    <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3 max-h-32 overflow-y-auto">
+                      {invGuideMeta.errors.map((e: string, i: number) => (
+                        <p key={i} className="text-xs text-red-400">{e}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal: Importar Excel */}
       {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -930,6 +1257,7 @@ export default function InventoryPage() {
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
                 <p className="text-blue-400 text-xs font-medium mb-1">Columnas aceptadas:</p>
        <p className="text-gray-400 text-xs">Codigo fabrica, Descripcion, Fabricante, Marca, Modelo, Años, Detalle, Codigo OEM, Categoría, Precio 1, Precio 2, Precio mayor, Costo, Stock, Detalles</p>
+       <p className="text-gray-400 text-xs mt-1">Podés usar columnas que coincidan con el nombre de cada ubicación (Tienda 1, Almacén 1...) para repartir el stock entre varias.</p>
               </div>
                 {!importResult ? (
                   <div className="space-y-3">

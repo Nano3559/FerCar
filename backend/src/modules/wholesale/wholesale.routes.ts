@@ -18,7 +18,7 @@ router.use(authorize("ADMIN", "TIENDA"));
 // POST — Crear venta mayorista
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { items, payments, customerId, customerData, locationId, clienteName, paraQuien, lugarEntrega, datosFactura, formaPago } = req.body;
+    const { items, payments, customerId, customerData, locationId, clienteName, paraQuien, lugarEntrega, datosFactura, formaPago, origen, envioExterior, quienRecoge, telefono, crearSolicitud } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
@@ -135,6 +135,10 @@ router.post("/", async (req: AuthRequest, res: Response) => {
           lugarEntrega: entregaLugar,
           datosFactura: entregaFactura,
           formaPago: entregaFormaPago,
+          origen: origen || null,
+          envioExterior: Boolean(envioExterior),
+          quienRecoge: quienRecoge || null,
+          telefono: telefono || null,
           items: { create: saleItemsData },
           payments: {
             create: payments.map((p: any) => ({
@@ -186,6 +190,34 @@ router.post("/", async (req: AuthRequest, res: Response) => {
                   });
                 }
               }
+            }
+          }
+        }
+      }
+
+      if (crearSolicitud !== false) {
+        const almacen = await tx.location.findFirst({ where: { type: "ALMACEN" } });
+        if (almacen) {
+          for (const update of stockUpdates) {
+            const existing = await tx.productRequest.findFirst({
+              where: {
+                productId: update.productId,
+                locationId: userLocationId,
+                status: { in: ["PENDIENTE", "RECIBIDO_POR_INVENTARIO", "PREPARANDO"] },
+              },
+            });
+            if (!existing) {
+              await tx.productRequest.create({
+                data: {
+                  productId: update.productId,
+                  quantity: update.quantity,
+                  requestedById: user.userId,
+                  locationId: userLocationId,
+                  status: "PENDIENTE",
+                  expectedDate: nextDayAt8(),
+                  note: "Despacho venta mayorista",
+                },
+              });
             }
           }
         }
@@ -278,6 +310,81 @@ router.post("/import", authorize("ADMIN"), upload.single("file"), async (req: Au
     });
   } catch (error: any) {
     console.error("Error al importar Excel:", error);
+    res.status(500).json({ message: error.message || "Error al procesar el archivo" });
+  }
+});
+
+// POST /import-order — Importar un pedido mayorista desde Excel
+// Columnas: Codigo Item / Codigo OEM / Codigo Fabrica / QTY. Resuelve los productos,
+// autocompleta el Precio Mayor y devuelve los ítems listos para la venta.
+router.post("/import-order", authorize("ADMIN", "TIENDA"), upload.single("file"), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Debe subir un archivo Excel" });
+    }
+
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet);
+
+    if (rows.length === 0) {
+      return res.status(400).json({ message: "El archivo está vacío" });
+    }
+
+    const items: any[] = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] as any;
+      const itemCode = (row["Codigo Item"] || row["Código Item"] || row["CodigoItem"] || row["Item Code"] || row["Codigo"] || row["Código"] || "").toString().trim();
+      const oemCode = (row["Codigo OEM"] || row["Código OEM"] || row["Cod.OEM"] || row["OEM"] || "").toString().trim();
+      const factoryCode = (row["Codigo Fabrica"] || row["Código Fabrica"] || row["Cod. Fabrica"] || "").toString().trim();
+      const qty = parseInt(row["QTY"] || row["Qty"] || row["Cantidad"] || row["Cant"] || "0", 10) || 0;
+
+      if (!itemCode && !oemCode && !factoryCode) {
+        errors.push(`Fila ${i + 2}: Falta el código del producto`);
+        continue;
+      }
+      if (qty <= 0) {
+        errors.push(`Fila ${i + 2}: Cantidad inválida para ${itemCode || oemCode || factoryCode}`);
+        continue;
+      }
+
+      let product: any = null;
+      if (itemCode) product = await prisma.product.findUnique({ where: { itemCode } });
+      if (!product && oemCode) product = await prisma.product.findFirst({ where: { oemCode } });
+      if (!product && factoryCode) product = await prisma.product.findFirst({ where: { factoryCode } });
+
+      if (!product) {
+        errors.push(`Fila ${i + 2}: Producto no encontrado (${itemCode || oemCode || factoryCode})`);
+        continue;
+      }
+
+      const unitPrice = product.wholesalePrice ? Number(product.wholesalePrice) : Number(product.price1) || 0;
+      const existingItem = items.find((it) => it.productId === product.id);
+      if (existingItem) {
+        existingItem.quantity += qty;
+        existingItem.subtotal = existingItem.quantity * existingItem.unitPrice;
+      } else {
+        items.push({
+          productId: product.id,
+          itemCode: product.itemCode,
+          name: product.name,
+          brand: product.brand,
+          model: product.model,
+          year: product.year,
+          detail: product.detail,
+          quantity: qty,
+          unitPrice,
+          subtotal: qty * unitPrice,
+        });
+      }
+    }
+
+    const total = items.reduce((s, it) => s + it.subtotal, 0);
+    res.json({ totalFiles: rows.length, valid: items.length, errors, items, total });
+  } catch (error: any) {
+    console.error("Error al importar pedido:", error);
     res.status(500).json({ message: error.message || "Error al procesar el archivo" });
   }
 });

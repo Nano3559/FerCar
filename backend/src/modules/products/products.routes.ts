@@ -12,6 +12,8 @@ const router = Router();
 const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+const round2 = (v: number) => Math.round(v * 100) / 100;
+
 // Datos de idioma locales para OCR (evita descargas en cada request)
 const OCR_LANG_PATH = path.join(process.cwd(), "node_modules", "@tesseract.js-data", "eng", "4.0.0");
 
@@ -533,6 +535,24 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const catMap: Record<string, number> = {};
     categories.forEach((c) => { catMap[c.name.toLowerCase()] = c.id; });
 
+    // Mapa de ubicaciones por nombre normalizado (con/sin tildes) para
+    // distribuir stock usando columnas tipo "Tienda 1", "Almacén 1", etc.
+    const allLocations = await prisma.location.findMany();
+    const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const locByName: Record<string, number> = {};
+    allLocations.forEach((l) => { locByName[normalize(l.name)] = l.id; });
+
+    const getPerLocationStock = (row: any): { locationId: number; stock: number }[] => {
+      const result: { locationId: number; stock: number }[] = [];
+      for (const key of Object.keys(row)) {
+        const locId = locByName[normalize(String(key).trim())];
+        if (!locId) continue;
+        const val = parseInt(row[key], 10) || 0;
+        if (val > 0) result.push({ locationId: locId, stock: val });
+      }
+      return result;
+    };
+
     // Validar que locationId global exista si se proporciona
     const requestedLocationId = Number(req.body.locationId) || 0;
     if (requestedLocationId) {
@@ -549,7 +569,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] as any;
 
-      const itemCode = (row["itemCode"] || row["Código"] || row["codigo"] || row["Codigo"] || row["Cód. Producto"] || row["Cod. Producto"] || row["Codigo Producto"] || row["Código Producto"] || row["Codigo Fabrica"] || row["Código Fábrica"] || row["Código fabrica"] || row["Cód. Fábrica"] || row["Cod. Fabrica"] || row["Code"] || "").toString().trim();
+      const itemCode = (row["itemCode"] || row["Codigo Item"] || row["Código Item"] || row["CodigoItem"] || row["Código"] || row["codigo"] || row["Codigo"] || row["Cód. Producto"] || row["Cod. Producto"] || row["Codigo Producto"] || row["Código Producto"] || row["Codigo Fabrica"] || row["Código Fábrica"] || row["Código fabrica"] || row["Cód. Fábrica"] || row["Cod. Fabrica"] || row["Code"] || "").toString().trim();
       const name = (row["Descripcion"] || row["descripcion"] || row["Descripción"] || row["descripción"] || row["Producto"] || row["producto"] || row["Nombre"] || row["nombre"] || row["Nombre del Producto"] || row["Nombre Producto"] || row["Nombre del Articulo"] || row["Articulo"] || row["Artículo"] || "").toString().trim();
       const manufacturer = (row["Fabricante"] || row["fabricante"] || row["Manufacturer"] || "Sin especificar").toString().trim();
       const brand = (row["Marca"] || row["marca"] || row["Brand"] || "").toString().trim();
@@ -585,6 +605,8 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
           rowLocationId = location.id;
         }
 
+        const perLocationStock = getPerLocationStock(row);
+
         const existing = await prisma.product.findUnique({ where: { itemCode } });
 
         if (existing) {
@@ -607,7 +629,11 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
           if (Object.keys(updateData).length > 0) {
             await prisma.product.update({ where: { id: existing.id }, data: updateData });
           }
-          if (rowLocationId) {
+          if (perLocationStock.length > 0) {
+            for (const { locationId, stock } of perLocationStock) {
+              await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId } }, update: { stock }, create: { productId: existing.id, locationId, stock, minStock: 1 } });
+            }
+          } else if (rowLocationId) {
             await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: rowLocationId } }, update: { stock: rowStock }, create: { productId: existing.id, locationId: rowLocationId, stock: rowStock, minStock: 1 } });
           }
           updated.push({ id: existing.id, itemCode, name, action: "actualizado" });
@@ -632,10 +658,18 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
             },
           });
 
-          const locations = rowLocationId
-            ? await prisma.location.findMany({ where: { id: rowLocationId } })
-            : await prisma.location.findMany();
-          for (const loc of locations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: rowLocationId ? rowStock : 0, minStock: 1 } });
+          let locations = allLocations;
+          if (perLocationStock.length > 0) {
+            const stockByLoc: Record<number, number> = {};
+            allLocations.forEach((l) => { stockByLoc[l.id] = 0; });
+            perLocationStock.forEach((p) => { stockByLoc[p.locationId] = p.stock; });
+            for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: 1 } });
+          } else {
+            locations = rowLocationId
+              ? allLocations.filter((l) => l.id === rowLocationId)
+              : allLocations;
+            for (const loc of locations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: rowLocationId ? rowStock : 0, minStock: 1 } });
+          }
 
           imported.push({ id: product.id, itemCode, name, action: "creado" });
         }
@@ -657,6 +691,274 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       return res.status(400).json({ message: "El archivo excede el tamaño máximo de 10MB" });
     }
     res.status(500).json({ message: error.message || "Error al procesar el archivo" });
+  }
+});
+
+const INVOICE_SCALE = [20, 30, 40, 50, 60, 70, 80];
+
+const findProductByCodes = async (itemCode: string, oemCode: string, factoryCode: string) => {
+  let product = null;
+  let matchedBy = "itemCode";
+  if (itemCode) product = await prisma.product.findUnique({ where: { itemCode } });
+  if (!product && oemCode) {
+    product = await prisma.product.findFirst({ where: { oemCode } });
+    matchedBy = "oem";
+  }
+  if (!product && factoryCode) {
+    product = await prisma.product.findFirst({ where: { factoryCode } });
+    matchedBy = "factory";
+  }
+  return { product, matchedBy };
+};
+
+const parseInvoiceRow = (row: any) => ({
+  itemCode: (row["Codigo Item"] || row["Código Item"] || row["CodigoItem"] || row["Codigo"] || row["Código"] || row["Codigo Producto"] || row["Código Producto"] || "").toString().trim(),
+  proveedor: (row["Proveedor"] || "").toString().trim(),
+  fabricante: (row["Fabricante"] || "").toString().trim(),
+  productName: (row["Producto"] || row["Descripcion"] || row["Descripción"] || "").toString().trim(),
+  marca: (row["Marca"] || "").toString().trim(),
+  modelo: (row["Modelo"] || "").toString().trim(),
+  año: (row["Año"] || row["Ano"] || row["Anos"] || row["Años"] || "").toString().trim(),
+  detalle: (row["Detalle"] || "").toString().trim(),
+  oemCode: (row["Codigo OEM"] || row["Código OEM"] || row["Cod.OEM"] || row["OEM"] || "").toString().trim(),
+  factoryCode: (row["Codigo Fabrica"] || row["Código Fabrica"] || "").toString().trim(),
+  qty: parseInt(row["QTY"] || row["Qty"] || row["Cantidad"] || row["Cant"] || "1", 10) || 1,
+  costoUnitario: parseFloat(row["COSTO UNITARIO FABRICA"] || row["Costo Unitario Fabrica"] || row["Costo Fabrica"] || row["Costo Unitario"] || row["Precio Unitario"] || row["Precio USD"] || row["PU"] || "0") || 0,
+});
+
+// POST /invoice-guide — Previsualizar importación por factura (solo ADMIN)
+// Calcula la guía de precios: Costo = CU × TC × (1 + %gasto/100), Costo Tienda = Costo × (1 + %A tienda/100)
+// y precios base 20%..80% = Costo × (1 + X/100). Muestra los precios antiguos de productoss ya existentes.
+router.post("/invoice-guide", authenticate, authorize("ADMIN"), upload.single("file"), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Debe subir el archivo Excel de la factura" });
+    }
+
+    const exchangeRate = parseFloat(req.body.exchangeRate);
+    if (!exchangeRate || exchangeRate <= 0) return res.status(400).json({ message: "El tipo de cambio debe ser mayor a 0" });
+    const gastosPer = req.body.gastosPer !== undefined && req.body.gastosPer !== "" ? parseFloat(req.body.gastosPer) || 0 : 0;
+    if (gastosPer < 0 || gastosPer > 100) return res.status(400).json({ message: "El porcentaje de gastos debe estar entre 0 y 100" });
+    const tiendaMargin = req.body.tiendaMargin !== undefined && req.body.tiendaMargin !== "" ? parseFloat(req.body.tiendaMargin) || 0 : 0;
+    if (tiendaMargin < 0 || tiendaMargin > 200) return res.status(400).json({ message: "El margen de tienda debe estar entre 0 y 200" });
+
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet);
+    if (rows.length === 0) return res.status(400).json({ message: "El archivo está vacío" });
+
+    const out: any[] = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const p = parseInvoiceRow(rows[i] as any);
+      if (!p.itemCode && !p.oemCode && !p.factoryCode) {
+        errors.push(`Fila ${i + 2}: Falta el código del producto`);
+        continue;
+      }
+
+      const costo = round2(p.costoUnitario * exchangeRate * (1 + gastosPer / 100));
+      const costoTienda = round2(costo * (1 + tiendaMargin / 100));
+      const prices: Record<string, number> = {};
+      for (const pct of INVOICE_SCALE) prices[`p${pct}`] = round2(costo * (1 + pct / 100));
+
+      const { product, matchedBy } = await findProductByCodes(p.itemCode, p.oemCode, p.factoryCode);
+
+      out.push({
+        rowIndex: i,
+        itemCode: p.itemCode,
+        proveedor: p.proveedor,
+        fabricante: p.fabricante,
+        productName: p.productName,
+        marca: p.marca,
+        modelo: p.modelo,
+        año: p.año,
+        detalle: p.detalle,
+        oemCode: p.oemCode,
+        factoryCode: p.factoryCode,
+        qty: p.qty,
+        costoUnitario: p.costoUnitario,
+        costo,
+        costoTienda,
+        prices,
+        oldPrice1: product ? Number(product.price1) : 0,
+        oldPrice2: product ? Number(product.price2) : 0,
+        oldMayor: product && product.wholesalePrice ? Number(product.wholesalePrice) : 0,
+        oldCost: product && product.cost ? Number(product.cost) : 0,
+        exists: !!product,
+        matchedBy,
+      });
+    }
+
+    res.json({ total: rows.length, valid: out.length, errors, exchangeRate, gastosPer, tiendaMargin, rows: out });
+  } catch (error: any) {
+    console.error("Error al generar guía de factura:", error);
+    res.status(500).json({ message: error.message || "Error interno del servidor" });
+  }
+});
+
+// POST /import-invoice — Guardar importación por factura (solo ADMIN)
+// Crea/actualiza productos con los precios manuales (Precio Mayor, Precio 1, Precio 2),
+// setea el costo calculado y suma la cantidad QTY al stock del almacén elegido.
+router.post("/import-invoice", authenticate, authorize("ADMIN"), upload.single("file"), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Debe subir el archivo Excel de la factura" });
+    }
+
+    const exchangeRate = parseFloat(req.body.exchangeRate);
+    if (!exchangeRate || exchangeRate <= 0) return res.status(400).json({ message: "El tipo de cambio debe ser mayor a 0" });
+    const gastosPer = parseFloat(req.body.gastosPer) || 0;
+    if (gastosPer < 0 || gastosPer > 100) return res.status(400).json({ message: "El porcentaje de gastos debe estar entre 0 y 100" });
+    const tiendaMargin = parseFloat(req.body.tiendaMargin) || 0;
+    if (tiendaMargin < 0 || tiendaMargin > 200) return res.status(400).json({ message: "El margen de tienda debe estar entre 0 y 200" });
+
+    const locationId = parseInt(req.body.locationId, 10) || 0;
+    if (!locationId) return res.status(400).json({ message: "Debe seleccionar el almacén de destino" });
+    const location = await prisma.location.findUnique({ where: { id: locationId } });
+    if (!location) return res.status(404).json({ message: `Almacén no encontrado (ID: ${locationId})` });
+
+    let prices: { price1?: number; price2?: number; mayor?: number }[] = [];
+    if (req.body.prices) {
+      try {
+        prices = JSON.parse(req.body.prices);
+      } catch {
+        return res.status(400).json({ message: "Datos de precios inválidos" });
+      }
+    }
+
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet);
+    if (rows.length === 0) return res.status(400).json({ message: "El archivo está vacío" });
+
+    const imported: any[] = [];
+    const updated: any[] = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const p = parseInvoiceRow(rows[i] as any);
+      if (!p.itemCode && !p.oemCode && !p.factoryCode) {
+        errors.push(`Fila ${i + 2}: Falta el código del producto`);
+        continue;
+      }
+
+      const costo = round2(p.costoUnitario * exchangeRate * (1 + gastosPer / 100));
+      const costoTienda = round2(costo * (1 + tiendaMargin / 100));
+      const priceSet = prices[i] || {};
+
+      try {
+        const { product, matchedBy } = await findProductByCodes(p.itemCode, p.oemCode, p.factoryCode);
+        const price1 = priceSet.price1 !== undefined ? Number(priceSet.price1) || 0 : 0;
+        const price2 = priceSet.price2 !== undefined ? Number(priceSet.price2) || 0 : 0;
+        const mayor = priceSet.mayor !== undefined ? Number(priceSet.mayor) || 0 : 0;
+
+        const common = {
+          name: p.productName || product?.name || "Sin nombre",
+          manufacturer: p.fabricante || product?.manufacturer || "Importado",
+          brand: p.marca || product?.brand || "Sin marca",
+          model: p.modelo || product?.model || "Sin modelo",
+          year: p.año || product?.year || "",
+          detail: p.detalle || product?.detail || "",
+          oemCode: p.oemCode || product?.oemCode || null,
+          factoryCode: p.factoryCode || product?.factoryCode || null,
+        };
+
+        let finalProduct;
+        if (!product) {
+          finalProduct = await prisma.product.create({
+            data: {
+              ...common,
+              itemCode: p.itemCode || `${p.oemCode || p.factoryCode}-${Date.now().toString().slice(-4)}`,
+              price1,
+              price2,
+              wholesalePrice: mayor > 0 ? mayor : null,
+              cost: costo > 0 ? costo : null,
+            },
+          });
+          imported.push({ id: finalProduct.id, itemCode: finalProduct.itemCode, name: finalProduct.name });
+        } else {
+          finalProduct = await prisma.product.update({
+            where: { id: product.id },
+            data: {
+              ...common,
+              price1,
+              price2,
+              wholesalePrice: mayor > 0 ? mayor : product.wholesalePrice,
+              cost: costo > 0 ? costo : product.cost,
+            },
+          });
+          updated.push({ id: product.id, itemCode: product.itemCode, name: product.name, matchedBy });
+        }
+
+        await prisma.inventory.upsert({
+          where: { productId_locationId: { productId: finalProduct.id, locationId } },
+          update: { stock: { increment: p.qty } },
+          create: { productId: finalProduct.id, locationId, stock: p.qty, minStock: 1 },
+        });
+      } catch (err: any) {
+        errors.push(`Fila ${i + 2}: ${err.message}`);
+      }
+    }
+
+    res.json({
+      total: rows.length,
+      imported: imported.length,
+      updated: updated.length,
+      errors: errors.length,
+      location: location.name,
+      stockAdded: true,
+      detail: `Costo = CU × TC(${exchangeRate}) × (1 + ${gastosPer}%/100); Costo Tienda = Costo × (1 + ${tiendaMargin}%/100)`,
+      details: { imported, updated, errors },
+    });
+  } catch (error: any) {
+    if (error.message && !error.message.includes("Prisma") && !error.code) {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ message: "El archivo excede el tamaño máximo de 10MB" });
+    }
+    console.error("Error al importar factura:", error);
+    res.status(500).json({ message: error.message || "Error interno del servidor" });
+  }
+});
+
+// POST /export-oferta — Exportar Excel de oferta por factura (solo ADMIN)
+router.post("/export-oferta", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ message: "No hay filas para exportar" });
+    }
+
+    const body = rows.map((r: any, i: number) => [
+      r.itemCode || "",
+      r.fabricante || "",
+      r.productName || r.name || "",
+      r.marca || "",
+      r.modelo || "",
+      r.año || r.year || "",
+      r.detalle || "",
+      r.oemCode || "",
+      r.factoryCode || "",
+      Number(r.mayor || r.price1 || 0),
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Codigo Item", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalle", "Codigo OEM", "Codigo Fabrica", "Precio Mayor"],
+      ...body,
+    ]);
+    ws["!cols"] = [{ wch: 12 }, { wch: 18 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Oferta");
+
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="oferta_${Date.now()}.xlsx"`);
+    return res.send(buf);
+  } catch (error: any) {
+    console.error("Error al exportar oferta:", error);
+    res.status(500).json({ message: error.message || "Error interno del servidor" });
   }
 });
 

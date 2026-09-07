@@ -123,12 +123,16 @@ model Sale {
   userId       Int
   locationId   Int
   customerId   Int?
-  seller       String?
-  paraQuien    String?
-  lugarEntrega String?
-  datosFactura String?
-  formaPago    String?
-  createdAt    DateTime   @default(now())
+  seller        String?
+  paraQuien     String?
+  lugarEntrega  String?
+  datosFactura  String?
+  formaPago     String?
+  origen        String?
+  envioExterior Boolean    @default(false)
+  quienRecoge   String?
+  telefono      String?
+  createdAt     DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   payments     Payment[]
   returns      Return[]
