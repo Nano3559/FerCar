@@ -127,6 +127,7 @@ export default function InventoryPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
   const [importLocationId, setImportLocationId] = useState("");
+  const [dragActive, setDragActive] = useState(false);
 
   const [imageModal, setImageModal] = useState<Product | null>(null);
   const [imageIndex, setImageIndex] = useState(0);
@@ -941,7 +942,11 @@ export default function InventoryPage() {
                     </select>
                     <p className="text-xs text-gray-600 mt-1">Si eliges una ubicación, la columna Stock se asigna allí.</p>
                   </div>
-                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-dark-600/50 rounded-xl cursor-pointer hover:border-primary-500/50 transition-colors bg-dark-900/30">
+                  <label
+                    onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+                    onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragActive(false); }}
+                    onDrop={(e) => { e.preventDefault(); setDragActive(false); const file = e.dataTransfer.files?.[0] ?? null; if (file) setImportFile(file); }}
+                    className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-xl cursor-pointer transition-colors bg-dark-900/30 ${dragActive ? "border-primary-400 bg-primary-500/10" : "border-dark-600/50 hover:border-primary-500/50"}`}>
                     <div className="flex flex-col items-center gap-2">
                       {importFile ? (
                         <>
@@ -952,7 +957,7 @@ export default function InventoryPage() {
                       ) : (
                         <>
                           <Upload size={32} className="text-gray-500" />
-                          <span className="text-sm text-gray-400">Seleccionar archivo .xlsx o .xls</span>
+                          <span className="text-sm text-gray-400">Arrastra el archivo aquí o haz clic para seleccionar (.xlsx / .xls)</span>
                         </>
                       )}
                     </div>
