@@ -1,0 +1,1 @@
+ALTER TABLE "RoleModel" ADD COLUMN IF NOT EXISTS "columnConfig" JSONB;

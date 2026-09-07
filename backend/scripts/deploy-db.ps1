@@ -15,6 +15,8 @@ $migrations = @(
   "prisma/migrations/20260902_add_movement_request_id/migration.sql",
   "prisma/migrations/20260902130000_add_unique_nit/migration.sql",
   "prisma/migrations/add_seller_columnPrefs.sql",
+  "prisma/migrations/add_role_columnConfig.sql",
+  "prisma/migrations/add_schema_sync.sql",
   "prisma/migrations/add_product_images.sql",
   "prisma/migrations/add_purchase_notes.sql"
 )
