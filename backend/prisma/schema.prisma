@@ -79,6 +79,8 @@ model Product {
   price2         Decimal
   wholesalePrice Decimal?
   cost           Decimal?
+  unitPrice      Decimal?
+  priceHermana   Decimal?
   categoryId     Int?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt

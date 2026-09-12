@@ -21,6 +21,9 @@ interface Product {
   detalles: string | null; image: string | null; images?: string[]; oemCode: string | null;
   factoryCode: string | null; price1: string; price2: string;
   wholesalePrice: string | null; cost: string | null;
+  unitPrice: string | null; priceHermana: string | null;
+  price20: number | null; price30: number | null; price40: number | null;
+  price50: number | null; price60: number | null; price70: number | null; price80: number | null;
   categoryId: number | null; category: string | null; supplierName?: string | null; stock: number;
 }
 
@@ -60,7 +63,10 @@ const emptyForm: FormData = {
 
 const ALL_COLUMNS = [
   "ID", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
-  "Cód. OEM", "Cód. Fábrica", "Proveedor", "Imagen", "Precio 1", "Precio 2", "Stock", "Acciones",
+  "Cód. OEM", "Cód. Fábrica", "Proveedor", "Imagen", "Precio 1", "Precio 2",
+  "Precio Mayor", "Costo", "Unit Price", "Hermana",
+  "20%", "30%", "40%", "50%", "60%", "70%", "80%",
+  "Stock", "Acciones",
 ];
 
 function getStoredColumns(): string[] | null {
@@ -70,6 +76,20 @@ function getStoredColumns(): string[] | null {
   } catch {
     return null;
   }
+}
+
+const DEPO_DEFAULT_COLUMNS = ["Precio Mayor", "Costo", "Unit Price", "Hermana", "20%", "30%", "40%", "50%", "60%", "70%", "80%"];
+
+function ensureDepoColumns(stored: string[] | null): string[] | null {
+  if (!stored || stored.length === 0) return stored;
+  if (typeof window !== "undefined" && localStorage.getItem("columns_inventario_depo_v1") === "1") return stored;
+  const merged = [...stored];
+  DEPO_DEFAULT_COLUMNS.forEach((c) => { if (!merged.includes(c)) merged.push(c); });
+  try { localStorage.setItem("columns_inventario_depo_v1", "1"); } catch { /* noop */ }
+  if (merged.length !== stored.length) {
+    try { localStorage.setItem("columns_inventario", JSON.stringify(merged)); } catch { /* noop */ }
+  }
+  return merged;
 }
 
 export default function InventoryPage() {
@@ -100,9 +120,9 @@ export default function InventoryPage() {
   const [showFilters, setShowFilters] = useState(false);
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
-    const stored = getStoredColumns();
+    const stored = ensureDepoColumns(getStoredColumns());
     const roleCols = columnConfig?.inventario;
-    const base = stored && stored.length ? stored : roleCols && roleCols.length ? roleCols : ALL_COLUMNS;
+    const base = stored && stored.length ? stored : roleCols && roleCols.length ? (ensureDepoColumns([...roleCols]) || roleCols) : ALL_COLUMNS;
     const merged = ALL_COLUMNS.filter((c) => base.includes(c));
     return merged.length ? merged : ALL_COLUMNS;
   });
@@ -127,6 +147,10 @@ export default function InventoryPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
   const [importLocationId, setImportLocationId] = useState("");
+  const [importType, setImportType] = useState("generic");
+  const [importExchangeRate, setImportExchangeRate] = useState("10.03");
+  const [importCostFactor, setImportCostFactor] = useState("1.5");
+  const [importHermanaFactor, setImportHermanaFactor] = useState("1.6");
   const [dragActive, setDragActive] = useState(false);
 
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -357,6 +381,12 @@ export default function InventoryPage() {
       setImportResult(null);
       const formData = new FormData();
       formData.append("file", importFile);
+      formData.append("importType", importType);
+      if (importType === "depo") {
+        formData.append("exchangeRate", importExchangeRate || "10.03");
+        formData.append("costFactor", importCostFactor || "1.5");
+        formData.append("hermanaFactor", importHermanaFactor || "1.6");
+      }
       if (importLocationId) formData.append("locationId", importLocationId);
       const res = await api.post("/products/import", formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -499,6 +529,14 @@ export default function InventoryPage() {
       );
       case "Precio 1": return <td key={column} className="px-4 py-3 text-right text-green-400 font-medium">{formatCurrency(p.price1)}</td>;
       case "Precio 2": return <td key={column} className="px-4 py-3 text-right text-blue-400">{formatCurrency(p.price2)}</td>;
+      case "Precio Mayor": return <td key={column} className="px-4 py-3 text-right text-foreground">{p.wholesalePrice ? formatCurrency(p.wholesalePrice) : "—"}</td>;
+      case "Costo": return <td key={column} className="px-4 py-3 text-right text-gray-400">{p.cost ? formatCurrency(p.cost) : "—"}</td>;
+      case "Unit Price": return <td key={column} className="px-4 py-3 text-right text-gray-300">{p.unitPrice ? `$${Number(p.unitPrice).toFixed(2)}` : "—"}</td>;
+      case "Hermana": return <td key={column} className="px-4 py-3 text-right text-purple-400">{p.priceHermana ? formatCurrency(p.priceHermana) : "—"}</td>;
+      case "20%": case "30%": case "40%": case "50%": case "60%": case "70%": case "80%": {
+        const key = `price${parseInt(column, 10)}` as keyof Product;
+        return <td key={column} className="px-4 py-3 text-right text-gray-400">{p[key] != null ? formatCurrency(String(p[key])) : "—"}</td>;
+      }
       case "Stock": return <td key={column} className="px-4 py-3 text-center"><span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span></td>;
       case "Acciones": return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1"><button onClick={() => navigate(`/panel/inventario/${p.id}`)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Ver detalle"><Eye size={16} /></button>{canEdit && <><button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title="Editar"><Pencil size={16} /></button><button onClick={() => setShowDeleteConfirm(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Eliminar"><Trash2 size={16} /></button></>}<button onClick={() => openStock(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-purple-400 hover:bg-purple-500/10 transition-all" title="Ver stock por ubicación"><Package size={16} /></button></div></td>;
       default: return null;
@@ -663,7 +701,7 @@ export default function InventoryPage() {
                 <thead>
                   <tr className="text-gray-500 border-b border-dark-700/50">
                     {visibleColumns.map((col) => {
-                      const align = ["Precio 1", "Precio 2"].includes(col) ? "text-right" : ["Imagen", "Stock", "Acciones"].includes(col) ? "text-center" : "text-left";
+                      const align = ["Precio 1", "Precio 2", "Precio Mayor", "Costo", "Unit Price", "Hermana", "20%", "30%", "40%", "50%", "60%", "70%", "80%"].includes(col) ? "text-right" : ["Imagen", "Stock", "Acciones"].includes(col) ? "text-center" : "text-left";
                       return (
                         <th key={col} className={`${align} px-4 py-3 font-medium`}>{col}</th>
                       );
@@ -1255,9 +1293,34 @@ export default function InventoryPage() {
             </div>
             <div className="p-5 space-y-4">
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
-                <p className="text-blue-400 text-xs font-medium mb-1">Columnas aceptadas:</p>
-       <p className="text-gray-400 text-xs">Codigo fabrica, Descripcion, Fabricante, Marca, Modelo, Años, Detalle, Codigo OEM, Categoría, Precio 1, Precio 2, Precio mayor, Costo, Stock, Detalles</p>
-       <p className="text-gray-400 text-xs mt-1">Podés usar columnas que coincidan con el nombre de cada ubicación (Tienda 1, Almacén 1...) para repartir el stock entre varias.</p>
+                <p className="text-blue-400 text-xs font-medium mb-1">Tipo de importación:</p>
+                <select value={importType} onChange={(e) => setImportType(e.target.value)} aria-label="Tipo de importación" className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none mt-1">
+                  <option value="generic">Genérica</option>
+                  <option value="depo">DEPO (plantilla del fabricante)</option>
+                </select>
+                {importType === "depo" ? (
+                  <div className="mt-3">
+                    <p className="text-gray-400 text-xs">La plantilla DEPO usa estas columnas fijas: <span className="text-foreground">Item Number, Description, Quantity, Unit Price, XMAYOR</span>. COSTO BS, HERMANAS y la escalera 20%..80% se calculan automáticamente con las fórmulas del Excel.</p>
+                    <div className="grid grid-cols-3 gap-2 mt-3">
+                      <div>
+                        <label htmlFor="import-tc" className="block text-xs text-gray-400 mb-1">Tipo de cambio</label>
+                        <input id="import-tc" type="number" step="any" min="0" value={importExchangeRate} onChange={(e) => setImportExchangeRate(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                      </div>
+                      <div>
+                        <label htmlFor="import-cf" className="block text-xs text-gray-400 mb-1">Factor costo</label>
+                        <input id="import-cf" type="number" step="any" min="0" value={importCostFactor} onChange={(e) => setImportCostFactor(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                      </div>
+                      <div>
+                        <label htmlFor="import-hf" className="block text-xs text-gray-400 mb-1">Factor Hermanas</label>
+                        <input id="import-hf" type="number" step="any" min="0" value={importHermanaFactor} onChange={(e) => setImportHermanaFactor(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-2">Fórmulas: Costo = Unit Price × TC × Factor costo · Hermanas = Unit Price × TC × Factor Hermanas · 20..80% = Costo × 1.2..1.8.</p>
+                  </div>
+                ) : (
+                  <p className="text-gray-400 text-xs mt-2">Columnas aceptadas: Codigo fabrica, Descripcion, Fabricante, Marca, Modelo, Años, Detalle, Codigo OEM, Categoría, Precio 1, Precio 2, Precio mayor, Costo, Stock, Detalles</p>
+                )}
+                <p className="text-gray-400 text-xs mt-1">Podés usar columnas que coincidan con el nombre de cada ubicación (Tienda 1, Almacén 1...) para repartir el stock entre varias.</p>
               </div>
                 {!importResult ? (
                   <div className="space-y-3">

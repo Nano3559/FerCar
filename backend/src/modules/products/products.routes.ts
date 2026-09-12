@@ -8,6 +8,16 @@ import { yearRangesOverlap } from "../../utils/yearRanges";
 import { authenticate, authorize, optionalAuth } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
 
+// Escalera de precios calculada sobre el costo (columnas 20% a 80% del Excel DEPO).
+const PRICE_STEPS = [20, 30, 40, 50, 60, 70, 80] as const;
+const priceLadder = (cost: number | null | undefined): Record<string, number | null> => {
+  const ladder: Record<string, number | null> = {};
+  PRICE_STEPS.forEach((step) => {
+    ladder[`price${step}`] = cost != null ? Math.round(cost * (1 + step / 100) * 100) / 100 : null;
+  });
+  return ladder;
+};
+
 const router = Router();
 const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -139,6 +149,9 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
         item.price2 = p.price2;
         item.wholesalePrice = p.wholesalePrice;
         item.cost = p.cost;
+        item.unitPrice = p.unitPrice;
+        item.priceHermana = p.priceHermana;
+        Object.assign(item, priceLadder(Number(p.cost) || null));
         item.supplierName = p.costs[0]?.supplier?.name || null;
       }
       return item;
@@ -269,6 +282,9 @@ router.get("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
       response.price2 = product.price2;
       response.wholesalePrice = product.wholesalePrice;
       response.cost = product.cost;
+      response.unitPrice = product.unitPrice;
+      response.priceHermana = product.priceHermana;
+      Object.assign(response, priceLadder(Number(product.cost) || null));
     }
     res.json(response);
   } catch (error) {
@@ -280,7 +296,7 @@ router.get("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
 // POST — Crear producto (solo ADMIN)
 router.post("/", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
-    const { itemCode, manufacturer, name, brand, model, year, detail, oemCode, factoryCode, price1, price2, wholesalePrice, cost, categoryId, image, images, locationId, stock = 0, minStock = 1 } = req.body;
+    const { itemCode, manufacturer, name, brand, model, year, detail, oemCode, factoryCode, price1, price2, wholesalePrice, cost, unitPrice, priceHermana, categoryId, image, images, locationId, stock = 0, minStock = 1 } = req.body;
 
     if (!itemCode || !manufacturer || !name || !brand || !model || !year || price1 == null) {
       return res.status(400).json({ message: "Campos obligatorios: itemCode, manufacturer, name, brand, model, year, price1" });
@@ -306,6 +322,8 @@ router.post("/", authenticate, authorize("ADMIN"), async (req: AuthRequest, res:
         price2: price2 ?? price1,
         wholesalePrice: wholesalePrice ?? null,
         cost: cost ?? null,
+        unitPrice: unitPrice ?? null,
+        priceHermana: priceHermana ?? null,
         categoryId: categoryId ?? null,
         image: (image as string) || null,
         images: Array.isArray(images) ? (images as string[]).filter((u): u is string => typeof u === "string" && u.length > 0) : [],
@@ -332,7 +350,7 @@ router.put("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, re
       return res.status(404).json({ message: "Producto no encontrado" });
     }
 
-    const { itemCode, manufacturer, name, brand, model, year, detail, oemCode, factoryCode, price1, price2, wholesalePrice, cost, categoryId, image, images } = req.body;
+    const { itemCode, manufacturer, name, brand, model, year, detail, oemCode, factoryCode, price1, price2, wholesalePrice, cost, unitPrice, priceHermana, categoryId, image, images } = req.body;
 
     if (itemCode && itemCode !== existing.itemCode) {
       const dup = await prisma.product.findUnique({ where: { itemCode } });
@@ -357,6 +375,8 @@ router.put("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, re
         ...(price2 != null && { price2 }),
         wholesalePrice: wholesalePrice !== undefined ? wholesalePrice : existing.wholesalePrice,
         cost: cost !== undefined ? cost : existing.cost,
+        unitPrice: unitPrice !== undefined ? unitPrice : existing.unitPrice,
+        priceHermana: priceHermana !== undefined ? priceHermana : existing.priceHermana,
         categoryId: categoryId !== undefined ? (categoryId ?? null) : existing.categoryId,
         image: image !== undefined ? (image || null) : existing.image,
         images: Array.isArray(images)
@@ -535,6 +555,14 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const catMap: Record<string, number> = {};
     categories.forEach((c) => { catMap[c.name.toLowerCase()] = c.id; });
 
+    // Plantilla según el fabricante seleccionado en el modal de importación.
+    // DEPO: columnas fijas Item Number / Description / Quantity / Unit Price /
+    // XMAYOR y columnas calculadas con las fórmulas del Excel.
+    const importType = req.body.importType === "depo" ? "depo" : "generic";
+    const exchangeRate = parseFloat(req.body.exchangeRate) > 0 ? parseFloat(req.body.exchangeRate) : 10.03;
+    const costFactor = parseFloat(req.body.costFactor) > 0 ? parseFloat(req.body.costFactor) : 1.5;
+    const hermanaFactor = parseFloat(req.body.hermanaFactor) > 0 ? parseFloat(req.body.hermanaFactor) : 1.6;
+
     // Mapa de ubicaciones por nombre normalizado (con/sin tildes) para
     // distribuir stock usando columnas tipo "Tienda 1", "Almacén 1", etc.
     const allLocations = await prisma.location.findMany();
@@ -569,23 +597,57 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] as any;
 
-      const itemCode = (row["itemCode"] || row["Codigo Item"] || row["Código Item"] || row["CodigoItem"] || row["Código"] || row["codigo"] || row["Codigo"] || row["Cód. Producto"] || row["Cod. Producto"] || row["Codigo Producto"] || row["Código Producto"] || row["Codigo Fabrica"] || row["Código Fábrica"] || row["Código fabrica"] || row["Cód. Fábrica"] || row["Cod. Fabrica"] || row["Code"] || "").toString().trim();
-      const name = (row["Descripcion"] || row["descripcion"] || row["Descripción"] || row["descripción"] || row["Producto"] || row["producto"] || row["Nombre"] || row["nombre"] || row["Nombre del Producto"] || row["Nombre Producto"] || row["Nombre del Articulo"] || row["Articulo"] || row["Artículo"] || "").toString().trim();
-      const manufacturer = (row["Fabricante"] || row["fabricante"] || row["Manufacturer"] || "Sin especificar").toString().trim();
-      const brand = (row["Marca"] || row["marca"] || row["Brand"] || "").toString().trim();
-      const model = (row["Modelo"] || row["modelo"] || row["Model"] || "").toString().trim();
-      const year = (row["Anos"] || row["anos"] || row["Años"] || row["años"] || row["Año"] || "").toString().trim();
-      const detail = (row["Detalle"] || row["detalle"] || row["Detail"] || "").toString().trim();
-      const oemCode = (row["Código OEM"] || row["codigo oem"] || row["Codigo OEM"] || row["oemCode"] || row["Cód. OEM"] || row["Cod.OEM"] || row["OEM"] || "").toString().trim();
-      const factoryCode = (row["Código fábrica"] || row["Código fabrica"] || row["codigo fabrica"] || row["Codigo fabrica"] || row["Codigo Fabrica"] || row["factoryCode"] || row["Cód. Fábrica"] || row["Cod. Fabrica"] || "").toString().trim();
+      let itemCode = (
+        row["itemCode"] || row["Codigo Item"] || row["Código Item"] || row["CodigoItem"] || row["Código"] || row["codigo"] || row["Codigo"] || row["Cód. Producto"] || row["Cod. Producto"] || row["Codigo Producto"] || row["Código Producto"] || row["Codigo Fabrica"] || row["Código Fábrica"] || row["Código fabrica"] || row["Cód. Fábrica"] || row["Cod. Fabrica"] || row["Code"] || ""
+      ).toString().trim();
+      let name = (row["Descripcion"] || row["descripcion"] || row["Descripción"] || row["descripción"] || row["Producto"] || row["producto"] || row["Nombre"] || row["nombre"] || row["Nombre del Producto"] || row["Nombre Producto"] || row["Nombre del Articulo"] || row["Articulo"] || row["Artículo"] || "").toString().trim();
+      let manufacturer = (row["Fabricante"] || row["fabricante"] || row["Manufacturer"] || "Sin especificar").toString().trim();
+      let brand = (row["Marca"] || row["marca"] || row["Brand"] || "").toString().trim();
+      let model = (row["Modelo"] || row["modelo"] || row["Model"] || "").toString().trim();
+      let year = (row["Anos"] || row["anos"] || row["Años"] || row["años"] || row["Año"] || "").toString().trim();
+      let detail = (row["Detalle"] || row["detalle"] || row["Detail"] || "").toString().trim();
+      let oemCode = (row["Código OEM"] || row["codigo oem"] || row["Codigo OEM"] || row["oemCode"] || row["Cód. OEM"] || row["Cod.OEM"] || row["OEM"] || "").toString().trim();
+      let factoryCode = (row["Código fábrica"] || row["Código fabrica"] || row["codigo fabrica"] || row["Codigo fabrica"] || row["Codigo Fabrica"] || row["factoryCode"] || row["Cód. Fábrica"] || row["Cod. Fabrica"] || "").toString().trim();
       const category = (row["Categoría"] || row["categoría"] || row["Categoria"] || row["categoria"] || row["Category"] || "").toString().trim();
-      const price1 = parseFloat(row["Precio 1"] || row["precio1"] || row["Precio minorista"] || row["price1"] || "0") || 0;
-      const price2 = parseFloat(row["Precio 2"] || row["precio2"] || row["Precio mayoreo"] || row["price2"] || "0") || 0;
-      const wholesalePrice = parseFloat(row["Precio mayor"] || row["precio mayor"] || row["wholesalePrice"] || "0") || 0;
-      const cost = parseFloat(row["Costo"] || row["costo"] || row["cost"] || "0") || 0;
-      const calidad = (row["Calidad"] || row["calidad"] || row["quality"] || row["Detalles"] || row["detalles"] || "").toString().trim();
-      const rowStock = parseInt(row["Stock"] || row["stock"] || "0", 10) || 0;
+      let price1 = parseFloat(row["Precio 1"] || row["precio1"] || row["Precio minorista"] || row["price1"] || "0") || 0;
+      let price2 = parseFloat(row["Precio 2"] || row["precio2"] || row["Precio mayoreo"] || row["price2"] || "0") || 0;
+      let wholesalePrice = parseFloat(row["Precio mayor"] || row["precio mayor"] || row["wholesalePrice"] || "0") || 0;
+      let cost = parseFloat(row["Costo"] || row["costo"] || row["cost"] || "0") || 0;
+      let unitPrice = parseFloat(row["Unit Price"] || row["unitPrice"] || row["Precio USD"] || "0") || 0;
+      let priceHermana = parseFloat(row["Hermanas"] || row["HERMANAS"] || row["Hermana"] || row["priceHermana"] || "0") || 0;
+      let calidad = (row["Calidad"] || row["calidad"] || row["quality"] || row["Detalles"] || row["detalles"] || "").toString().trim();
+      let rowStock = parseInt(row["Stock"] || row["stock"] || "0", 10) || 0;
       const rowLocation = (row["Ubicación"] || row["Ubicacion"] || row["Tienda"] || row["Almacén"] || row["Almacen"] || "").toString().trim();
+
+      // Plantilla por fabricante (DEPO): las columnas fijas del Excel son
+      // Item Number, Description, Quantity, Unit Price y XMAYOR; el resto
+      // (COSTO BS, HERMANAS, 20%..80%) se calcula con las fórmulas del archivo
+      // a partir de Unit Price y los factores que el usuario carga en el modal.
+      if (importType === "depo") {
+        const depoCell = (name: string): any => {
+          if (row[name] !== undefined) return row[name];
+          const found = Object.keys(row).find((k) => k.trim() === name);
+          return found !== undefined ? row[found] : undefined;
+        };
+        const unitPriceUsd = parseFloat(String(depoCell("Unit Price") ?? "0")) || 0;
+        itemCode = String(depoCell("Item Number") ?? "").toString().trim();
+        name = String(depoCell("Description") ?? depoCell("Descripcion") ?? "").toString().trim();
+        manufacturer = "DEPO";
+        brand = "Sin marca";
+        model = "Sin modelo";
+        year = "";
+        detail = "";
+        oemCode = "";
+        factoryCode = "";
+        unitPrice = unitPriceUsd;
+        cost = round2(unitPriceUsd * exchangeRate * costFactor);
+        priceHermana = round2(unitPriceUsd * exchangeRate * hermanaFactor);
+        price1 = priceHermana || cost;
+        price2 = round2(cost * 1.8);
+        wholesalePrice = parseFloat(String(depoCell("XMAYOR") ?? "0")) || 0;
+        rowStock = parseInt(String(depoCell("Quantity") ?? "0"), 10) || 0;
+        calidad = "";
+      }
 
       if (!itemCode || !name) {
         errors.push(`Fila ${i + 2}: Código y nombre son obligatorios`);
@@ -623,6 +685,8 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
           if (price2 > 0) updateData.price2 = price2;
           if (wholesalePrice > 0) updateData.wholesalePrice = wholesalePrice;
           if (cost > 0) updateData.cost = cost;
+          if (unitPrice > 0) updateData.unitPrice = unitPrice;
+          if (priceHermana > 0) updateData.priceHermana = priceHermana;
           if (categoryId) updateData.categoryId = categoryId;
           if (calidad) updateData.detalles = calidad;
 
@@ -653,6 +717,8 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
               price2: price2 || 0,
               wholesalePrice: wholesalePrice || null,
               cost: cost || null,
+              unitPrice: unitPrice || null,
+              priceHermana: priceHermana || null,
               categoryId,
               detalles: calidad || null,
             },
