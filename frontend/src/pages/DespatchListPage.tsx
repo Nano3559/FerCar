@@ -365,7 +365,7 @@ export default function DespatchListPage() {
                 {/* Cabecera */}
                 <div className="flex items-start justify-between gap-4 border-b-2 border-black pb-4">
                   <div>
-                    <p className="text-2xl font-bold tracking-tight">REPUESTO PRO</p>
+                    <p className="text-2xl font-bold tracking-tight">SHIBUMI</p>
                     <p className="text-xs text-gray-600 mt-1">Inventario y Autopartes</p>
                     <p className="text-xs text-gray-600">Av. Principal · Cochabamba - Bolivia</p>
                   </div>
