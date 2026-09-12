@@ -294,7 +294,26 @@ export default function SalesAnalyticsBoard({ data, loading, showLocationChart =
                     cy="50%"
                     innerRadius={45}
                     outerRadius={75}
-                    label={({ type, percent }) => `${TYPE_LABEL[String(type)] || type} (${((percent as number) * 100).toFixed(0)}%)`}
+                    label={(props: any) => {
+                      const { name, percent, cx, cy, midAngle, innerRadius, outerRadius } = props;
+                      const RADIAN = Math.PI / 180;
+                      const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+                      const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                      const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                      return (
+                        <text
+                          x={x}
+                          y={y}
+                          fill="rgb(var(--gray-100))"
+                          fontSize={12}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                        >
+                          {`${TYPE_LABEL[String(name)] || name} (${((percent as number) * 100).toFixed(0)}%)`}
+                        </text>
+                      );
+                    }}
+                    labelLine={false}
                   >
                     {data.salesByType.map((_entry, i) => (
                       <Cell key={`cell-${i}`} fill={PIE_COLORS[i % PIE_COLORS.length]} />
