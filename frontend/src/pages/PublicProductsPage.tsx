@@ -71,7 +71,7 @@ const bannerSlides = [
     cta: "Escribinos",
     accent: "from-green-600/20 to-emerald-800/10",
     icon: <Phone size={48} className="text-green-400" />,
-    onClick: () => alert("Próximamente podrás contactarnos por WhatsApp. ¡Escríbenos a contacto@repuestopro.com!"),
+    onClick: () => alert("Próximamente podrás contactarnos por WhatsApp. ¡Escríbenos a contacto@shibumi.com!"),
   },
 ];
 
@@ -487,7 +487,7 @@ export default function PublicProductsPage() {
                 Limpiar filtros
               </button>
               <button
-                onClick={() => alert("Próximamente podrás contactarnos por WhatsApp. ¡Escríbenos a contacto@repuestopro.com!")}
+                onClick={() => alert("Próximamente podrás contactarnos por WhatsApp. ¡Escríbenos a contacto@shibumi.com!")}
                 className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-xl text-sm font-medium transition-all"
               >
                 Consultar por WhatsApp

@@ -18,9 +18,9 @@ export default function PublicNavbar() {
         <div className="flex items-center justify-between h-16">
           <button type="button" onClick={() => navigate("/")} className="flex items-center gap-3 cursor-pointer bg-transparent p-0 border-0">
             <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20 overflow-hidden">
-              <img src="/fercar-logo.png" alt="RepuestoPro" className="w-full h-full object-contain" />
+              <img src="/fercar-logo.png" alt="Shibumi" className="w-full h-full object-contain" />
             </div>
-            <span className="text-xl font-bold text-foreground">RepuestoPro</span>
+            <span className="text-xl font-bold text-foreground">Shibumi</span>
           </button>
 
           <div className="hidden md:flex items-center gap-1">

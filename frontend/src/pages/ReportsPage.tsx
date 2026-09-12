@@ -232,7 +232,7 @@ export default function ReportsPage() {
     if (!rows.length) { toast.error("No hay datos para exportar"); return; }
     const doc = new jsPDF("l", "mm", "a4");
     doc.setFontSize(14);
-    doc.text(`RepuestoPro - ${title}`, 14, 15);
+    doc.text(`Shibumi - ${title}`, 14, 15);
     doc.setFontSize(9);
     doc.text(`Fecha: ${new Date().toLocaleDateString("es-BO")}`, 14, 22);
 

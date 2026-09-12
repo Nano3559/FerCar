@@ -25,9 +25,9 @@ export default function PublicFooter() {
           <div>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center overflow-hidden">
-                <img src="/fercar-logo.png" alt="RepuestoPro" className="w-full h-full object-contain" />
+                <img src="/fercar-logo.png" alt="Shibumi" className="w-full h-full object-contain" />
               </div>
-              <span className="text-lg font-bold text-foreground">RepuestoPro</span>
+              <span className="text-lg font-bold text-foreground">Shibumi</span>
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-4">
               Portal de Importadoras de Autopartes.
@@ -93,7 +93,7 @@ export default function PublicFooter() {
               </li>
               <li className="flex items-center gap-2 text-gray-400 text-sm">
                 <Mail size={14} className="text-gray-500 shrink-0" />
-                <span>contacto@repuestopro.com</span>
+                <span>contacto@shibumi.com</span>
               </li>
               <li className="flex items-center gap-2 text-gray-400 text-sm">
                 <MapPin size={14} className="text-gray-500 shrink-0" />

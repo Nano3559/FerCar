@@ -132,7 +132,7 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
 </head>
 <body>
   <div class="header">
-    <h2>RepuestoPro</h2>
+    <h2>Shibumi</h2>
     <p>Sistema de Inventario y Ventas</p>
     <p>${sale.location?.name || "Tienda"}</p>
   </div>
@@ -199,7 +199,7 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
 
   <div class="footer">
     <p>¡Gracias por su compra!</p>
-    <p>RepuestoPro — Repuestos de calidad para tu vehículo</p>
+    <p>Shibumi — Repuestos de calidad para tu vehículo</p>
     <div class="stamp">SOLD</div>
   </div>
 </body>

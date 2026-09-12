@@ -231,7 +231,7 @@ export default function WholesalePage() {
     if (!win) return;
     win.document.write(`<html><head><title>Nota de Venta #${sale.id}</title>
       <style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}th{background:#f0f0f0}h1{font-size:18px}.total{font-size:16px;font-weight:bold;text-align:right;margin-top:10px}</style></head><body>
-      <h1>RepuestoPro - Nota de Venta Mayorista</h1>
+      <h1>Shibumi - Nota de Venta Mayorista</h1>
       <p><b>Fecha:</b> ${new Date(sale.saleDate).toLocaleDateString("es-BO")} | <b>ID:</b> #${sale.id}</p>
        <p><b>Cliente:</b> ${sale.customer?.name || "N/A"} | <b>Lugar:</b> ${sale.lugarEntrega || sale.location?.name || "N/A"}</p>
        ${sale.paraQuien ? `<p><b>Para quién:</b> ${sale.paraQuien}</p>` : ""}
@@ -572,7 +572,7 @@ export default function WholesalePage() {
           <div ref={receiptPanelRef} id="wholesale-receipt-modal" role="dialog" aria-modal="true" aria-label="Venta mayorista registrada" className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="px-6 py-5 border-b border-dark-700/50 text-center">
               <h3 className="text-lg font-bold text-foreground">Venta mayorista registrada</h3>
-              <p className="text-xs text-gray-500 mt-1">RepuestoPro · Venta #{lastWholesaleSale.id}</p>
+              <p className="text-xs text-gray-500 mt-1">Shibumi · Venta #{lastWholesaleSale.id}</p>
             </div>
             <div className="p-6 space-y-4 text-sm">
               <div className="grid grid-cols-2 gap-2 text-gray-300">

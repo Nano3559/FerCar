@@ -70,10 +70,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20 overflow-hidden">
-                <img src="/fercar-logo.png" alt="RepuestoPro" className="w-full h-full object-contain" />
+                <img src="/fercar-logo.png" alt="Shibumi" className="w-full h-full object-contain" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-foreground">RepuestoPro</h1>
+                <h1 className="text-lg font-bold text-foreground">Shibumi</h1>
                 <p className="text-xs text-gray-500">{role || "Sistema"}</p>
               </div>
             </div>

@@ -567,7 +567,7 @@ export default function PurchaseNotesPage() {
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-300 pb-4 mb-4">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">NOTA DE COMPRA</h2>
-                    <p className="text-sm text-gray-600 mt-1">RepuestoPro · Inventario de Autopartes</p>
+                    <p className="text-sm text-gray-600 mt-1">Shibumi · Inventario de Autopartes</p>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-gray-900">{detail.noteNumber}</p>

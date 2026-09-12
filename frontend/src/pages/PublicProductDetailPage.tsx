@@ -143,7 +143,7 @@ export default function PublicProductDetailPage() {
 
             {/* WhatsApp */}
             <button
-              onClick={() => alert("Próximamente podrás contactarnos por WhatsApp. ¡Escríbenos a contacto@repuestopro.com!")}
+              onClick={() => alert("Próximamente podrás contactarnos por WhatsApp. ¡Escríbenos a contacto@shibumi.com!")}
               className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-medium transition-all"
             >
               <MessageCircle size={18} />

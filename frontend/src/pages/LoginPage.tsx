@@ -50,9 +50,9 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-600/20 overflow-hidden">
-            <img src="/fercar-logo.png" alt="RepuestoPro" className="w-full h-full object-contain" />
+            <img src="/fercar-logo.png" alt="Shibumi" className="w-full h-full object-contain" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">RepuestoPro</h1>
+          <h1 className="text-2xl font-bold text-foreground">Shibumi</h1>
           <p className="text-gray-400 text-sm mt-1">Sistema de Inventario y Ventas</p>
         </div>
 
@@ -123,7 +123,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-gray-500 text-xs mt-6">
-          &copy; 2026 RepuestoPro. Sistema de Inventario.
+          &copy; 2026 Shibumi. Sistema de Inventario.
         </p>
       </div>
     </div>
