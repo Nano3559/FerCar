@@ -43,24 +43,22 @@ async function main() {
 
   console.log("Roles creados:", { adminRole: adminRole.id, tiendaRole: tiendaRole.id, inventarioRole: inventarioRole.id });
 
-  // Ubicaciones: 4 almacenes + 3 tiendas
+  // Ubicaciones: 3 tiendas + 3 almacenes (FerCar)
   const ubicaciones = [
-    { name: "Almacén 1", type: "ALMACEN" as const, address: "Zona Industrial" },
-    { name: "Almacén 2", type: "ALMACEN" as const, address: "Zona Sur" },
-    { name: "Almacén 3", type: "ALMACEN" as const, address: "Zona Norte" },
-    { name: "Almacén 4", type: "ALMACEN" as const, address: "Zona Este" },
-    { name: "Tienda 1", type: "TIENDA" as const, address: "Av. Principal" },
-    { name: "Tienda 2", type: "TIENDA" as const, address: "Av. Ballivián" },
-    { name: "Tienda 3", type: "TIENDA" as const, address: "Av. Blanco Galindo" },
+    { name: "TUMUSLA", type: "TIENDA" as const, address: null },
+    { name: "SILES", type: "TIENDA" as const, address: null },
+    { name: "FALSURI", type: "TIENDA" as const, address: null },
+    { name: "MELCHOR", type: "ALMACEN" as const, address: null },
+    { name: "QUIJARRO", type: "ALMACEN" as const, address: null },
+    { name: "CHIQUICOLLO", type: "ALMACEN" as const, address: null },
   ];
 
   const ubicacionesCreadas = [];
   for (const u of ubicaciones) {
-    const ubicacion = await prisma.location.upsert({
-      where: { id: ubicaciones.indexOf(u) + 1 },
-      update: {},
-      create: u,
-    });
+    const existente = await prisma.location.findFirst({ where: { name: u.name } });
+    const ubicacion = existente
+      ? await prisma.location.update({ where: { id: existente.id }, data: { type: u.type, address: u.address } })
+      : await prisma.location.create({ data: u });
     ubicacionesCreadas.push(ubicacion);
   }
 
@@ -78,88 +76,48 @@ async function main() {
 
   console.log("Categorías creadas:", categorias.length);
 
-  // Usuario admin
-  const hashedPassword = await bcrypt.hash("admin123", 10);
-  const adminUser = await prisma.user.upsert({
-    where: { email: "admin@inventario.com" },
-    update: {},
-    create: {
-      name: "Administrador",
-      email: "admin@inventario.com",
-      password: hashedPassword,
-      roleId: adminRole.id,
-      locationId: null,
-    },
-  });
-
-  console.log("Usuario admin creado:", adminUser.email);
-
-  // Usuarios de tienda
-  const tiendaPassword = await bcrypt.hash("tienda123", 10);
-  const tiendaUsers = [
-    { name: "Vendedor Tienda 1", email: "tienda1@inventario.com", locationId: ubicacionesCreadas[4].id },
-    { name: "Vendedor Tienda 2", email: "tienda2@inventario.com", locationId: ubicacionesCreadas[5].id },
-    { name: "Vendedor Tienda 3", email: "tienda3@inventario.com", locationId: ubicacionesCreadas[6].id },
+  // Usuarios FerCar (10): 2 admin, 3 inventario, 5 vendedores
+  const password = await bcrypt.hash("123456", 10);
+  const usuarios = [
+    { name: "Valeria Zubieta", email: "valeria.zubieta@valeria.com", roleId: adminRole.id, locationName: null },
+    { name: "Daniel Zubieta", email: "daniel.zubieta@valeria.com", roleId: adminRole.id, locationName: null },
+    { name: "Alvaro Morales", email: "alvaro.morales@valeria.com", roleId: inventarioRole.id, locationName: "MELCHOR" },
+    { name: "Luis Mamani", email: "luis.mamani@valeria.com", roleId: inventarioRole.id, locationName: "QUIJARRO" },
+    { name: "Sergio Flores", email: "sergio.flores@valeria.com", roleId: inventarioRole.id, locationName: "CHIQUICOLLO" },
+    { name: "Liz Zubieta", email: "liz.zubieta@valeria.com", roleId: tiendaRole.id, locationName: "SILES" },
+    { name: "Navel Zubieta", email: "navel.zubieta@valeria.com", roleId: tiendaRole.id, locationName: "FALSURI" },
+    { name: "Papachu Zubieta", email: "papachu@gmail.com", roleId: tiendaRole.id, locationName: "TUMUSLA" },
+    { name: "Adrian Montero", email: "adrian.montero@valeria.com", roleId: tiendaRole.id, locationName: "TUMUSLA" },
+    { name: "Jessica Lia", email: "jessica.lia@valeria.com", roleId: tiendaRole.id, locationName: "TUMUSLA" },
   ];
 
-  for (const tu of tiendaUsers) {
+  for (const uInfo of usuarios) {
+    const locationId = uInfo.locationName
+      ? ubicacionesCreadas.find((l) => l.name === uInfo.locationName)?.id ?? null
+      : null;
+    const data = {
+      name: uInfo.name,
+      email: uInfo.email,
+      password,
+      roleId: uInfo.roleId,
+      locationId,
+    };
     await prisma.user.upsert({
-      where: { email: tu.email },
-      update: {},
-      create: {
-        name: tu.name,
-        email: tu.email,
-        password: tiendaPassword,
-        roleId: tiendaRole.id,
-        locationId: tu.locationId,
-      },
+      where: { email: uInfo.email },
+      update: { name: uInfo.name, roleId: uInfo.roleId, locationId },
+      create: data,
     });
   }
 
-  console.log("Usuarios de tienda creados:", tiendaUsers.length);
-
-  // Usuario de inventario
-  const inventarioPassword = await bcrypt.hash("inventario123", 10);
-  await prisma.user.upsert({
-    where: { email: "inventario@inventario.com" },
-    update: {},
-    create: {
-      name: "Encargado Inventario",
-      email: "inventario@inventario.com",
-      password: inventarioPassword,
-      roleId: inventarioRole.id,
-      locationId: ubicacionesCreadas[0].id,
-    },
-  });
-
-  console.log("Usuario de inventario creado");
-
-  // Usuario de tienda adicional (Fernando) — rol TIENDA con categorías limitadas
-  const vendedorPassword = await bcrypt.hash("vendedor123", 10);
-  await prisma.user.upsert({
-    where: { email: "fernando@inventario.com" },
-    update: { roleId: tiendaRole.id, locationId: ubicacionesCreadas[4].id, password: vendedorPassword },
-    create: {
-      name: "Fernando Vendedor",
-      email: "fernando@inventario.com",
-      password: vendedorPassword,
-      roleId: tiendaRole.id,
-      locationId: ubicacionesCreadas[4].id,
-    },
-  });
-
-  console.log("Usuario TIENDA (Fernando) creado");
+  console.log("Usuarios creados:", usuarios.length);
 
   await seedData(prisma);
 
   console.log("\n=== Datos iniciales sembrados correctamente ===");
-  console.log("Credenciales de acceso:");
-  console.log("  Admin:       admin@inventario.com / admin123");
-  console.log("  Tienda 1:    tienda1@inventario.com / tienda123");
-  console.log("  Tienda 2:    tienda2@inventario.com / tienda123");
-  console.log("  Tienda 3:    tienda3@inventario.com / tienda123");
-  console.log("  Inventario:  inventario@inventario.com / inventario123");
-  console.log("  Fernando:    fernando@inventario.com / vendedor123 (rol TIENDA, Tienda 1)");
+  console.log("Credenciales (contraseña 123456 para todos):");
+  for (const u of usuarios) {
+    console.log(`  ${u.roleId === adminRole.id ? "Admin" : u.roleId === inventarioRole.id ? "Inventario" : "Vendedor"} | ${u.name} | ${u.email} | ${u.locationName || "-"}`);
+  }
 }
 
 main()
