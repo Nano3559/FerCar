@@ -18,6 +18,20 @@ const priceLadder = (cost: number | null | undefined): Record<string, number | n
   return ladder;
 };
 
+// Mantiene el registro de fabricantes sincronizado con los productos.
+const IGNORED_MANUFACTURER_NAMES = ["sin especificar", ""];
+const syncManufacturer = async (name?: string | null): Promise<void> => {
+  const trimmed = (name || "").trim();
+  if (IGNORED_MANUFACTURER_NAMES.includes(trimmed.toLowerCase())) return;
+  const key = trimmed.toUpperCase();
+  const exists = await prisma.manufacturer.findFirst({
+    where: { name: { equals: key, mode: "insensitive" } },
+  });
+  if (!exists) {
+    await prisma.manufacturer.create({ data: { name: trimmed } }).catch(() => { /* carrera: ya existe */ });
+  }
+};
+
 const router = Router();
 const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -307,6 +321,8 @@ router.post("/", authenticate, authorize("ADMIN"), async (req: AuthRequest, res:
       return res.status(409).json({ message: `Ya existe un producto con código "${itemCode}"` });
     }
 
+    await syncManufacturer(manufacturer);
+
     const product = await prisma.product.create({
       data: {
         itemCode,
@@ -384,6 +400,8 @@ router.put("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, re
           : existing.images,
       },
     });
+
+    if (manufacturer) await syncManufacturer(manufacturer);
 
     res.json(product);
   } catch (error) {
@@ -707,6 +725,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
           if (Object.keys(updateData).length > 0) {
             await prisma.product.update({ where: { id: existing.id }, data: updateData });
           }
+          if (manufacturer && manufacturer !== "Sin especificar") await syncManufacturer(manufacturer);
           if (perLocationStock.length > 0) {
             for (const { locationId, stock } of perLocationStock) {
               await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId } }, update: { stock: { increment: stock } }, create: { productId: existing.id, locationId, stock, minStock: 1 } });
@@ -716,6 +735,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
           }
           updated.push({ id: existing.id, itemCode, name, action: "actualizado" });
         } else {
+          await syncManufacturer(manufacturer);
           const product = await prisma.product.create({
             data: {
               itemCode,

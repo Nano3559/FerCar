@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search, Plus, Filter, ChevronDown, Eye, Pencil, Trash2,
-  Package, RefreshCw, X, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download,
+  Package, RefreshCw, X, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, Tags,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -153,6 +153,12 @@ export default function InventoryPage() {
   const [importHermanaFactor, setImportHermanaFactor] = useState("1.6");
   const [dragActive, setDragActive] = useState(false);
 
+  const [manufacturers, setManufacturers] = useState<{ id: number; name: string; description: string | null }[]>([]);
+  const [showManufacturerModal, setShowManufacturerModal] = useState(false);
+  const [newManufacturer, setNewManufacturer] = useState("");
+  const [manufacturerSaving, setManufacturerSaving] = useState(false);
+  const [manufacturerDeleting, setManufacturerDeleting] = useState<number | null>(null);
+
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [invFile, setInvFile] = useState<File | null>(null);
   const [invDragActive, setInvDragActive] = useState(false);
@@ -178,6 +184,7 @@ export default function InventoryPage() {
   const stockPanelRef = useDialogBehavior(showStockModal !== null, () => { setShowStockModal(null); setStockData(null); setPendingStockId(null); setStockPassword(""); });
   const importPanelRef = useDialogBehavior(showImportModal, () => { setShowImportModal(false); setImportResult(null); });
   const invoicePanelRef = useDialogBehavior(showInvoiceModal, () => { setShowInvoiceModal(false); setInvFile(null); setInvGuide(null); setInvSavingResult(null); });
+  const manufacturerPanelRef = useDialogBehavior(showManufacturerModal, () => setShowManufacturerModal(false));
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -220,6 +227,47 @@ export default function InventoryPage() {
   useEffect(() => { api.get("/locations").then((res) => setLocations(res.data.locations || res.data)).catch(() => {}); }, []);
 
   useEffect(() => { setPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter]);
+
+  const fetchManufacturers = useCallback(async () => {
+    try {
+      const res = await api.get("/manufacturers");
+      setManufacturers(res.data.manufacturers || []);
+    } catch {
+      setManufacturers([]);
+    }
+  }, []);
+
+  useEffect(() => { fetchManufacturers(); }, [fetchManufacturers]);
+
+  const saveManufacturer = async () => {
+    if (!newManufacturer.trim()) { toast.error("Escribe el nombre del fabricante"); return; }
+    try {
+      setManufacturerSaving(true);
+      await api.post("/manufacturers", { name: newManufacturer.trim(), description: "" });
+      toast.success("Fabricante creado");
+      setNewManufacturer("");
+      fetchManufacturers();
+      fetchFilters();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al crear fabricante");
+    } finally {
+      setManufacturerSaving(false);
+    }
+  };
+
+  const deleteManufacturer = async (id: number) => {
+    try {
+      setManufacturerDeleting(id);
+      await api.delete(`/manufacturers/${id}`);
+      toast.success("Fabricante eliminado");
+      fetchManufacturers();
+      fetchFilters();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al eliminar fabricante");
+    } finally {
+      setManufacturerDeleting(null);
+    }
+  };
 
   const openCreate = () => {
     setEditingId(null);
@@ -556,6 +604,9 @@ export default function InventoryPage() {
             <RefreshCw size={18} />
           </button>
           <ColumnManager module="inventario" columns={ALL_COLUMNS} onVisibleChange={setVisibleColumns} />
+          <button onClick={() => { setShowManufacturerModal(true); setNewManufacturer(""); }} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all" title="Fabricantes">
+            <Tags size={18} />
+          </button>
           {canEdit && (
             <>
               <button onClick={() => { setShowImportModal(true); setImportFile(null); setImportResult(null); }} className="flex items-center gap-2 px-4 py-2.5 bg-dark-700 hover:bg-dark-600 border border-dark-600 text-gray-200 rounded-xl text-sm font-medium transition-all">
@@ -799,7 +850,20 @@ export default function InventoryPage() {
             <div className="p-5 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Código Item *" value={form.itemCode} onChange={(v) => setField("itemCode", v)} disabled={!!editingId} />
-                <Field label="Fabricante *" value={form.manufacturer} onChange={(v) => setField("manufacturer", v)} />
+                <div>
+                  <label htmlFor="product-manufacturer" className="block text-xs text-gray-500 mb-1.5">Fabricante *</label>
+                  <div className="flex items-center gap-2">
+                    <input id="product-manufacturer" list="manufacturers-list" value={form.manufacturer} onChange={(e) => setField("manufacturer", e.target.value)}
+                      placeholder="Busca o escribe un fabricante" className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                    <button type="button" onClick={() => { setShowManufacturerModal(true); setNewManufacturer(""); }} title="Gestionar fabricantes"
+                      className="shrink-0 p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all">
+                      <Tags size={16} />
+                    </button>
+                  </div>
+                  <datalist id="manufacturers-list">
+                    {manufacturers.map((m) => <option key={m.id} value={m.name} />)}
+                  </datalist>
+                </div>
                 <Field label="Nombre *" value={form.name} onChange={(v) => setField("name", v)} className="col-span-2" />
                 <Field label="Marca *" value={form.brand} onChange={(v) => setField("brand", v)} />
                 <Field label="Modelo *" value={form.model} onChange={(v) => setField("model", v)} />
@@ -1402,6 +1466,47 @@ export default function InventoryPage() {
                   {importing ? <><RefreshCw size={16} className="animate-spin" /> Importando...</> : <><Upload size={16} /> Importar</>}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+)}
+
+      {/* Modal: Gestionar Fabricantes */}
+      {showManufacturerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div ref={manufacturerPanelRef} role="dialog" aria-modal="true" aria-label="Gestionar fabricantes" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
+              <h2 className="text-lg font-bold text-foreground">Fabricantes ({manufacturers.length})</h2>
+              <button onClick={() => setShowManufacturerModal(false)} aria-label="Cerrar" className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 border-b border-dark-700/50">
+              <label htmlFor="new-manufacturer" className="block text-xs text-gray-400 mb-1">Nuevo fabricante</label>
+              <div className="flex items-center gap-2">
+                <input id="new-manufacturer" value={newManufacturer} onChange={(e) => setNewManufacturer(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveManufacturer(); }}
+                  placeholder="Ej: DEPO, TYC, FARET..." className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                <button onClick={saveManufacturer} disabled={manufacturerSaving} className="shrink-0 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5">
+                  {manufacturerSaving ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+                  Agregar
+                </button>
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1 p-5">
+              <div className="flex flex-wrap gap-2">
+                {manufacturers.map((m) => (
+                  <div key={m.id} className="flex items-center gap-2 pl-3 pr-2 py-1.5 bg-dark-900/50 border border-dark-700/50 rounded-xl text-sm text-foreground">
+                    <span>{m.name}</span>
+                    <button onClick={() => deleteManufacturer(m.id)} disabled={manufacturerDeleting === m.id} className="p-1 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Eliminar fabricante">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-dark-700/50">
+              <button onClick={() => setShowManufacturerModal(false)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">Cerrar</button>
             </div>
           </div>
         </div>

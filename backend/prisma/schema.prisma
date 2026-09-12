@@ -292,6 +292,14 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
+model Manufacturer {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model Importer {
   id          Int               @id @default(autoincrement())
   name        String
