@@ -148,6 +148,7 @@ export default function InventoryPage() {
   const [importResult, setImportResult] = useState<any>(null);
   const [importLocationId, setImportLocationId] = useState("");
   const [importType, setImportType] = useState("generic");
+  const [importManufacturer, setImportManufacturer] = useState("");
   const [importExchangeRate, setImportExchangeRate] = useState("10.03");
   const [importCostFactor, setImportCostFactor] = useState("1.5");
   const [importHermanaFactor, setImportHermanaFactor] = useState("1.6");
@@ -435,6 +436,7 @@ export default function InventoryPage() {
         formData.append("costFactor", importCostFactor || "1.5");
         formData.append("hermanaFactor", importHermanaFactor || "1.6");
       }
+      if (importManufacturer) formData.append("manufacturer", importManufacturer);
       if (importLocationId) formData.append("locationId", importLocationId);
       const res = await api.post("/products/import", formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -1357,19 +1359,19 @@ export default function InventoryPage() {
             </div>
             <div className="p-5 space-y-4">
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
-                <p className="text-blue-400 text-xs font-medium mb-1">Tipo de importación:</p>
-                <select value={importType} onChange={(e) => setImportType(e.target.value)} aria-label="Tipo de importación" className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none mt-1">
-                  <option value="generic">Genérica</option>
-                  <option value="depo">DEPO (plantilla del fabricante)</option>
-                </select>
-                {importType === "depo" ? (
-                  <div className="mt-3">
-                    <p className="text-gray-400 text-xs">La plantilla DEPO usa estas columnas fijas: <span className="text-foreground">Item Number, Description, Quantity, Unit Price, XMAYOR</span>. COSTO BS, HERMANAS y la escalera 20%..80% se calculan automáticamente con las fórmulas del Excel.</p>
-                    <div className="grid grid-cols-3 gap-2 mt-3">
-                      <div>
-                        <label htmlFor="import-tc" className="block text-xs text-gray-400 mb-1">Tipo de cambio</label>
-                        <input id="import-tc" type="number" step="any" min="0" value={importExchangeRate} onChange={(e) => setImportExchangeRate(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                      </div>
+              <p className="text-blue-400 text-xs font-medium mb-1">Tipo de importación:</p>
+                  <select value={importType} onChange={(e) => setImportType(e.target.value)} aria-label="Tipo de importación" className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none mt-1">
+                    <option value="generic">Genérica</option>
+                    <option value="depo">DEPO (plantilla del fabricante)</option>
+                  </select>
+                  {importType === "depo" ? (
+                    <div className="mt-3">
+                      <p className="text-gray-400 text-xs">La plantilla DEPO usa estas columnas fijas: <span className="text-foreground">Item Number, Description, Quantity, Unit Price, XMAYOR</span>. COSTO BS, HERMANAS y la escalera 20%..80% se calculan automáticamente con las fórmulas del Excel.</p>
+                      <div className="grid grid-cols-3 gap-2 mt-3">
+                        <div>
+                          <label htmlFor="import-tc" className="block text-xs text-gray-400 mb-1">Tipo de cambio</label>
+                          <input id="import-tc" type="number" step="any" min="0" value={importExchangeRate} onChange={(e) => setImportExchangeRate(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                        </div>
                       <div>
                         <label htmlFor="import-cf" className="block text-xs text-gray-400 mb-1">Factor costo</label>
                         <input id="import-cf" type="number" step="any" min="0" value={importCostFactor} onChange={(e) => setImportCostFactor(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
@@ -1383,6 +1385,12 @@ export default function InventoryPage() {
                   </div>
                 ) : (
                   <p className="text-gray-400 text-xs mt-2">Columnas aceptadas: Codigo fabrica, Descripcion, Fabricante, Marca, Modelo, Años, Detalle, Codigo OEM, Categoría, Precio 1, Precio 2, Precio mayor, Costo, Stock, Detalles</p>
+                )}
+                {importType === "generic" && (
+                  <div className="mt-3">
+                    <label htmlFor="import-mfr" className="block text-xs text-gray-400 mb-1">Fabricante por defecto</label>
+                    <input id="import-mfr" list="manufacturers-list" value={importManufacturer} onChange={(e) => setImportManufacturer(e.target.value)} placeholder="Opcional: se usa si el archivo no trae Fabricante" className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  </div>
                 )}
                 <p className="text-gray-400 text-xs mt-1">Podés usar columnas que coincidan con el nombre de cada ubicación (Tienda 1, Almacén 1...) para repartir el stock entre varias.</p>
               </div>

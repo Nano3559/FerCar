@@ -620,7 +620,11 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         row["itemCode"] || row["Codigo Item"] || row["Código Item"] || row["CodigoItem"] || row["Código"] || row["codigo"] || row["Codigo"] || row["Cód. Producto"] || row["Cod. Producto"] || row["Codigo Producto"] || row["Código Producto"] || row["Codigo Fabrica"] || row["Código Fábrica"] || row["Código fabrica"] || row["Cód. Fábrica"] || row["Cod. Fabrica"] || row["Code"] || ""
       ).toString().trim();
       let name = (row["Descripcion"] || row["descripcion"] || row["Descripción"] || row["descripción"] || row["Producto"] || row["producto"] || row["Nombre"] || row["nombre"] || row["Nombre del Producto"] || row["Nombre Producto"] || row["Nombre del Articulo"] || row["Articulo"] || row["Artículo"] || "").toString().trim();
-      let manufacturer = (row["Fabricante"] || row["fabricante"] || row["Manufacturer"] || "Sin especificar").toString().trim();
+      let manufacturer = (row["Fabricante"] || row["fabricante"] || row["Manufacturer"] || "").toString().trim();
+      const cellManufacturer = (row["Fabricante"] != null && row["Fabricante"] !== "") || (row["fabricante"] != null && row["fabricante"] !== "") || (row["Manufacturer"] != null && row["Manufacturer"] !== "");
+      const manualManufacturer = req.body.manufacturer ? String(req.body.manufacturer).trim() : "";
+      if (!cellManufacturer && manualManufacturer) manufacturer = manualManufacturer;
+      if (!manufacturer) manufacturer = "Sin especificar";
       let brand = (row["Marca"] || row["marca"] || row["Brand"] || "").toString().trim();
       let model = (row["Modelo"] || row["modelo"] || row["Model"] || "").toString().trim();
       let year = (row["Anos"] || row["anos"] || row["Años"] || row["años"] || row["Año"] || "").toString().trim();
