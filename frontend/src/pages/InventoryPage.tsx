@@ -1357,7 +1357,7 @@ export default function InventoryPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                     <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3">
                       <p className="text-2xl font-bold text-green-400">{importResult.imported}</p>
                       <p className="text-xs text-gray-400">Creados</p>
@@ -1370,7 +1370,19 @@ export default function InventoryPage() {
                       <p className="text-2xl font-bold text-red-400">{importResult.errors}</p>
                       <p className="text-xs text-gray-400">Errores</p>
                     </div>
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+                      <p className="text-2xl font-bold text-amber-400">{importResult.warnings ?? 0}</p>
+                      <p className="text-xs text-gray-400">Advertencias</p>
+                    </div>
                   </div>
+                  {importResult.details?.warnings?.length > 0 && (
+                    <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 max-h-32 overflow-y-auto">
+                      <p className="text-xs text-amber-400 font-medium mb-1">Campos vacíos (editar manualmente):</p>
+                      {importResult.details.warnings.map((w: string, i: number) => (
+                        <p key={i} className="text-xs text-amber-300/90">{w}</p>
+                      ))}
+                    </div>
+                  )}
                   {importResult.details?.errors?.length > 0 && (
                     <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3 max-h-32 overflow-y-auto">
                       {importResult.details.errors.map((e: string, i: number) => (

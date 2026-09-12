@@ -593,6 +593,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const imported: any[] = [];
     const updated: any[] = [];
     const errors: string[] = [];
+    const warnings: string[] = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] as any;
@@ -655,6 +656,19 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       }
 
       try {
+        const rowWarnings: string[] = [];
+        const label = `Fila ${i + 2} (${itemCode})`;
+        if (importType === "depo") {
+          if (!unitPrice) rowWarnings.push(`${label}: Unit Price vacío — precios quedan en 0, editarlo manualmente`);
+          if (!rowStock) rowWarnings.push(`${label}: Quantity vacío o en 0 — sin stock`);
+          if (!wholesalePrice) rowWarnings.push(`${label}: XMAYOR vacío — sin Precio Mayor`);
+        } else {
+          if (!price1) rowWarnings.push(`${label}: Precio 1 vacío — quedó en 0, editarlo manualmente`);
+          if (!cost) rowWarnings.push(`${label}: Costo vacío — quedó en 0, editarlo manualmente`);
+          if (!rowStock) rowWarnings.push(`${label}: Stock vacío o en 0 — sin stock`);
+        }
+        rowWarnings.forEach((w) => warnings.push(w));
+
         let categoryId: number | null = null;
         if (category && catMap[category.toLowerCase()]) {
           categoryId = catMap[category.toLowerCase()];
@@ -749,7 +763,8 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       imported: imported.length,
       updated: updated.length,
       errors: errors.length,
-      details: { imported, updated, errors },
+      warnings: warnings.length,
+      details: { imported, updated, errors, warnings },
     });
   } catch (error: any) {
     console.error("Error al importar productos:", error);
