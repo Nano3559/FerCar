@@ -631,10 +631,10 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
           }
           if (perLocationStock.length > 0) {
             for (const { locationId, stock } of perLocationStock) {
-              await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId } }, update: { stock }, create: { productId: existing.id, locationId, stock, minStock: 1 } });
+              await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId } }, update: { stock: { increment: stock } }, create: { productId: existing.id, locationId, stock, minStock: 1 } });
             }
-          } else if (rowLocationId) {
-            await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: rowLocationId } }, update: { stock: rowStock }, create: { productId: existing.id, locationId: rowLocationId, stock: rowStock, minStock: 1 } });
+          } else if (rowLocationId && rowStock > 0) {
+            await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: rowLocationId } }, update: { stock: { increment: rowStock } }, create: { productId: existing.id, locationId: rowLocationId, stock: rowStock, minStock: 1 } });
           }
           updated.push({ id: existing.id, itemCode, name, action: "actualizado" });
         } else {
