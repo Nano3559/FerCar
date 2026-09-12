@@ -6,7 +6,7 @@ import { AuthRequest, AuthPayload } from "../types";
 
 const prisma = new PrismaClient();
 
-export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -17,7 +17,23 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
 
   try {
     const decoded = jwt.verify(token, config.jwtSecret) as AuthPayload;
-    req.user = decoded;
+
+    // Refresca rol/ubicación y verifica que el usuario siga activo
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true, email: true, role: true, locationId: true, active: true },
+    });
+
+    if (!user || !user.active) {
+      return res.status(401).json({ message: "Usuario desactivado" });
+    }
+
+    req.user = {
+      userId: user.id,
+      email: user.email,
+      role: user.role.name,
+      locationId: user.locationId,
+    } as AuthPayload;
     next();
   } catch {
     return res.status(401).json({ message: "Token inválido o expirado" });

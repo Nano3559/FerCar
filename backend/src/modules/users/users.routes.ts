@@ -29,6 +29,7 @@ router.get("/", authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
         role: u.role.name,
         locationId: u.locationId,
         locationName: u.location?.name || "N/A",
+        active: u.active,
         createdAt: u.createdAt,
       })),
     });
@@ -102,6 +103,7 @@ router.post("/", authorize("ADMIN"), async (req: AuthRequest, res: Response) => 
       role: user.role.name,
       locationId: user.locationId,
       locationName: user.location?.name || "N/A",
+      active: user.active,
     });
   } catch (error: any) {
     console.error("Error al crear usuario:", error);
@@ -115,10 +117,13 @@ router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) =
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "ID inválido" });
 
-    const existing = await prisma.user.findUnique({ where: { id } });
+    const existing = await prisma.user.findUnique({
+      where: { id },
+      include: { role: { select: { id: true, name: true } } },
+    });
     if (!existing) return res.status(404).json({ message: "Usuario no encontrado" });
 
-    const { name, email, password, role, roleId, locationId } = req.body;
+    const { name, email, password, role, roleId, locationId, active } = req.body;
 
     let finalRoleId = roleId;
     if (!finalRoleId && role) {
@@ -133,12 +138,28 @@ router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) =
       }
     }
 
+    // Desactivar la propia cuenta está bloqueado
+    if (active === false && req.user?.userId === id) {
+      return res.status(400).json({ message: "No puedes desactivar tu propia cuenta" });
+    }
+
+    // No permitir dejar al sistema sin administradores activos
+    if (active === false && existing.role.name === "ADMIN") {
+      const activeAdmins = await prisma.user.count({
+        where: { role: { name: "ADMIN" }, active: true },
+      });
+      if (activeAdmins <= 1) {
+        return res.status(400).json({ message: "No puedes desactivar al último administrador activo" });
+      }
+    }
+
     const updateData: any = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
     if (password) updateData.password = await bcrypt.hash(password, 10);
     if (finalRoleId) updateData.roleId = finalRoleId;
     if (locationId !== undefined) updateData.locationId = locationId ? Number(locationId) : null;
+    if (typeof active === "boolean") updateData.active = active;
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ message: "No hay datos para actualizar" });
@@ -161,6 +182,7 @@ router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) =
       role: user.role.name,
       locationId: user.locationId,
       locationName: user.location?.name || "N/A",
+      active: user.active,
     });
   } catch (error: any) {
     console.error("Error al actualizar usuario:", error);

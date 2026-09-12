@@ -95,6 +95,10 @@ router.post("/login", async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ message: "Credenciales inválidas" });
     }
 
+    if (!user.active) {
+      return res.status(403).json({ message: "Tu cuenta está desactivada. Contacta al administrador." });
+    }
+
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role.name, locationId: user.locationId },
       config.jwtSecret,

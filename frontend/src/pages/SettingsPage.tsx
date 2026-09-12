@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  Users, Shield, Plus, Pencil, Trash2, X, User, RefreshCw, Check, History, Store, Home,
+  Users, Shield, Plus, Pencil, Trash2, X, User, RefreshCw, Check, History, Store, Home, UserX, UserCheck,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -8,7 +8,7 @@ import { useDialogBehavior } from "../components/ui/useDialog";
 
 interface UserRecord {
   id: number; name: string; email: string; role: string; roleId: number;
-  locationId: number | null; locationName: string;
+  locationId: number | null; locationName: string; active: boolean;
 }
 
 interface Role {
@@ -67,9 +67,11 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null);
+  const [showToggleConfirm, setShowToggleConfirm] = useState<UserRecord | null>(null);
 
   const deleteConfirmPanelRef = useDialogBehavior(showDeleteConfirm !== null, () => setShowDeleteConfirm(null));
   const userPanelRef = useDialogBehavior(showUserModal, () => setShowUserModal(false));
+  const toggleConfirmPanelRef = useDialogBehavior(showToggleConfirm !== null, () => setShowToggleConfirm(null));
 
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [roleForm, setRoleForm] = useState({ name: "", permissions: [] as string[], categories: [] as string[] });
@@ -174,6 +176,18 @@ export default function SettingsPage() {
       fetchData();
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Error al eliminar");
+    }
+  };
+
+  const toggleUserActive = async (u: UserRecord) => {
+    const nextActive = !u.active;
+    try {
+      await api.put(`/users/${u.id}`, { active: nextActive });
+      toast.success(nextActive ? "Usuario activado" : "Usuario desactivado");
+      setShowToggleConfirm(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al actualizar estado");
     }
   };
 
@@ -371,12 +385,13 @@ export default function SettingsPage() {
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Email</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Rol</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Ubicación</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Estado</th>
                     <th className="text-center px-4 py-3 text-gray-400 font-medium">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {users.map((u) => (
-                    <tr key={u.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
+                    <tr key={u.id} className={`border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors ${!u.active ? "opacity-60" : ""}`}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 bg-dark-700 rounded-full flex items-center justify-center">
@@ -393,9 +408,19 @@ export default function SettingsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{u.locationName}</td>
                       <td className="px-4 py-3">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${u.active
+                          ? "bg-green-500/10 text-green-400 border-green-500/20"
+                          : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
+                          {u.active ? "Activo" : "Inactivo"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => openEdit(u)} className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all" title="Editar">
                             <Pencil size={14} />
+                          </button>
+                          <button onClick={() => setShowToggleConfirm(u)} className="p-1.5 text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all" title={u.active ? "Desactivar" : "Activar"}>
+                            {u.active ? <UserX size={14} /> : <UserCheck size={14} />}
                           </button>
                           <button onClick={() => setShowDeleteConfirm(u.id)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all" title="Eliminar">
                             <Trash2 size={14} />
@@ -657,6 +682,28 @@ export default function SettingsPage() {
             <div className="flex items-center justify-center gap-3">
               <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">Cancelar</button>
               <button onClick={() => deleteUser(showDeleteConfirm)} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all">Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showToggleConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div ref={toggleConfirmPanelRef} role="dialog" aria-modal="true" aria-label={showToggleConfirm.active ? "Desactivar usuario" : "Activar usuario"} className="bg-dark-800 border border-dark-700/50 rounded-2xl p-6 w-full max-w-sm text-center">
+            {showToggleConfirm.active ? <UserX size={40} className="text-amber-400 mx-auto mb-4" /> : <UserCheck size={40} className="text-green-400 mx-auto mb-4" />}
+            <h3 className="text-lg font-bold text-foreground mb-2">{showToggleConfirm.active ? "¿Desactivar usuario?" : "¿Activar usuario?"}</h3>
+            <p className="text-gray-400 text-sm mb-6">
+              <span className="text-foreground font-medium">{showToggleConfirm.name}</span>{" "}
+              {showToggleConfirm.active
+                ? "será desactivado y no podrá iniciar sesión ni usar el sistema."
+                : "será reactivado y podrá volver a iniciar sesión."}
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <button onClick={() => setShowToggleConfirm(null)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">Cancelar</button>
+              <button onClick={() => toggleUserActive(showToggleConfirm)}
+                className={`text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all ${showToggleConfirm.active ? "bg-amber-600 hover:bg-amber-700" : "bg-green-600 hover:bg-green-700"}`}>
+                {showToggleConfirm.active ? "Desactivar" : "Activar"}
+              </button>
             </div>
           </div>
         </div>

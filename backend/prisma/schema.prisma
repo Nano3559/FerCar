@@ -24,6 +24,7 @@ model User {
   password     String
   roleId       Int
   locationId   Int?
+  active       Boolean          @default(true)
   columnPrefs  Json?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt

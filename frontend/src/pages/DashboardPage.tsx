@@ -213,7 +213,7 @@ export default function DashboardPage() {
         try {
           const usersRes = await api.get("/users");
           const vendedores = (usersRes.data.users || [])
-            .filter((u: any) => u.role === "TIENDA")
+            .filter((u: any) => u.role === "TIENDA" && u.active !== false)
             .map((u: any) => ({ id: u.id, name: u.name }));
           setSellers(vendedores);
         } catch {
