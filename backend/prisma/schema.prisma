@@ -240,24 +240,28 @@ model Cost {
 }
 
 model PurchaseNote {
-  id            Int                @id @default(autoincrement())
-  noteNumber    String             @unique
-  date          DateTime           @default(now())
-  supplierName  String
-  supplierNit   String?
-  supplierPhone String?
-  locationId    Int
-  fileUrl       String?
-  exchangeRate  Decimal?
-  expensesPer   Decimal?
-  totalUnits    Int                @default(0)
-  totalCost     Decimal            @default(0)
-  userId        Int
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  location      Location           @relation(fields: [locationId], references: [id])
-  user          User               @relation("PurchaseNoteUser", fields: [userId], references: [id])
-  items         PurchaseNoteItem[]
+  id              Int                @id @default(autoincrement())
+  noteNumber      String             @unique
+  date            DateTime           @default(now())
+  supplierName    String
+  supplierNit     String?
+  supplierPhone   String?
+  locationId      Int
+  fileUrl         String?
+  exchangeRate    Decimal?
+  expensesPer     Decimal?
+  totalUnits      Int                @default(0)
+  totalCost       Decimal            @default(0)
+  userId          Int
+  status          PurchaseNoteStatus @default(ACTIVA)
+  cancelledAt     DateTime?
+  cancelledReason String?
+  cancelledBy     Int?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  location        Location           @relation(fields: [locationId], references: [id])
+  user            User               @relation("PurchaseNoteUser", fields: [userId], references: [id])
+  items           PurchaseNoteItem[]
 
   @@index([locationId])
 }
@@ -345,6 +349,11 @@ enum PaymentMethod {
   QR
   TRANSFERENCIA
   CREDITO
+}
+
+enum PurchaseNoteStatus {
+  ACTIVA
+  ANULADA
 }
 
 enum RequestStatus {

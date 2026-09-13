@@ -80,6 +80,140 @@ async function saveSettings(entries: { key: string; value: number }[]) {
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
+// Actualiza costo/P1/P2 de los productos según la última nota ACTIVA que los
+// incluye (el modelo "la última nota gana"). Si no hay ninguna nota activa
+// para un producto, se dejan los valores tal cual.
+async function refreshProductPricing(productIds: number[]) {
+  if (!productIds.length) return;
+  const items = await prisma.purchaseNoteItem.findMany({
+    where: { productId: { in: productIds }, note: { status: "ACTIVA" } },
+    include: { note: { select: { date: true, id: true } } },
+    orderBy: [{ note: { date: "desc" } }, { note: { id: "desc" } }],
+  });
+  const seen = new Set<number>();
+  const todo: { productId: number; unitCost: number; price1: number | null; price2: number | null }[] = [];
+  for (const it of items) {
+    if (seen.has(it.productId)) continue;
+    seen.add(it.productId);
+    todo.push({
+      productId: it.productId,
+      unitCost: Number(it.unitCost),
+      price1: it.price1 != null ? Number(it.price1) : null,
+      price2: it.price2 != null ? Number(it.price2) : null,
+    });
+  }
+  await Promise.all(
+    todo.map((t) =>
+      prisma.product.update({
+        where: { id: t.productId },
+        data: {
+          cost: t.unitCost,
+          ...(t.price1 != null ? { price1: t.price1 } : {}),
+          ...(t.price2 != null ? { price2: t.price2 } : {}),
+        },
+      })
+    )
+  );
+}
+
+type EditItem = {
+  id?: number;
+  productId: number;
+  quantity: number;
+  unitCost: number;
+  price1: number | null;
+  price2: number | null;
+  disc20: number;
+  disc30: number;
+  disc40: number;
+  disc50: number;
+  priceD20: number | null;
+  priceD30: number | null;
+  priceD40: number | null;
+  priceD50: number | null;
+  lineTotal: number;
+};
+
+// Construye la lista final de líneas de la nota a partir del payload de items
+// (si viene) o conserva las actuales. Recalcula precios y descuentos con los
+// márgenes y descuentos vigentes.
+async function buildFinalItems(noteId: number, existing: { id: number; productId: number; quantity: number; unitCost: any; disc20: any; disc30: any; disc40: any; disc50: any }[], bodyItems: any, settings: Record<string, number>): Promise<EditItem[]> {
+  const margin1 = settings.margin1;
+  const margin2 = settings.margin2;
+
+  const compute = (productId: number, quantity: number, unitCost: number, discs: { disc20: number; disc30: number; disc40: number; disc50: number }): EditItem => {
+    const price1 = round2(unitCost * (1 + margin1 / 100));
+    const price2 = round2(unitCost * (1 + margin2 / 100));
+    return {
+      productId,
+      quantity,
+      unitCost: round2(unitCost),
+      price1,
+      price2,
+      ...discs,
+      priceD20: round2(price1 * (1 - discs.disc20 / 100)),
+      priceD30: round2(price1 * (1 - discs.disc30 / 100)),
+      priceD40: round2(price1 * (1 - discs.disc40 / 100)),
+      priceD50: round2(price1 * (1 - discs.disc50 / 100)),
+      lineTotal: round2(unitCost * quantity),
+    };
+  };
+
+  const byId = new Map(existing.map((it) => [it.id, it]));
+  const byProduct = new Map(existing.map((it) => [it.productId, it]));
+
+  if (bodyItems === undefined || bodyItems === null) {
+    return existing.map((it) =>
+      compute(it.productId, it.quantity, Number(it.unitCost), {
+        disc20: Number(it.disc20 ?? settings.disc20),
+        disc30: Number(it.disc30 ?? settings.disc30),
+        disc40: Number(it.disc40 ?? settings.disc40),
+        disc50: Number(it.disc50 ?? settings.disc50),
+      })
+    );
+  }
+  if (!Array.isArray(bodyItems)) throw new Error("items debe ser una lista");
+
+  const finalItems: EditItem[] = [];
+  const productIds = bodyItems.filter((b: any) => b && !b.id).map((b: any) => Number(b.productId));
+  const products = await prisma.product.findMany({ where: { id: { in: productIds } } });
+  const prodSet = new Set(products.map((p) => p.id));
+
+  for (const b of bodyItems) {
+    if (!b) throw new Error("Línea inválida en items");
+    let quantity = Math.max(1, Math.round(parseFloat(b.quantity) || 1));
+    let unitCost = parseFloat(b.unitCost) || 0;
+    if (unitCost < 0) throw new Error("El costo unitario no puede ser negativo");
+
+    if (b.id != null) {
+      const cur = byId.get(Number(b.id));
+      if (!cur) throw new Error(`Línea ${b.id} no pertenece a la nota`);
+      quantity = quantity || cur.quantity;
+      unitCost = unitCost || Number(cur.unitCost);
+      finalItems.push(compute(cur.productId, quantity, unitCost, {
+        disc20: Number(cur.disc20 ?? settings.disc20),
+        disc30: Number(cur.disc30 ?? settings.disc30),
+        disc40: Number(cur.disc40 ?? settings.disc40),
+        disc50: Number(cur.disc50 ?? settings.disc50),
+      }));
+    } else {
+      const productId = Number(b.productId);
+      if (!prodSet.has(productId)) throw new Error("Producto no encontrado");
+      finalItems.push(compute(productId, quantity, unitCost, {
+        disc20: settings.disc20,
+        disc30: settings.disc30,
+        disc40: settings.disc40,
+        disc50: settings.disc50,
+      }));
+    }
+  }
+
+  if (finalItems.some((it, i) => finalItems.findIndex((o) => o.productId === it.productId) !== i)) {
+    throw new Error("Un producto no puede aparecer dos veces en la nota");
+  }
+  return finalItems;
+}
+
 // GET /file/:filename — Ver/descargar el Excel de una nota
 router.get("/file/:filename", (req: AuthRequest, res: Response) => {
   const filename = path.basename(String(req.params.filename));
@@ -348,6 +482,9 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         expensesPer: n.expensesPer ? Number(n.expensesPer) : null,
         totalUnits: n.totalUnits,
         totalCost: Number(n.totalCost),
+        status: n.status,
+        cancelledAt: n.cancelledAt,
+        cancelledReason: n.cancelledReason,
         createdAt: n.createdAt,
       })),
       pagination: { total, page: pg, limit: take, pages: Math.ceil(total / take) },
@@ -367,10 +504,9 @@ router.get("/reconcile", async (req: AuthRequest, res: Response) => {
     if (noteId && !Number.isNaN(Number(noteId))) purchaseWhere.noteId = Number(noteId);
 
     const [purchases, sales, stockBy, products] = await Promise.all([
-      prisma.purchaseNoteItem.groupBy({
-        by: ["productId"],
-        where: purchaseWhere,
-        _sum: { quantity: true, lineTotal: true },
+      prisma.purchaseNoteItem.findMany({
+        where: { ...purchaseWhere, note: { status: "ACTIVA" } },
+        select: { productId: true, quantity: true, lineTotal: true },
       }),
       prisma.saleItem.groupBy({
         by: ["productId"],
@@ -388,9 +524,10 @@ router.get("/reconcile", async (req: AuthRequest, res: Response) => {
 
     const purchaseMap = new Map<number, { quantity: number; lineTotal: number }>();
     for (const p of purchases) {
+      const prev = purchaseMap.get(p.productId) ?? { quantity: 0, lineTotal: 0 };
       purchaseMap.set(p.productId, {
-        quantity: p._sum.quantity ?? 0,
-        lineTotal: p._sum.lineTotal ? Number(p._sum.lineTotal) : 0,
+        quantity: prev.quantity + p.quantity,
+        lineTotal: prev.lineTotal + Number(p.lineTotal),
       });
     }
     const salesMap = new Map(purchases.map((p) => [p.productId, 0]));
@@ -452,7 +589,188 @@ router.get("/reconcile", async (req: AuthRequest, res: Response) => {
   }
 });
 
-// GET /:id — Detalle de una nota
+// PATCH /:id — Editar una nota (datos del proveedor, fecha, TC, gastos,
+// ubicación y líneas). Ajusta stock y precios de los productos.
+router.patch("/:id", async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseId(req.params.id);
+    const note = await prisma.purchaseNote.findUnique({
+      where: { id },
+      include: { items: { orderBy: { id: "asc" } } },
+    });
+    if (!note) return res.status(404).json({ message: "Nota de compra no encontrada" });
+    if (note.status !== "ACTIVA") return res.status(400).json({ message: "No se puede editar una nota anulada" });
+
+    const supplierName = req.body.supplierName !== undefined && req.body.supplierName !== ""
+      ? parseString(req.body.supplierName, "Proveedor", { required: true, max: 120 })!
+      : note.supplierName;
+    const supplierNit = req.body.supplierNit !== undefined && req.body.supplierNit !== ""
+      ? parseString(req.body.supplierNit, "NIT", { max: 40 })
+      : note.supplierNit;
+    const supplierPhone = req.body.supplierPhone !== undefined && req.body.supplierPhone !== ""
+      ? parseString(req.body.supplierPhone, "Teléfono", { max: 40 })
+      : note.supplierPhone;
+    const rawDate = req.body.date;
+    const date = rawDate !== undefined && rawDate !== "" ? new Date(String(rawDate)) : note.date;
+    if (Number.isNaN(date.getTime())) return res.status(400).json({ message: "Fecha inválida" });
+
+    const newLocationId = req.body.locationId !== undefined && req.body.locationId !== ""
+      ? parsePositiveInt(req.body.locationId, "Ubicación")
+      : note.locationId;
+    const newLocation = await prisma.location.findUnique({ where: { id: newLocationId } });
+    if (!newLocation) return res.status(404).json({ message: "Ubicación no encontrada" });
+
+    const exchangeRate = req.body.exchangeRate !== undefined && req.body.exchangeRate !== ""
+      ? parsePositiveDecimal(req.body.exchangeRate, "Tipo de cambio")
+      : note.exchangeRate != null ? Number(note.exchangeRate) : 1;
+    if (exchangeRate <= 0) return res.status(400).json({ message: "El tipo de cambio debe ser mayor a 0" });
+    const expensesPer = req.body.expensesPer !== undefined && req.body.expensesPer !== ""
+      ? parsePositiveDecimal(req.body.expensesPer, "Porcentaje de gastos")
+      : note.expensesPer != null ? Number(note.expensesPer) : 0;
+    if (expensesPer < 0 || expensesPer > 100) return res.status(400).json({ message: "El porcentaje de gastos debe estar entre 0 y 100" });
+
+    const settings = await getSettings(["margin1", "margin2", "disc20", "disc30", "disc40", "disc50"]);
+
+    // items payload (opcional): lista final completa.
+    //  { id }                    → línea existente (sin cambios)
+    //  { id, quantity, unitCost }→ línea existente modificada
+    //  { productId, quantity, unitCost } → línea nueva
+    const finalItems = await buildFinalItems(id, note.items, req.body.items, settings);
+    const oldByProduct = new Map(note.items.map((it) => [it.productId, it]));
+    const finalByProduct = new Map(finalItems.map((it) => [it.productId, it]));
+
+    const oldLocationId = note.locationId;
+    const locationChanged = oldLocationId !== newLocationId;
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Ajuste de stock
+      const adjust = async (productId: number, locationId: number, delta: number) => {
+        if (delta === 0) return;
+        const inv = await tx.inventory.findUnique({ where: { productId_locationId: { productId, locationId } } });
+        const next = Math.max(0, (inv?.stock ?? 0) + delta);
+        if (next === 0) {
+          if (inv) await tx.inventory.update({ where: { id: inv.id }, data: { stock: 0 } });
+          else await tx.inventory.create({ data: { productId, locationId, stock: 0 } });
+        } else {
+          await tx.inventory.upsert({
+            where: { productId_locationId: { productId, locationId } },
+            update: { stock: next },
+            create: { productId, locationId, stock: next },
+          });
+        }
+      };
+
+      if (locationChanged) {
+        for (const it of note.items) await adjust(it.productId, oldLocationId, -it.quantity);
+        for (const it of finalItems) await adjust(it.productId, newLocationId, it.quantity);
+      } else {
+        for (const [productId, fin] of finalByProduct) {
+          const old = oldByProduct.get(productId);
+          const delta = fin.quantity - (old?.quantity ?? 0);
+          await adjust(productId, oldLocationId, delta);
+        }
+        for (const [productId, old] of oldByProduct) {
+          if (!finalByProduct.has(productId)) await adjust(productId, oldLocationId, -old.quantity);
+        }
+      }
+
+      // Líneas de la nota
+      const existingIds = new Set(note.items.map((it) => it.id));
+      const keepIds = new Set(finalItems.filter((it) => it.id != null).map((it) => it.id));
+      const removed = [...existingIds].filter((iid) => !keepIds.has(iid));
+      if (removed.length) await tx.purchaseNoteItem.deleteMany({ where: { id: { in: removed } } });
+
+      for (const fin of finalItems) {
+        if (fin.id != null) {
+          await tx.purchaseNoteItem.update({
+            where: { id: fin.id },
+            data: { quantity: fin.quantity, unitCost: fin.unitCost, price1: fin.price1, price2: fin.price2, priceD20: fin.priceD20, priceD30: fin.priceD30, priceD40: fin.priceD40, priceD50: fin.priceD50, lineTotal: fin.lineTotal },
+          });
+        } else {
+          await tx.purchaseNoteItem.create({
+            data: { noteId: id, productId: fin.productId, quantity: fin.quantity, unitCost: fin.unitCost, price1: fin.price1, price2: fin.price2, disc20: fin.disc20, disc30: fin.disc30, disc40: fin.disc40, disc50: fin.disc50, priceD20: fin.priceD20, priceD30: fin.priceD30, priceD40: fin.priceD40, priceD50: fin.priceD50, lineTotal: fin.lineTotal },
+          });
+        }
+      }
+
+      const totalUnits = finalItems.reduce((s, it) => s + it.quantity, 0);
+      const totalCost = round2(finalItems.reduce((s, it) => s + it.lineTotal, 0));
+
+      const updated = await tx.purchaseNote.update({
+        where: { id },
+        data: { supplierName, supplierNit, supplierPhone, date, locationId: newLocationId, exchangeRate, expensesPer: expensesPer > 0 ? expensesPer : null, totalUnits, totalCost },
+        include: { items: true },
+      });
+      return { updated, totalCost, totalUnits };
+    });
+
+    await refreshProductPricing([...new Set(finalItems.map((it) => it.productId))]);
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.userId,
+        action: "UPDATE_PURCHASE_NOTE",
+        targetType: "PURCHASE_NOTE",
+        targetId: id,
+        newValue: { noteNumber: note.noteNumber, totalUnits: result.totalUnits, totalCost: result.totalCost, locationId: newLocationId, supplierName },
+      },
+    });
+
+    res.json({ note: { id, noteNumber: note.noteNumber, totalUnits: result.totalUnits, totalCost: result.totalCost }, updated: result.updated.items.length });
+  } catch (error: any) {
+    if (error.message === "ID inválido") return res.status(400).json({ message: error.message });
+    if (error.message && !error.message.includes("Prisma")) return res.status(400).json({ message: error.message });
+    console.error("Error al editar nota:", error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+});
+
+// POST /:id/cancel — Anular una nota: revierte stock y, si existe otra nota
+// activa con el producto, restaura costo/P1/P2 de la última nota vigente.
+router.post("/:id/cancel", async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseId(req.params.id);
+    const note = await prisma.purchaseNote.findUnique({ where: { id }, include: { items: true } });
+    if (!note) return res.status(404).json({ message: "Nota de compra no encontrada" });
+    if (note.status === "ANULADA") return res.status(400).json({ message: "La nota ya está anulada" });
+
+    const reason = req.body.reason ? String(req.body.reason).trim().slice(0, 300) : "";
+
+    await prisma.$transaction(async (tx) => {
+      for (const it of note.items) {
+        const inv = await tx.inventory.findUnique({ where: { productId_locationId: { productId: it.productId, locationId: note.locationId } } });
+        const next = Math.max(0, (inv?.stock ?? 0) - it.quantity);
+        await tx.inventory.update({
+          where: { id: inv!.id },
+          data: { stock: next },
+        });
+      }
+      await tx.purchaseNote.update({
+        where: { id },
+        data: { status: "ANULADA", cancelledAt: new Date(), cancelledReason: reason || null, cancelledBy: req.user!.userId },
+      });
+    });
+
+    await refreshProductPricing(note.items.map((it) => it.productId));
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.userId,
+        action: "CANCEL_PURCHASE_NOTE",
+        targetType: "PURCHASE_NOTE",
+        targetId: id,
+        oldValue: { totalUnits: note.totalUnits, totalCost: Number(note.totalCost) },
+        newValue: { reason: reason || null },
+      },
+    });
+
+    res.json({ ok: true, noteNumber: note.noteNumber });
+  } catch (error: any) {
+    if (error.message === "ID inválido") return res.status(400).json({ message: error.message });
+    console.error("Error al anular nota:", error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+});
 router.get("/:id", async (req: AuthRequest, res: Response) => {
   try {
     const id = parseId(req.params.id);
@@ -486,6 +804,9 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
         expensesPer: note.expensesPer ? Number(note.expensesPer) : null,
         totalUnits: note.totalUnits,
         totalCost: Number(note.totalCost),
+        status: note.status,
+        cancelledAt: note.cancelledAt,
+        cancelledReason: note.cancelledReason,
         createdAt: note.createdAt,
         items: note.items.map((it) => ({
           id: it.id,

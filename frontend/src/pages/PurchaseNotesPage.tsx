@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Upload, Search, ChevronLeft, ChevronRight, RefreshCw, FileText,
-  Eye, Download, Printer, X, Scale, Receipt,
+  Eye, Download, Printer, X, Scale, Receipt, Pencil, Ban, Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -15,6 +15,7 @@ interface NoteRow {
   locationId: number; locationName: string; locationType: string;
   fileUrl: string | null; exchangeRate: number | null; expensesPer: number | null;
   totalUnits: number; totalCost: number; createdAt: string;
+  status: "ACTIVA" | "ANULADA"; cancelledAt: string | null; cancelledReason: string | null;
 }
 
 interface NoteItem {
@@ -27,6 +28,15 @@ interface NoteItem {
 }
 
 interface NoteDetail extends NoteRow { items: NoteItem[]; }
+
+interface EditLine {
+  id?: number;
+  productId: number;
+  itemCode: string;
+  name: string;
+  quantity: number;
+  unitCost: number;
+}
 
 interface ReconcileRow {
   productId: number; itemCode: string; name: string; brand: string; model: string;
@@ -66,6 +76,27 @@ export default function PurchaseNotesPage() {
   const [detail, setDetail] = useState<NoteDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // Edit note modal
+  const [showEdit, setShowEdit] = useState(false);
+  const [editNodeId, setEditNodeId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({
+    supplierName: "", supplierNit: "", supplierPhone: "", date: "",
+    locationId: "", exchangeRate: "", expensesPer: "",
+  });
+  const [editLines, setEditLines] = useState<EditLine[]>([]);
+  const [editSaving, setEditSaving] = useState(false);
+  const [productQuery, setProductQuery] = useState("");
+  const [productSuggestions, setProductSuggestions] = useState<{
+    id: number; itemCode: string; name: string; brand: string; model: string; retailPrice: number | null;
+  }[]>([]);
+  const [showProdSuggestions, setShowProdSuggestions] = useState(false);
+
+  // Cancel note modal
+  const [showCancel, setShowCancel] = useState(false);
+  const [cancelNote, setCancelNote] = useState<NoteRow | NoteDetail | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+
   // Reconciliation
   const [recRows, setRecRows] = useState<ReconcileRow[]>([]);
   const [recLoading, setRecLoading] = useState(false);
@@ -78,6 +109,8 @@ export default function PurchaseNotesPage() {
 
   const newPanelRef = useDialogBehavior(showNew, () => setShowNew(false));
   const detailPanelRef = useDialogBehavior(showDetail, () => setShowDetail(false));
+  const editPanelRef = useDialogBehavior(showEdit, () => setShowEdit(false));
+  const cancelPanelRef = useDialogBehavior(showCancel, () => setShowCancel(false));
 
   const formatBs = (v: number) =>
     `Bs. ${v.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -202,6 +235,111 @@ export default function PurchaseNotesPage() {
 
   const printNote = () => { window.print(); };
 
+  const searchProduct = useCallback(async (q: string) => {
+    if (!q.trim()) { setProductSuggestions([]); return; }
+    try {
+      const res = await api.get(`/products?search=${encodeURIComponent(q.trim())}&limit=8`);
+      setProductSuggestions((res.data.products || []).map((p: any) => ({
+        id: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand, model: p.model,
+        retailPrice: p.price1 != null ? Number(p.price1) : null,
+      })));
+    } catch { setProductSuggestions([]); }
+  }, []);
+
+  useEffect(() => {
+    if (!showEdit) return;
+    const t = setTimeout(() => { if (productQuery.trim()) searchProduct(productQuery); }, 350);
+    return () => clearTimeout(t);
+  }, [productQuery, showEdit, searchProduct]);
+
+  const openEdit = async (id: number) => {
+    try {
+      setDetailLoading(true);
+      const res = await api.get(`/purchase-notes/${id}`);
+      const d = res.data.note as NoteDetail;
+      setEditNodeId(d.id);
+      setEditForm({
+        supplierName: d.supplierName,
+        supplierNit: d.supplierNit ?? "",
+        supplierPhone: d.supplierPhone ?? "",
+        date: new Date(d.date).toISOString().slice(0, 10),
+        locationId: String(d.locationId),
+        exchangeRate: d.exchangeRate != null ? String(d.exchangeRate) : "",
+        expensesPer: d.expensesPer != null ? String(d.expensesPer) : "",
+      });
+      setEditLines(d.items.map((it) => ({
+        id: it.id, productId: it.productId, itemCode: it.itemCode, name: it.name,
+        quantity: it.quantity, unitCost: Number(it.unitCost),
+      })));
+      setProductQuery("");
+      setShowProdSuggestions(false);
+      setShowEdit(true);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al cargar la nota");
+    } finally { setDetailLoading(false); }
+  };
+
+  const eupd = (k: keyof typeof editForm, v: string) => setEditForm((f) => ({ ...f, [k]: v }));
+  const updLine = (idx: number, field: "quantity" | "unitCost", v: string) =>
+    setEditLines((ls) => ls.map((l, i) => (i === idx ? { ...l, [field]: field === "quantity" ? Math.max(1, parseInt(v || "1", 10) || 1) : parseFloat(v || "0") || 0 } : l)));
+  const removeLine = (idx: number) => setEditLines((ls) => ls.filter((_, i) => i !== idx));
+  const addLine = (p: { id: number; itemCode: string; name: string }) => {
+    if (editLines.some((l) => l.productId === p.id)) { toast.error("Ese producto ya está en la nota"); return; }
+    setEditLines((ls) => [...ls, { productId: p.id, itemCode: p.itemCode, name: p.name, quantity: 1, unitCost: 0 }]);
+    setProductQuery("");
+    setProductSuggestions([]);
+    setShowProdSuggestions(false);
+  };
+
+  const saveEdit = async () => {
+    if (!editForm.supplierName.trim()) { toast.error("El proveedor es obligatorio"); return; }
+    if (!editForm.locationId) { toast.error("Selecciona la ubicación destino"); return; }
+    if (editLines.length === 0) { toast.error("La nota debe tener al menos una línea"); return; }
+    try {
+      setEditSaving(true);
+      const payload: any = {
+        supplierName: editForm.supplierName.trim(),
+        supplierNit: editForm.supplierNit.trim() || undefined,
+        supplierPhone: editForm.supplierPhone.trim() || undefined,
+        date: editForm.date,
+        locationId: editForm.locationId,
+        exchangeRate: editForm.exchangeRate || "1",
+        expensesPer: editForm.expensesPer || "0",
+        items: editLines.map((l) => l.quantity <= 0 ? null : (l.id ? { id: l.id, quantity: l.quantity, unitCost: l.unitCost } : { productId: l.productId, quantity: l.quantity, unitCost: l.unitCost })),
+      };
+      payload.items = payload.items.filter((x: unknown) => x !== null);
+      const res = await api.patch(`/purchase-notes/${editNodeId}`, payload);
+      toast.success(`Nota ${res.data.note.noteNumber} actualizada`);
+      setShowEdit(false);
+      fetchNotes();
+      if (showDetail && detail?.id === editNodeId) openDetail(editNodeId!);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al editar la nota");
+    } finally { setEditSaving(false); }
+  };
+
+  const openCancel = (n: NoteRow | NoteDetail) => {
+    setCancelNote(n);
+    setCancelReason("");
+    setShowCancel(true);
+  };
+
+  const submitCancel = async () => {
+    if (!cancelNote) return;
+    try {
+      setCancelling(true);
+      const res = await api.post(`/purchase-notes/${cancelNote.id}/cancel`, { reason: cancelReason.trim() });
+      toast.success(`Nota ${res.data.noteNumber} anulada — stock revertido`);
+      setShowCancel(false);
+      setCancelNote(null);
+      fetchNotes();
+      if (showDetail && detail?.id === cancelNote.id) openDetail(cancelNote.id);
+      if (tab === "conciliacion") fetchReconcile();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al anular la nota");
+    } finally { setCancelling(false); }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -254,15 +392,22 @@ export default function PurchaseNotesPage() {
                         <th className="text-right px-4 py-3 text-gray-400 font-medium">Unidades</th>
                         <th className="text-right px-4 py-3 text-gray-400 font-medium">Total</th>
                         <th className="text-center px-4 py-3 text-gray-400 font-medium">Archivo</th>
-                        <th className="text-center px-4 py-3 text-gray-400 font-medium">Ver</th>
+                        <th className="text-center px-4 py-3 text-gray-400 font-medium">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
                       {notes.length === 0 ? (
-                        <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No hay notas de compra registradas</td></tr>
+                        <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No hay notas de compra registradas</td></tr>
                       ) : notes.map((n) => (
-                        <tr key={n.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                          <td className="px-4 py-3 text-primary-400 font-mono font-medium">{n.noteNumber}</td>
+                        <tr key={n.id} className={`border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors ${n.status === "ANULADA" ? "opacity-60" : ""}`}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-primary-400 font-mono font-medium">{n.noteNumber}</span>
+                              {n.status === "ANULADA" && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wide bg-red-500/15 text-red-400 border border-red-500/30 rounded-full px-2 py-0.5">Anulada</span>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-4 py-3 text-gray-300">{new Date(n.date).toLocaleDateString("es-BO")}</td>
                           <td className="px-4 py-3">
                             <div className="text-foreground font-medium">{n.supplierName}</div>
@@ -280,10 +425,24 @@ export default function PurchaseNotesPage() {
                             ) : <span className="text-gray-600">—</span>}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <button onClick={() => openDetail(n.id)} title="Ver nota"
-                              className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all">
-                              <Eye size={14} />
-                            </button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button onClick={() => openDetail(n.id)} title="Ver nota"
+                                className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all">
+                                <Eye size={14} />
+                              </button>
+                              {n.status === "ACTIVA" && (
+                                <>
+                                  <button onClick={() => openEdit(n.id)} title="Editar nota"
+                                    className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-all">
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button onClick={() => openCancel(n)} title="Anular nota"
+                                    className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
+                                    <Ban size={14} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -545,8 +704,25 @@ export default function PurchaseNotesPage() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div ref={detailPanelRef} role="dialog" aria-modal="true" aria-label="Nota de compra" className="w-full max-w-3xl">
             <div className="no-print flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold text-foreground">{detail?.noteNumber}</h3>
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                {detail?.noteNumber}
+                {detail?.status === "ANULADA" && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide bg-red-500/15 text-red-400 border border-red-500/30 rounded-full px-2 py-0.5">Anulada</span>
+                )}
+              </h3>
               <div className="flex gap-2">
+                {detail?.status === "ACTIVA" && (
+                  <>
+                    <button onClick={() => openEdit(detail.id)}
+                      className="flex items-center gap-2 px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-600/30 rounded-xl text-sm font-medium transition-all">
+                      <Pencil size={15} /> Editar
+                    </button>
+                    <button onClick={() => openCancel(detail)}
+                      className="flex items-center gap-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-600/30 rounded-xl text-sm font-medium transition-all">
+                      <Ban size={15} /> Anular
+                    </button>
+                  </>
+                )}
                 <button onClick={printNote}
                   className="flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all">
                   <Printer size={15} /> Imprimir
@@ -563,6 +739,14 @@ export default function PurchaseNotesPage() {
                 <RefreshCw size={24} className="text-primary-400 animate-spin" />
               </div>
             ) : detail && (
+              <>
+              {detail.status === "ANULADA" && (
+                <div className="mb-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm no-print">
+                  Nota anulada el {detail.cancelledAt ? new Date(detail.cancelledAt).toLocaleDateString("es-BO") : "—"}
+                  {detail.cancelledReason ? ` — Motivo: ${detail.cancelledReason}` : " — Sin motivo registrado"}
+                  <span className="block text-xs text-red-400/80 mt-0.5">El stock agregado por esta nota fue revertido.</span>
+                </div>
+              )}
               <div className="nota-doc bg-white text-black rounded-2xl shadow-2xl p-6 md:p-8">
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-300 pb-4 mb-4">
                   <div>
@@ -639,7 +823,195 @@ export default function PurchaseNotesPage() {
                   <p>Total unidades: {detail.totalUnits} · Total compra: {formatBs(detail.totalCost)}</p>
                 </div>
               </div>
+              </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Note Modal */}
+      {showEdit && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div ref={editPanelRef} role="dialog" aria-modal="true" aria-label="Editar nota de compra"
+            className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
+              <h3 className="text-lg font-bold text-foreground">Editar Nota</h3>
+              <button onClick={() => setShowEdit(false)} aria-label="Cerrar" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-gray-400">
+                Podés corregir los datos de la nota y sus líneas. El stock se ajusta automáticamente (al cambiar ubicación, se mueve de la anterior a la nueva). Los precios de cada línea se recalculan según su costo.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Proveedor *</label>
+                  <input value={editForm.supplierName} onChange={(e) => eupd("supplierName", e.target.value)}
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Fecha</label>
+                  <input type="date" value={editForm.date} onChange={(e) => eupd("date", e.target.value)}
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">NIT</label>
+                  <input value={editForm.supplierNit} onChange={(e) => eupd("supplierNit", e.target.value)}
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Teléfono</label>
+                  <input value={editForm.supplierPhone} onChange={(e) => eupd("supplierPhone", e.target.value)}
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Ubicación destino (suma stock) *</label>
+                  <select value={editForm.locationId} onChange={(e) => eupd("locationId", e.target.value)}
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
+                    <option value="">Seleccionar...</option>
+                    {locations.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.type})</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Tipo cambio (Bs/USD)</label>
+                    <input type="number" step="0.01" min="0" value={editForm.exchangeRate} onChange={(e) => eupd("exchangeRate", e.target.value)}
+                      className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">% Gastos</label>
+                    <input type="number" min="0" value={editForm.expensesPer} onChange={(e) => eupd("expensesPer", e.target.value)}
+                      className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Agregar producto</label>
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input value={productQuery} onChange={(e) => { setProductQuery(e.target.value); setShowProdSuggestions(true); }}
+                    onFocus={() => { if (productSuggestions.length) setShowProdSuggestions(true); }}
+                    onBlur={() => setTimeout(() => setShowProdSuggestions(false), 150)}
+                    placeholder="Buscar por código, producto, marca o modelo..."
+                    className="w-full pl-9 pr-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                  {showProdSuggestions && productSuggestions.length > 0 && (
+                    <div className="absolute z-20 mt-1 w-full bg-dark-800 border border-dark-700 rounded-xl shadow-2xl overflow-hidden">
+                      {productSuggestions.map((p) => (
+                        <button key={p.id} onMouseDown={() => addLine(p)} type="button"
+                          className="w-full text-left px-3 py-2 hover:bg-dark-700 flex items-center justify-between gap-2 transition-colors">
+                          <span className="text-sm text-foreground truncate">
+                            <span className="font-mono text-xs text-gray-500">{p.itemCode}</span> · {p.name}
+                          </span>
+                          <span className="text-xs text-gray-500 shrink-0">{p.brand} {p.model}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto bg-dark-800/50 border border-dark-700/50 rounded-xl">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-dark-700/50">
+                      <th className="text-left px-3 py-2.5 text-gray-400 font-medium">Producto</th>
+                      <th className="text-right px-3 py-2.5 text-gray-400 font-medium w-24">Cant.</th>
+                      <th className="text-right px-3 py-2.5 text-gray-400 font-medium w-32">Costo unit. (Bs)</th>
+                      <th className="text-right px-3 py-2.5 text-gray-400 font-medium w-32">Total</th>
+                      <th className="w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editLines.length === 0 ? (
+                      <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-500">Sin líneas — busca un producto para agregarlo</td></tr>
+                    ) : editLines.map((l, idx) => (
+                      <tr key={`${l.id ?? "new"}-${l.productId}`} className="border-b border-dark-700/30 last:border-0">
+                        <td className="px-3 py-2">
+                          <span className="text-foreground font-medium">{l.name}</span>
+                          <span className="block text-xs text-gray-500 font-mono">{l.itemCode}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <input type="number" min="1" value={l.quantity}
+                            onChange={(e) => updLine(idx, "quantity", e.target.value)}
+                            className="w-full text-right px-2 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <input type="number" min="0" step="0.01" value={l.unitCost}
+                            onChange={(e) => updLine(idx, "unitCost", e.target.value)}
+                            className="w-full text-right px-2 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-300">{formatBs(l.quantity * l.unitCost)}</td>
+                        <td className="px-2 py-2">
+                          <button onClick={() => removeLine(idx)} title="Quitar línea" aria-label="Quitar línea"
+                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3} className="px-3 py-2.5 text-right text-sm font-semibold text-foreground">TOTAL</td>
+                      <td className="px-3 py-2.5 text-right text-sm font-bold text-amber-400">
+                        {formatBs(editLines.reduce((s, l) => s + l.quantity * l.unitCost, 0))}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-dark-700/50">
+              <button onClick={() => setShowEdit(false)}
+                className="px-4 py-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl text-sm transition-all">
+                Cancelar
+              </button>
+              <button onClick={saveEdit} disabled={editSaving}
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
+                {editSaving ? "Guardando..." : "Guardar cambios"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Note Modal */}
+      {showCancel && cancelNote && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div ref={cancelPanelRef} role="dialog" aria-modal="true" aria-label="Anular nota de compra"
+            className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
+              <h3 className="text-lg font-bold text-foreground">Anular Nota {cancelNote.noteNumber}</h3>
+              <button onClick={() => setShowCancel(false)} aria-label="Cerrar" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-red-500/10 border border-red-500/25 rounded-xl text-sm text-red-300 leading-relaxed">
+                Se revertirá el stock agregado ({cancelNote.totalUnits} unidades) por esta nota en <b>{cancelNote.locationName}</b>.
+                {cancelNote.totalCost > 0 && <> También se revertirá el costo y los precios a los de la última nota de compra vigente del producto (si existe).</>}
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Motivo (opcional)</label>
+                <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={3}
+                  placeholder="Ej: error de carga, nota duplicada..."
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-red-500 resize-none" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-dark-700/50">
+              <button onClick={() => setShowCancel(false)}
+                className="px-4 py-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl text-sm transition-all">
+                No, mantener
+              </button>
+              <button onClick={submitCancel} disabled={cancelling}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-red-600/20 disabled:opacity-50">
+                {cancelling ? "Anulando..." : "Sí, anular nota"}
+              </button>
+            </div>
           </div>
         </div>
       )}
