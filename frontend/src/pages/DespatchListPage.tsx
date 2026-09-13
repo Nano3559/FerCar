@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ListChecks, Plus, Trash2, Printer, Image as ImageIcon, FileDown, X,
   AlertTriangle, PackageOpen,
@@ -44,6 +44,7 @@ export default function DespatchListPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [exporting, setExporting] = useState<"pdf" | "png" | null>(null);
   const [docSeq, setDocSeq] = useState(1);
+  const [viewSeq, setViewSeq] = useState(1);
   const docRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,6 +85,19 @@ export default function DespatchListPage() {
       }
     };
     load();
+  }, []);
+
+  const refreshStock = useCallback(async () => {
+    try {
+      const iRes = await api.get("/inventory");
+      const map: Record<string, number> = {};
+      (Array.isArray(iRes.data) ? iRes.data : []).forEach((inv: any) => {
+        map[`${inv.productId}:${inv.locationId}`] = inv.stock;
+      });
+      setStockMap(map);
+    } catch {
+      toast.error("Error al refrescar stock");
+    }
   }, []);
 
   const suggestions = useMemo(
@@ -149,6 +163,7 @@ export default function DespatchListPage() {
   };
 
   const totalUnits = items.reduce((sum, it) => sum + (isNaN(it.quantity) ? 0 : it.quantity), 0);
+  const activeItems = items.filter((it) => it.quantity > 0);
   const today = new Date().toLocaleDateString("es-BO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const userDisplay = user?.name || user?.email || "";
 
@@ -193,9 +208,14 @@ export default function DespatchListPage() {
     }
   };
 
-  const openPreview = () => {
-    if (items.length === 0) return;
+  const openPreview = async () => {
+    if (activeItems.length === 0) return;
+    await refreshStock();
     setShowPreview(true);
+    setViewSeq(docSeq);
+    const next = docSeq + 1;
+    setDocSeq(next);
+    try { localStorage.setItem(SEQ_KEY, String(next)); } catch { /* ignore */ }
   };
 
   return (
@@ -268,16 +288,16 @@ export default function DespatchListPage() {
       {/* Tabla de items */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
         <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-          <h3 className="text-foreground font-medium">Productos a despachar ({items.length})</h3>
+          <h3 className="text-foreground font-medium">Productos a despachar ({activeItems.length})</h3>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">{totalUnits} unidades</span>
-            <button onClick={openPreview} disabled={items.length === 0}
+            <button onClick={openPreview} disabled={activeItems.length === 0}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all">
               <ListChecks size={14} /> Ver / Imprimir
             </button>
           </div>
         </div>
-        {items.length === 0 ? (
+        {activeItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-14 text-center">
             <PackageOpen size={40} className="text-gray-600 mb-3" />
             <p className="text-gray-500 text-sm">La lista está vacía</p>
@@ -297,7 +317,7 @@ export default function DespatchListPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((it, idx) => {
+                {activeItems.map((it, idx) => {
                   const avail = availableOf(it.productId, it.locationId);
                   const over = avail != null && it.quantity > avail;
                   return (
@@ -371,7 +391,7 @@ export default function DespatchListPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-xl font-bold uppercase">Nota de Despacho</p>
-                    <p className="text-xs text-gray-600 mt-1">N° {String(docSeq).padStart(4, "0")}</p>
+                    <p className="text-xs text-gray-600 mt-1">N° {String(viewSeq).padStart(4, "0")}</p>
                     <p className="text-xs text-gray-600">{today}</p>
                   </div>
                 </div>
@@ -379,7 +399,7 @@ export default function DespatchListPage() {
                 {/* Datos */}
                 <div className="flex flex-wrap gap-x-8 gap-y-1 py-3 text-sm border-b border-gray-300">
                   <p className="font-medium">Elaborado por: <span className="font-normal text-gray-700">{userDisplay || "—"}</span></p>
-                  <p className="font-medium">Ítems: <span className="font-normal text-gray-700">{items.length}</span></p>
+                  <p className="font-medium">Ítems: <span className="font-normal text-gray-700">{activeItems.length}</span></p>
                   <p className="font-medium">Total unidades: <span className="font-normal text-gray-700">{totalUnits}</span></p>
                 </div>
 
@@ -395,7 +415,7 @@ export default function DespatchListPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((it, idx) => (
+                    {activeItems.map((it, idx) => (
                       <tr key={it.uid}>
                         <td className="border border-gray-400 px-2 py-1.5 text-center">{idx + 1}</td>
                         <td className="border border-gray-400 px-2 py-1.5">
