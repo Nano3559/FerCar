@@ -228,7 +228,6 @@ export default function ProductDetailPage() {
             <h3 className="text-foreground font-semibold mb-4">Códigos</h3>
             {editing ? (
               <div className="grid grid-cols-2 gap-3">
-                <Input label="Código Item *" value={form.itemCode} onChange={(v) => setField("itemCode", v)} disabled />
                 <Input label="Código OEM" value={form.oemCode} onChange={(v) => setField("oemCode", v)} />
                 <Input label="Código Fábrica" value={form.factoryCode} onChange={(v) => setField("factoryCode", v)} />
                 <Input label="Categoría" value={form.categoryId} onChange={(v) => setField("categoryId", v)} type="select" options={filters.categories.map((c) => ({ value: String(c.id), label: c.name }))} />

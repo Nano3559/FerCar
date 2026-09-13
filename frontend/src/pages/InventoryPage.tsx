@@ -1019,7 +1019,9 @@ export default function InventoryPage() {
             </div>
             <div className="p-5 space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Código Item *" value={form.itemCode} onChange={(v) => setField("itemCode", v)} disabled={!!editingId} />
+                {!editingId && (
+                  <Field label="Código Item *" value={form.itemCode} onChange={(v) => setField("itemCode", v)} />
+                )}
                 <div>
                   <label htmlFor="product-manufacturer" className="block text-xs text-gray-500 mb-1.5">Fabricante *</label>
                   <div className="flex items-center gap-2">
