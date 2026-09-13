@@ -163,6 +163,18 @@ export default function InventoryPage() {
     return merged.length ? merged : ALL_COLUMNS;
   });
 
+  // Si no hay configuración local, aplicar las columnas del rol cuando llegan
+  // (evita que las ocultas se muestren mientras columnConfig carga tarde).
+  useEffect(() => {
+    const stored = getStoredColumns();
+    if (stored && stored.length) return;
+    const roleCols = columnConfig?.inventario;
+    if (roleCols && roleCols.length) {
+      const merged = ALL_COLUMNS.filter((c) => roleCols.includes(c));
+      if (merged.length) setVisibleColumns(merged);
+    }
+  }, [columnConfig]);
+
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormData>(emptyForm);

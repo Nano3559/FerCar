@@ -25,17 +25,21 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
     const loadPreferences = async () => {
       const roleCols = columnConfig?.[module];
       const allowed = roleCols && roleCols.length ? columns.filter((c) => roleCols.includes(c)) : columns;
-      let stored = getStored(module);
+      let stored = getStored(module) || [];
       try {
         const response = await api.get("/users/me/preferences");
         const remote = response.data.columnPrefs?.[module];
-        if (Array.isArray(remote) && remote.length) stored = remote;
+        // Lo guardado en el navegador es la fuente de verdad más reciente:
+        // las preferencias remotas solo se usan si no existe configuración local.
+        if ((!stored || stored.length === 0) && Array.isArray(remote) && remote.length) stored = remote;
       } catch {
         // La preferencia local permite continuar si el endpoint no está disponible.
       }
       if (cancelled) return;
       const storedAllowed = stored?.filter((c) => allowed.includes(c)) || [];
-      setVisible(storedAllowed.length ? storedAllowed : allowed);
+      const next = storedAllowed.length ? storedAllowed : allowed;
+      setVisible(next);
+      onVisibleChange(next);
     };
     loadPreferences();
     return () => { cancelled = true; };
