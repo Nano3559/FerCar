@@ -624,13 +624,23 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const catMap: Record<string, number> = {};
     categories.forEach((c) => { catMap[c.name.toLowerCase()] = c.id; });
 
-    // Plantilla según el fabricante seleccionado en el modal de importación.
-    // DEPO: columnas fijas Item Number / Description / Quantity / Unit Price /
-    // XMAYOR y columnas calculadas con las fórmulas del Excel.
-    const importType = req.body.importType === "depo" ? "depo" : "generic";
+    // Plantilla única para todos los fabricantes: columns fijas Item Number /
+    // Description / Quantity / Unit Price / XMAYOR y columnas calculadas con
+    // las fórmulas del Excel; el fabricante lo elige el usuario en el modal.
+    const importType: "depo" | "generic" = "depo";
     const exchangeRate = parseFloat(req.body.exchangeRate) > 0 ? parseFloat(req.body.exchangeRate) : 10.03;
     const costFactor = parseFloat(req.body.costFactor) > 0 ? parseFloat(req.body.costFactor) : 1.5;
     const hermanaFactor = parseFloat(req.body.hermanaFactor) > 0 ? parseFloat(req.body.hermanaFactor) : 1.6;
+
+    const selectedManufacturerId = Number(req.body.manufacturerId) || null;
+    let selectedManufacturer = "DEPO";
+    if (selectedManufacturerId !== null) {
+      const found = await prisma.manufacturer.findUnique({ where: { id: selectedManufacturerId } });
+      if (!found) {
+        return res.status(400).json({ message: "Fabricante no encontrado" });
+      }
+      selectedManufacturer = found.name;
+    }
 
     const supplierId = req.body.supplierId ? Number(req.body.supplierId) : null;
     if (supplierId !== null) {
@@ -722,7 +732,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         const unitPriceUsd = parseFloat(String(depoCell("Unit Price") ?? "0")) || 0;
         itemCode = String(depoCell("Item Number") ?? "").toString().trim();
         name = String(depoCell("Description") ?? depoCell("Descripcion") ?? "").toString().trim();
-        manufacturer = "DEPO";
+        manufacturer = selectedManufacturer;
         brand = "Sin marca";
         model = "Sin modelo";
         year = "";
