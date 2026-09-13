@@ -688,8 +688,16 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       let model = (row["Modelo"] || row["modelo"] || row["Model"] || "").toString().trim();
       let year = (row["Anos"] || row["anos"] || row["Años"] || row["años"] || row["Año"] || "").toString().trim();
       let detail = (row["Detalle"] || row["detalle"] || row["Detail"] || "").toString().trim();
-      let oemCode = (row["Código OEM"] || row["codigo oem"] || row["Codigo OEM"] || row["oemCode"] || row["Cód. OEM"] || row["Cod.OEM"] || row["OEM"] || "").toString().trim();
-      let factoryCode = (row["Código fábrica"] || row["Código fabrica"] || row["codigo fabrica"] || row["Codigo fabrica"] || row["Codigo Fabrica"] || row["factoryCode"] || row["Cód. Fábrica"] || row["Cod. Fabrica"] || "").toString().trim();
+      const cellOf = (aliases: string[]): string => {
+        for (const a of aliases) {
+          if (row[a] !== undefined && row[a] !== null) return String(row[a]).trim();
+          const key = Object.keys(row).find((k) => k.trim().toLowerCase() === a.toLowerCase());
+          if (key !== undefined && row[key] !== null) return String(row[key]).trim();
+        }
+        return "";
+      };
+      let oemCode = cellOf(["Código OEM", "Codigo OEM", "codigo oem", "oemCode", "Cód. OEM", "Cod.OEM", "Cod. OEM", "OEM"]);
+      let factoryCode = cellOf(["Código fábrica", "Código fabrica", "Codigo Fabrica", "codigo fabrica", "factoryCode", "Cód. Fábrica", "Cod. Fabrica", "Código Fábrica"]);
       const category = (row["Categoría"] || row["categoría"] || row["Categoria"] || row["categoria"] || row["Category"] || "").toString().trim();
       let price1 = parseFloat(row["Precio 1"] || row["precio1"] || row["Precio minorista"] || row["price1"] || "0") || 0;
       let price2 = parseFloat(row["Precio 2"] || row["precio2"] || row["Precio mayoreo"] || row["price2"] || "0") || 0;
@@ -719,8 +727,8 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         model = "Sin modelo";
         year = "";
         detail = "";
-        oemCode = "";
-        factoryCode = "";
+        oemCode = cellOf(["OEM", "Codigo OEM", "Codigo oem", "Cód. OEM", "Cod. OEM", "Cod.OEM", "Código OEM"]);
+        factoryCode = cellOf(["Codigo Fabrica", "Codigo fabrica", "Codigo Fábrica", "Código fábrica", "Código fabrica", "Cód. Fábrica", "Cod. Fabrica", "CODIGO FABRICA"]);
         unitPrice = unitPriceUsd;
         cost = round2(unitPriceUsd * exchangeRate * costFactor);
         priceHermana = round2(unitPriceUsd * exchangeRate * hermanaFactor);
