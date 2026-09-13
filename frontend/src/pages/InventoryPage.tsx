@@ -14,6 +14,7 @@ import ColumnManager from "../components/ui/ColumnManager";
 import { useAuthStore } from "../stores/authStore";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import EmptyState from "../components/ui/EmptyState";
+import * as XLSX from "xlsx";
 
 interface Product {
   id: number; itemCode: string; manufacturer: string; name: string;
@@ -550,7 +551,26 @@ export default function InventoryPage() {
 
   const formatCurrency = (v: string) => `Bs. ${Number(v).toLocaleString("es-BO", { minimumFractionDigits: 2 })}`;
 
-  const handleImportExcel = async () => {
+  const downloadImportTemplate = () => {
+    const headers = ["CODIGO OEM", "CODIGO FABRICA", "Description", "CANTIDAD", "COSTO UNITARIO", "COSTO TOTAL", "XMAYOR"];
+    const example: Record<string, unknown> = {
+      "CODIGO OEM": "100000-100000",
+      "CODIGO FABRICA": "11-11920005B3",
+      Description: "BISEL TOYOTA COROLLA 84-87 VAGONETA LH",
+      CANTIDAD: 20,
+      "COSTO UNITARIO": 9.9,
+      "COSTO TOTAL": 198,
+      XMAYOR: "",
+    };
+    const ws = XLSX.utils.json_to_sheet([example], { header: headers });
+    ws["!cols"] = headers.map((h) => ({ wch: Math.max(h.length, String(example[h] ?? "").length) + 2 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
+    XLSX.writeFile(wb, "Plantilla_Importacion_Productos.xlsx");
+    toast.success("Plantilla descargada");
+  };
+
+const handleImportExcel = async () => {
     if (!importFile) return;
     if (!importManufacturerId) {
       toast.error("Selecciona el fabricante del archivo");
@@ -1535,7 +1555,10 @@ export default function InventoryPage() {
                     {manufacturers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                     <div className="mt-3">
-                      <p className="text-gray-400 text-xs">Todos los fabricantes usan la misma plantilla: <span className="text-foreground">Item Number, Description, Quantity, Unit Price, XMAYOR</span>. COSTO BS, COSTO TIENDAS y la escalera 20%..80% se calculan automáticamente con las fórmulas del Excel.</p>
+                      <p className="text-gray-400 text-xs">Todos los fabricantes usan la misma plantilla. Para importar, el archivo debe tener las columnas del modelo (no importa el orden, se reconocen por el nombre). El COSTO BS, el COSTO TIENDAS y la escalera 20%..80% se calculan automáticamente con las fórmulas del Excel.</p>
+                      <button onClick={downloadImportTemplate} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 hover:text-primary-200 border border-primary-600/30 rounded-lg text-xs font-medium transition-all">
+                        <Download size={14} /> Descargar plantilla (con nombres y orden de columnas)
+                      </button>
                       <div className="grid grid-cols-3 gap-2 mt-3">
                         <div>
                           <label htmlFor="import-tc" className="block text-xs text-gray-400 mb-1">Tipo de cambio</label>
