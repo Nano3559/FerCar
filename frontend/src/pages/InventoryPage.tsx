@@ -59,8 +59,8 @@ const INLINE_FIELDS: Record<string, { key: "manufacturer" | "name" | "brand" | "
   "Precio 2": { key: "price2", numeric: true },
   "Precio Mayor": { key: "wholesalePrice", numeric: true },
   "Costo": { key: "cost", numeric: true },
-  "Unit Price": { key: "unitPrice", numeric: true },
-  "Hermana": { key: "priceHermana", numeric: true },
+  "Precio USD": { key: "unitPrice", numeric: true },
+  "Costo Tiendas": { key: "priceHermana", numeric: true },
 };
 
 const inlineRawValue = (p: Product, column: string): string => {
@@ -100,21 +100,32 @@ const emptyForm: FormData = {
 const ALL_COLUMNS = [
   "ID", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
   "Cód. OEM", "Cód. Fábrica", "Proveedor", "Imagen", "Precio 1", "Precio 2",
-  "Precio Mayor", "Costo", "Unit Price", "Hermana",
+  "Precio Mayor", "Costo", "Precio USD", "Costo Tiendas",
   "20%", "30%", "40%", "50%", "60%", "70%", "80%",
   "Stock", "Acciones",
 ];
 
+// Migra etiquetas antiguas de columnas a los nombres actuales en español.
+const COLUMN_LABEL_MIGRATIONS: Record<string, string> = {
+  "Unit Price": "Precio USD",
+  "Hermana": "Costo Tiendas",
+};
+
+function migrateColumnLabels(cols: string[]): string[] {
+  return cols.map((c) => COLUMN_LABEL_MIGRATIONS[c] || c);
+}
+
 function getStoredColumns(): string[] | null {
   try {
     const raw = localStorage.getItem("columns_inventario");
-    return raw ? JSON.parse(raw) : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? migrateColumnLabels(parsed) : null;
   } catch {
     return null;
   }
 }
 
-const DEPO_DEFAULT_COLUMNS = ["Precio Mayor", "Costo", "Unit Price", "Hermana", "20%", "30%", "40%", "50%", "60%", "70%", "80%"];
+const DEPO_DEFAULT_COLUMNS = ["Precio Mayor", "Costo", "Precio USD", "Costo Tiendas", "20%", "30%", "40%", "50%", "60%", "70%", "80%"];
 
 function ensureDepoColumns(stored: string[] | null): string[] | null {
   if (!stored || stored.length === 0) return stored;
@@ -157,7 +168,7 @@ export default function InventoryPage() {
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
     const stored = ensureDepoColumns(getStoredColumns());
-    const roleCols = columnConfig?.inventario;
+    const roleCols = columnConfig?.inventario ? migrateColumnLabels(columnConfig.inventario) : undefined;
     const base = stored && stored.length ? stored : roleCols && roleCols.length ? (ensureDepoColumns([...roleCols]) || roleCols) : ALL_COLUMNS;
     const merged = ALL_COLUMNS.filter((c) => base.includes(c));
     return merged.length ? merged : ALL_COLUMNS;
@@ -168,7 +179,7 @@ export default function InventoryPage() {
   useEffect(() => {
     const stored = getStoredColumns();
     if (stored && stored.length) return;
-    const roleCols = columnConfig?.inventario;
+    const roleCols = columnConfig?.inventario ? migrateColumnLabels(columnConfig.inventario) : undefined;
     if (roleCols && roleCols.length) {
       const merged = ALL_COLUMNS.filter((c) => roleCols.includes(c));
       if (merged.length) setVisibleColumns(merged);
@@ -737,8 +748,8 @@ export default function InventoryPage() {
       case "Precio 2": return editableTd("px-4 py-3 text-right text-blue-400", formatCurrency(p.price2));
       case "Precio Mayor": return editableTd("px-4 py-3 text-right text-foreground", p.wholesalePrice ? formatCurrency(p.wholesalePrice) : "—");
       case "Costo": return editableTd("px-4 py-3 text-right text-gray-400", p.cost ? formatCurrency(p.cost) : "—");
-      case "Unit Price": return editableTd("px-4 py-3 text-right text-gray-300", p.unitPrice ? `$${Number(p.unitPrice).toFixed(2)}` : "—");
-      case "Hermana": return editableTd("px-4 py-3 text-right text-purple-400", p.priceHermana ? formatCurrency(p.priceHermana) : "—");
+      case "Precio USD": return editableTd("px-4 py-3 text-right text-gray-300", p.unitPrice ? `$${Number(p.unitPrice).toFixed(2)}` : "—");
+      case "Costo Tiendas": return editableTd("px-4 py-3 text-right text-purple-400", p.priceHermana ? formatCurrency(p.priceHermana) : "—");
       case "20%": case "30%": case "40%": case "50%": case "60%": case "70%": case "80%": {
         const key = `price${parseInt(column, 10)}` as keyof Product;
         return <td key={column} className="px-4 py-3 text-right text-gray-400" title="Se calcula desde Costo">{p[key] != null ? formatCurrency(String(p[key])) : "—"}</td>;
@@ -910,7 +921,7 @@ export default function InventoryPage() {
                 <thead>
                   <tr className="text-gray-500 border-b border-dark-700/50">
                     {visibleColumns.map((col) => {
-                      const align = ["Precio 1", "Precio 2", "Precio Mayor", "Costo", "Unit Price", "Hermana", "20%", "30%", "40%", "50%", "60%", "70%", "80%"].includes(col) ? "text-right" : ["Imagen", "Stock", "Acciones"].includes(col) ? "text-center" : "text-left";
+                      const align = ["Precio 1", "Precio 2", "Precio Mayor", "Costo", "Precio USD", "Costo Tiendas", "20%", "30%", "40%", "50%", "60%", "70%", "80%"].includes(col) ? "text-right" : ["Imagen", "Stock", "Acciones"].includes(col) ? "text-center" : "text-left";
                       return (
                         <th key={col} className={`${align} px-4 py-3 font-medium`}>{col}</th>
                       );
@@ -1522,7 +1533,7 @@ export default function InventoryPage() {
                   </select>
                   {importType === "depo" ? (
                     <div className="mt-3">
-                      <p className="text-gray-400 text-xs">La plantilla DEPO usa estas columnas fijas: <span className="text-foreground">Item Number, Description, Quantity, Unit Price, XMAYOR</span>. COSTO BS, HERMANAS y la escalera 20%..80% se calculan automáticamente con las fórmulas del Excel.</p>
+                      <p className="text-gray-400 text-xs">La plantilla DEPO usa estas columnas fijas: <span className="text-foreground">Item Number, Description, Quantity, Unit Price, XMAYOR</span>. COSTO BS, COSTO TIENDAS y la escalera 20%..80% se calculan automáticamente con las fórmulas del Excel.</p>
                       <div className="grid grid-cols-3 gap-2 mt-3">
                         <div>
                           <label htmlFor="import-tc" className="block text-xs text-gray-400 mb-1">Tipo de cambio</label>
@@ -1533,11 +1544,11 @@ export default function InventoryPage() {
                         <input id="import-cf" type="number" step="any" min="0" value={importCostFactor} onChange={(e) => setImportCostFactor(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
                       </div>
                       <div>
-                        <label htmlFor="import-hf" className="block text-xs text-gray-400 mb-1">Factor Hermanas</label>
+                        <label htmlFor="import-hf" className="block text-xs text-gray-400 mb-1">Factor Costo Tiendas</label>
                         <input id="import-hf" type="number" step="any" min="0" value={importHermanaFactor} onChange={(e) => setImportHermanaFactor(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
                       </div>
                     </div>
-                    <p className="text-xs text-gray-600 mt-2">Fórmulas: Costo = Unit Price × TC × Factor costo · Hermanas = Unit Price × TC × Factor Hermanas · 20..80% = Costo × 1.2..1.8.</p>
+                    <p className="text-xs text-gray-600 mt-2">Fórmulas: Costo = Unit Price × TC × Factor costo · Costo Tiendas = Unit Price × TC × Factor Costo Tiendas · 20..80% = Costo × 1.2..1.8.</p>
                   </div>
                 ) : (
                   <p className="text-gray-400 text-xs mt-2">Columnas aceptadas: Codigo fabrica, Descripcion, Fabricante, Marca, Modelo, Años, Detalle, Codigo OEM, Categoría, Precio 1, Precio 2, Precio mayor, Costo, Stock, Detalles</p>

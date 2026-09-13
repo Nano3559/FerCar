@@ -19,16 +19,19 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
   const [visible, setVisible] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
+  const migrateCols = (cols: string[]): string[] =>
+    cols.map((c) => ({ "Unit Price": "Precio USD", Hermana: "Costo Tiendas" }[c] || c));
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     const loadPreferences = async () => {
-      const roleCols = columnConfig?.[module];
+      const roleCols = columnConfig?.[module] ? migrateCols(columnConfig[module]) : undefined;
       const allowed = roleCols && roleCols.length ? columns.filter((c) => roleCols.includes(c)) : columns;
-      let stored = getStored(module) || [];
+      let stored = migrateCols(getStored(module) || []);
       try {
         const response = await api.get("/users/me/preferences");
-        const remote = response.data.columnPrefs?.[module];
+        const remote = migrateCols(response.data.columnPrefs?.[module] || []);
         // Lo guardado en el navegador es la fuente de verdad más reciente:
         // las preferencias remotas solo se usan si no existe configuración local.
         if ((!stored || stored.length === 0) && Array.isArray(remote) && remote.length) stored = remote;
@@ -93,7 +96,7 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
   };
 
   const reset = () => {
-    const roleCols = columnConfig?.[module];
+    const roleCols = columnConfig?.[module] ? migrateCols(columnConfig[module]) : undefined;
     setVisible(roleCols && roleCols.length ? roleCols : columns);
   };
 
