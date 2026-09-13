@@ -723,11 +723,32 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       // Item Number, Description, Quantity, Unit Price y XMAYOR; el resto
       // (COSTO BS, HERMANAS, 20%..80%) se calcula con las fórmulas del archivo
       // a partir de Unit Price y los factores que el usuario carga en el modal.
+      // También se aceptan variantes del mismo archivo (listado/precios), con
+      // los aliases CANTIDAD↔Quantity, COSTO UNITARIO↔Unit Price y
+      // CODIGO FABRICA↔Item Number.
+      const depoAliases: Record<string, string[]> = {
+        "Item Number": ["Item Number", "CODIGO FABRICA", "Codigo Fabrica", "Código Fábrica", "Código fabrica", "Codigo de Fabrica", "N° Parte", "No. Parte"],
+        Description: ["Description", "Descripcion", "Descripción"],
+        Quantity: ["Quantity", "CANTIDAD", "Cantidad", "Stock"],
+        "Unit Price": ["Unit Price", "Precio USD", "PRECIO USD", "COSTO UNITARIO", "Costo Unitario", "COSTO UNIT.", "Precio Unitario"],
+        XMAYOR: ["XMAYOR", "Precio Mayor", "PRECIO MAYOR", "Precio Mayoreo"],
+      };
+      const hasDepoCol = (name: string): boolean => {
+        const aliases = depoAliases[name] || [name];
+        return aliases.some((a) => {
+          if (row[a] !== undefined && row[a] !== null) return true;
+          return Object.keys(row).some((k) => k.trim().toLowerCase() === a.toLowerCase());
+        });
+      };
       if (importType === "depo") {
         const depoCell = (name: string): any => {
-          if (row[name] !== undefined) return row[name];
-          const found = Object.keys(row).find((k) => k.trim() === name);
-          return found !== undefined ? row[found] : undefined;
+          const aliases = depoAliases[name] || [name];
+          for (const a of aliases) {
+            if (row[a] !== undefined && row[a] !== null && String(row[a]).trim() !== "") return row[a];
+            const found = Object.keys(row).find((k) => k.trim().toLowerCase() === a.toLowerCase());
+            if (found !== undefined && String(row[found]).trim() !== "") return row[found];
+          }
+          return undefined;
         };
         const unitPriceUsd = parseFloat(String(depoCell("Unit Price") ?? "0")) || 0;
         itemCode = String(depoCell("Item Number") ?? "").toString().trim();
@@ -757,10 +778,10 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       try {
         const rowWarnings: string[] = [];
         const label = `Fila ${i + 2} (${itemCode})`;
-        if (importType === "depo") {
-          if (!unitPrice) rowWarnings.push(`${label}: Unit Price vacío — precios quedan en 0, editarlo manualmente`);
-          if (!rowStock) rowWarnings.push(`${label}: Quantity vacío o en 0 — sin stock`);
-          if (!wholesalePrice) rowWarnings.push(`${label}: XMAYOR vacío — sin Precio Mayor`);
+if (importType === "depo") {
+        if (!unitPrice) rowWarnings.push(`${label}: Unit Price vacío — precios quedan en 0, editarlo manualmente`);
+        if (!rowStock) rowWarnings.push(`${label}: Quantity vacío o en 0 — sin stock`);
+        if (hasDepoCol("XMAYOR") && !wholesalePrice) rowWarnings.push(`${label}: XMAYOR vacío — sin Precio Mayor`);
         } else {
           if (!price1) rowWarnings.push(`${label}: Precio 1 vacío — quedó en 0, editarlo manualmente`);
           if (!cost) rowWarnings.push(`${label}: Costo vacío — quedó en 0, editarlo manualmente`);
