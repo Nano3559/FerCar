@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search, Plus, Filter, ChevronDown, Eye, Pencil, Trash2,
-  Package, RefreshCw, X, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, Tags,
+  Package, RefreshCw, X, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, Tags, Scissors,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -416,6 +416,23 @@ export default function InventoryPage() {
     }
   };
 
+  const classifyProduct = async (id: number) => {
+    try {
+      const res = await api.post(`/products/${id}/classify`);
+      if (!res.data.classified) {
+        toast.error(res.data.message || "No se pudo separar automáticamente");
+        return;
+      }
+      const r = res.data.product;
+      toast.success(`Separado → Producto: ${r.name} · Marca: ${r.brand} · Modelo: ${r.model || "-"} · Año: ${r.year || "-"}`);
+      setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, name: r.name, brand: r.brand, model: r.model, year: r.year, detail: r.detail } : p)));
+      fetchManufacturers();
+      fetchFilters();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al separar");
+    }
+  };
+
   const handleDelete = async (id: number) => {
     try {
       await api.delete(`/products/${id}`);
@@ -701,7 +718,7 @@ export default function InventoryPage() {
         return <td key={column} className="px-4 py-3 text-right text-gray-400" title="Se calcula desde Costo">{p[key] != null ? formatCurrency(String(p[key])) : "—"}</td>;
       }
       case "Stock": return <td key={column} className="px-4 py-3 text-center"><span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span></td>;
-      case "Acciones": return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1"><button onClick={() => navigate(`/panel/inventario/${p.id}`)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Ver detalle"><Eye size={16} /></button>{canEdit && <><button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title="Editar"><Pencil size={16} /></button><button onClick={() => setShowDeleteConfirm(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Eliminar"><Trash2 size={16} /></button></>}<button onClick={() => openStock(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-purple-400 hover:bg-purple-500/10 transition-all" title="Ver stock por ubicación"><Package size={16} /></button></div></td>;
+      case "Acciones": return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1"><button onClick={() => navigate(`/panel/inventario/${p.id}`)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Ver detalle"><Eye size={16} /></button>{canEdit && <><button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title="Editar"><Pencil size={16} /></button><button onClick={() => classifyProduct(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all" title="Separar marca/modelo/año automáticamente"><Scissors size={16} /></button><button onClick={() => setShowDeleteConfirm(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Eliminar"><Trash2 size={16} /></button></>}<button onClick={() => openStock(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-purple-400 hover:bg-purple-500/10 transition-all" title="Ver stock por ubicación"><Package size={16} /></button></div></td>;
       default: return null;
     }
   };

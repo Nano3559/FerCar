@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import { createWorker } from "tesseract.js";
 import path from "path";
 import { yearRangesOverlap } from "../../utils/yearRanges";
+import { classifyProductName } from "../../utils/productClassifier";
 import { authenticate, authorize, optionalAuth } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
 
@@ -410,6 +411,48 @@ router.put("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, re
   }
 });
 
+// POST /:id/classify — Separa el nombre plano del producto en producto/marca/modelo/año/detalles
+router.post("/:id/classify", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await prisma.product.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ message: "Producto no encontrado" });
+    }
+
+    const cl = classifyProductName(existing.name);
+    if (!cl || (!cl.nameChanged && !cl.model && !cl.year)) {
+      return res.json({ classified: false, message: "No se pudo separar: el nombre no tiene marca reconocible para dividir" });
+    }
+
+    const currentBrand = (existing.brand || "").trim();
+    const currentModel = (existing.model || "").trim();
+    const data: any = {};
+    if (cl.nameChanged) data.name = cl.name;
+    if (["", "SIN MARCA"].includes(currentBrand.toUpperCase())) data.brand = cl.brand;
+    if (["", "SIN MODELO"].includes(currentModel.toUpperCase()) && cl.model) data.model = cl.model;
+    if (cl.year) data.year = cl.year;
+    if (cl.details) data.detail = cl.details;
+
+    if (Object.keys(data).length === 0) {
+      return res.json({ classified: false, message: "El producto ya está clasificado correctamente" });
+    }
+
+    const updated = await prisma.product.update({
+      where: { id },
+      data,
+      select: { id: true, name: true, brand: true, model: true, year: true, detail: true },
+    });
+
+    if (updated.brand) await syncManufacturer(updated.brand);
+
+    res.json({ classified: true, product: updated });
+  } catch (error) {
+    console.error("Error al clasificar producto:", error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+});
+
 // DELETE /:id — Eliminar producto (solo ADMIN)
 router.delete("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
@@ -729,6 +772,21 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
           if (Object.keys(updateData).length > 0) {
             await prisma.product.update({ where: { id: existing.id }, data: updateData });
           }
+          if (importType === "depo") {
+            const cl = classifyProductName(name);
+            if (cl && (cl.nameChanged || cl.model || cl.year)) {
+              await prisma.product.update({
+                where: { id: existing.id },
+                data: {
+                  ...(cl.nameChanged && { name: cl.name }),
+                  ...(cl.brand && { brand: cl.brand }),
+                  ...(cl.model && { model: cl.model }),
+                  ...(cl.year && { year: cl.year }),
+                  ...(cl.details && { detail: cl.details }),
+                },
+              });
+            }
+          }
           if (manufacturer && manufacturer !== "Sin especificar") await syncManufacturer(manufacturer);
           if (perLocationStock.length > 0) {
             for (const { locationId, stock } of perLocationStock) {
@@ -761,6 +819,21 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
               detalles: calidad || null,
             },
           });
+          if (importType === "depo") {
+            const cl = classifyProductName(name);
+            if (cl && (cl.nameChanged || cl.model || cl.year)) {
+              await prisma.product.update({
+                where: { id: product.id },
+                data: {
+                  ...(cl.nameChanged && { name: cl.name }),
+                  ...(cl.brand && { brand: cl.brand }),
+                  ...(cl.model && { model: cl.model }),
+                  ...(cl.year && { year: cl.year }),
+                  ...(cl.details && { detail: cl.details }),
+                },
+              });
+            }
+          }
 
           let locations = allLocations;
           if (perLocationStock.length > 0) {
