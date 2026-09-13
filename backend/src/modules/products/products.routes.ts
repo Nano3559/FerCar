@@ -640,9 +640,6 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       }
     }
 
-    const defaultOemCode = String(req.body.oemCode || "").trim();
-    const defaultFactoryCode = String(req.body.factoryCode || "").trim();
-
     // Mapa de ubicaciones por nombre normalizado (con/sin tildes) para
     // distribuir stock usando columnas tipo "Tienda 1", "Almacén 1", etc.
     const allLocations = await prisma.location.findMany();
@@ -733,9 +730,6 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         rowStock = parseInt(String(depoCell("Quantity") ?? "0"), 10) || 0;
         calidad = "";
       }
-
-      if (!oemCode && defaultOemCode) oemCode = defaultOemCode;
-      if (!factoryCode && defaultFactoryCode) factoryCode = defaultFactoryCode;
 
       if (!itemCode || !name) {
         errors.push(`Fila ${i + 2}: Código y nombre son obligatorios`);

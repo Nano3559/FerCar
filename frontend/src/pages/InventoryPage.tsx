@@ -198,8 +198,6 @@ export default function InventoryPage() {
   const [importType, setImportType] = useState("generic");
   const [importManufacturer, setImportManufacturer] = useState("");
   const [importSupplierId, setImportSupplierId] = useState("");
-  const [importOemCode, setImportOemCode] = useState("");
-  const [importFactoryCode, setImportFactoryCode] = useState("");
   const [importExchangeRate, setImportExchangeRate] = useState("10.03");
   const [importCostFactor, setImportCostFactor] = useState("1.5");
   const [importHermanaFactor, setImportHermanaFactor] = useState("1.6");
@@ -556,8 +554,6 @@ export default function InventoryPage() {
         formData.append("hermanaFactor", importHermanaFactor || "1.6");
       }
       if (importManufacturer) formData.append("manufacturer", importManufacturer);
-      if (importOemCode) formData.append("oemCode", importOemCode);
-      if (importFactoryCode) formData.append("factoryCode", importFactoryCode);
       if (importSupplierId) formData.append("supplierId", importSupplierId);
       if (importLocationId) formData.append("locationId", importLocationId);
       const res = await api.post("/products/import", formData, {
@@ -1552,16 +1548,6 @@ export default function InventoryPage() {
                     <input id="import-mfr" list="manufacturers-list" value={importManufacturer} onChange={(e) => setImportManufacturer(e.target.value)} placeholder="Opcional: se usa si el archivo no trae Fabricante" className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <div>
-                    <label htmlFor="import-oem" className="block text-xs text-gray-400 mb-1">Cód. OEM por defecto</label>
-                    <input id="import-oem" value={importOemCode} onChange={(e) => setImportOemCode(e.target.value)} placeholder="Se usa si el archivo no trae Código OEM" className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                  </div>
-                  <div>
-                    <label htmlFor="import-fcode" className="block text-xs text-gray-400 mb-1">Cód. Fábrica por defecto</label>
-                    <input id="import-fcode" value={importFactoryCode} onChange={(e) => setImportFactoryCode(e.target.value)} placeholder="Se usa si el archivo no trae Código Fábrica" className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                  </div>
-                </div>
                 <p className="text-gray-400 text-xs mt-1">Podés usar columnas que coincidan con el nombre de cada ubicación (Tienda 1, Almacén 1...) para repartir el stock entre varias.</p>
               </div>
                 {!importResult ? (
