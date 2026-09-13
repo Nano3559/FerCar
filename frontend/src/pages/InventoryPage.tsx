@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search, Plus, Filter, ChevronDown, Eye, Pencil, Trash2,
@@ -45,6 +45,42 @@ interface Location {
   name: string;
   type: string;
 }
+
+const INLINE_FIELDS: Record<string, { key: "manufacturer" | "name" | "brand" | "model" | "year" | "detail" | "oemCode" | "factoryCode" | "price1" | "price2" | "wholesalePrice" | "cost" | "unitPrice" | "priceHermana"; numeric?: boolean }> = {
+  "Fabricante": { key: "manufacturer" },
+  "Producto": { key: "name" },
+  "Marca": { key: "brand" },
+  "Modelo": { key: "model" },
+  "Año": { key: "year" },
+  "Detalles": { key: "detail" },
+  "Cód. OEM": { key: "oemCode" },
+  "Cód. Fábrica": { key: "factoryCode" },
+  "Precio 1": { key: "price1", numeric: true },
+  "Precio 2": { key: "price2", numeric: true },
+  "Precio Mayor": { key: "wholesalePrice", numeric: true },
+  "Costo": { key: "cost", numeric: true },
+  "Unit Price": { key: "unitPrice", numeric: true },
+  "Hermana": { key: "priceHermana", numeric: true },
+};
+
+const inlineRawValue = (p: Product, column: string): string => {
+  switch (column) {
+    case "Fabricante": return p.manufacturer ?? "";
+    case "Producto": return p.name ?? "";
+    case "Marca": return p.brand ?? "";
+    case "Modelo": return p.model ?? "";
+    case "Año": return p.year ?? "";
+    case "Detalles": return p.detalles || p.detail || "";
+    case "Cód. OEM": return p.oemCode || "";
+    case "Cód. Fábrica": return p.factoryCode || "";
+    default: {
+      const field = INLINE_FIELDS[column];
+      if (!field) return "";
+      const v = p[field.key];
+      return v == null ? "" : String(v);
+    }
+  }
+};
 
 interface FormData {
   itemCode: string; manufacturer: string; name: string; brand: string;
@@ -159,6 +195,9 @@ export default function InventoryPage() {
   const [newManufacturer, setNewManufacturer] = useState("");
   const [manufacturerSaving, setManufacturerSaving] = useState(false);
   const [manufacturerDeleting, setManufacturerDeleting] = useState<number | null>(null);
+
+  const [inlineEdit, setInlineEdit] = useState<{ productId: number; column: string; value: string } | null>(null);
+  const [inlineSaving, setInlineSaving] = useState(false);
 
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [invFile, setInvFile] = useState<File | null>(null);
@@ -338,6 +377,42 @@ export default function InventoryPage() {
       toast.error(err.response?.data?.message || "Error al guardar");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveInline = async () => {
+    if (!inlineEdit) return;
+    const field = INLINE_FIELDS[inlineEdit.column];
+    if (!field) { setInlineEdit(null); return; }
+    const trimmed = (inlineEdit.value ?? "").trim();
+    let value: string | number = trimmed;
+    if (field.numeric) {
+      const n = trimmed === "" ? 0 : Number(trimmed);
+      if (Number.isNaN(n)) {
+        setInlineEdit(null);
+        toast.error(`"${inlineEdit.column}" debe ser un número`);
+        return;
+      }
+      value = n;
+    }
+    setInlineSaving(true);
+    try {
+      await api.put(`/products/${inlineEdit.productId}`, { [field.key]: value });
+      const patch: any = { [field.key]: field.numeric ? String(value) : trimmed };
+      if (field.key === "cost") {
+        [20, 30, 40, 50, 60, 70, 80].forEach((step) => {
+          patch[`price${step}`] = Math.round(Number(value) * (1 + step / 100) * 100) / 100;
+        });
+      }
+      setProducts((prev) => prev.map((p) => (p.id === inlineEdit.productId ? { ...p, ...patch } : p)));
+      setInlineEdit(null);
+      toast.success("Guardado");
+      if (field.key === "manufacturer") { fetchManufacturers(); fetchFilters(); }
+    } catch (err: any) {
+      setInlineEdit(null);
+      toast.error(err.response?.data?.message || "Error al guardar");
+    } finally {
+      setInlineSaving(false);
     }
   };
 
@@ -561,31 +636,69 @@ export default function InventoryPage() {
   const allVisibleCount = total;
 
   const renderInventoryCell = (p: Product, column: string) => {
+    const editingThis = inlineEdit && inlineEdit.productId === p.id && inlineEdit.column === column;
+    const field = INLINE_FIELDS[column];
+
+    if (editingThis && field) {
+      return (
+        <td key={column} className="px-3 py-2">
+          <input
+            aria-label={`${column} de ${p.name}`}
+            autoFocus
+            type={field.numeric ? "number" : "text"}
+            step="any"
+            min={field.numeric ? 0 : undefined}
+            value={inlineEdit!.value}
+            onChange={(e) => setInlineEdit({ ...inlineEdit!, value: e.target.value })}
+            onFocus={(e) => e.target.select()}
+            onBlur={() => saveInline()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+              else if (e.key === "Escape") { e.preventDefault(); setInlineEdit(null); }
+            }}
+            disabled={inlineSaving}
+            list={column === "Fabricante" ? "manufacturers-list" : undefined}
+            placeholder={p[field.key] == null ? "vacío" : undefined}
+            className="w-full min-w-[90px] px-2 py-1.5 bg-dark-900 border border-primary-500 rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+        </td>
+      );
+    }
+
+    const editableTd = (className: string, display: ReactNode) =>
+      canEdit ? (
+        <td key={column} className={`${className} cursor-pointer hover:ring-1 hover:ring-inset hover:ring-primary-500/50 hover:bg-dark-800/50 transition-all select-none`} onClick={() => setInlineEdit({ productId: p.id, column, value: inlineRawValue(p, column) })}>
+          {display}
+        </td>
+      ) : (
+        <td key={column} className={className}>{display}</td>
+      );
+
     switch (column) {
       case "ID": return <td key={column} className="px-4 py-3 text-gray-400">{p.id}</td>;
-      case "Fabricante": return <td key={column} className="px-4 py-3 text-gray-300">{p.manufacturer}</td>;
-      case "Producto": return <td key={column} className="px-4 py-3 text-foreground font-medium max-w-[200px] truncate">{p.name}</td>;
-      case "Marca": return <td key={column} className="px-4 py-3 text-gray-300">{p.brand}</td>;
-      case "Modelo": return <td key={column} className="px-4 py-3 text-gray-300">{p.model}</td>;
-      case "Año": return <td key={column} className="px-4 py-3 text-gray-400">{p.year}</td>;
-      case "Detalles": return <td key={column} className="px-4 py-3 text-gray-400 text-xs">{p.detalles || p.detail || "—"}</td>;
-      case "Cód. OEM": return <td key={column} className="px-4 py-3 text-gray-400 text-xs">{p.oemCode || "—"}</td>;
-      case "Cód. Fábrica": return <td key={column} className="px-4 py-3 text-gray-400 text-xs">{p.factoryCode || "—"}</td>;
+      case "Fabricante": return editableTd("px-4 py-3 text-gray-300", p.manufacturer);
+      case "Producto": return editableTd("px-4 py-3 text-foreground font-medium max-w-[200px] truncate", p.name);
+      case "Marca": return editableTd("px-4 py-3 text-gray-300", p.brand);
+      case "Modelo": return editableTd("px-4 py-3 text-gray-300", p.model);
+      case "Año": return editableTd("px-4 py-3 text-gray-400", p.year);
+      case "Detalles": return editableTd("px-4 py-3 text-gray-400 text-xs", p.detalles || p.detail || "—");
+      case "Cód. OEM": return editableTd("px-4 py-3 text-gray-400 text-xs", p.oemCode || "—");
+      case "Cód. Fábrica": return editableTd("px-4 py-3 text-gray-400 text-xs", p.factoryCode || "—");
       case "Proveedor": return <td key={column} className="px-4 py-3 text-gray-300 text-xs">{p.supplierName || "—"}</td>;
       case "Imagen": return (
         <td key={column} className="px-4 py-3">
           <ImagePreview image={p.image} category={p.category} name={p.name} onClick={() => setImageModal(p)} className="mx-auto" />
         </td>
       );
-      case "Precio 1": return <td key={column} className="px-4 py-3 text-right text-green-400 font-medium">{formatCurrency(p.price1)}</td>;
-      case "Precio 2": return <td key={column} className="px-4 py-3 text-right text-blue-400">{formatCurrency(p.price2)}</td>;
-      case "Precio Mayor": return <td key={column} className="px-4 py-3 text-right text-foreground">{p.wholesalePrice ? formatCurrency(p.wholesalePrice) : "—"}</td>;
-      case "Costo": return <td key={column} className="px-4 py-3 text-right text-gray-400">{p.cost ? formatCurrency(p.cost) : "—"}</td>;
-      case "Unit Price": return <td key={column} className="px-4 py-3 text-right text-gray-300">{p.unitPrice ? `$${Number(p.unitPrice).toFixed(2)}` : "—"}</td>;
-      case "Hermana": return <td key={column} className="px-4 py-3 text-right text-purple-400">{p.priceHermana ? formatCurrency(p.priceHermana) : "—"}</td>;
+      case "Precio 1": return editableTd("px-4 py-3 text-right text-green-400 font-medium", formatCurrency(p.price1));
+      case "Precio 2": return editableTd("px-4 py-3 text-right text-blue-400", formatCurrency(p.price2));
+      case "Precio Mayor": return editableTd("px-4 py-3 text-right text-foreground", p.wholesalePrice ? formatCurrency(p.wholesalePrice) : "—");
+      case "Costo": return editableTd("px-4 py-3 text-right text-gray-400", p.cost ? formatCurrency(p.cost) : "—");
+      case "Unit Price": return editableTd("px-4 py-3 text-right text-gray-300", p.unitPrice ? `$${Number(p.unitPrice).toFixed(2)}` : "—");
+      case "Hermana": return editableTd("px-4 py-3 text-right text-purple-400", p.priceHermana ? formatCurrency(p.priceHermana) : "—");
       case "20%": case "30%": case "40%": case "50%": case "60%": case "70%": case "80%": {
         const key = `price${parseInt(column, 10)}` as keyof Product;
-        return <td key={column} className="px-4 py-3 text-right text-gray-400">{p[key] != null ? formatCurrency(String(p[key])) : "—"}</td>;
+        return <td key={column} className="px-4 py-3 text-right text-gray-400" title="Se calcula desde Costo">{p[key] != null ? formatCurrency(String(p[key])) : "—"}</td>;
       }
       case "Stock": return <td key={column} className="px-4 py-3 text-center"><span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span></td>;
       case "Acciones": return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1"><button onClick={() => navigate(`/panel/inventario/${p.id}`)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Ver detalle"><Eye size={16} /></button>{canEdit && <><button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title="Editar"><Pencil size={16} /></button><button onClick={() => setShowDeleteConfirm(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Eliminar"><Trash2 size={16} /></button></>}<button onClick={() => openStock(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-purple-400 hover:bg-purple-500/10 transition-all" title="Ver stock por ubicación"><Package size={16} /></button></div></td>;
@@ -599,7 +712,7 @@ export default function InventoryPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Inventario</h1>
-          <p className="text-gray-400 text-sm mt-1">{allVisibleCount} productos registrados</p>
+          <p className="text-gray-400 text-sm mt-1">{allVisibleCount} productos registrados{canEdit ? " · haz clic en una celda para editarla" : ""}</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={fetchProducts} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all" title="Actualizar">
