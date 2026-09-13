@@ -185,12 +185,14 @@ export default function InventoryPage() {
   const [importLocationId, setImportLocationId] = useState("");
   const [importType, setImportType] = useState("generic");
   const [importManufacturer, setImportManufacturer] = useState("");
+  const [importSupplierId, setImportSupplierId] = useState("");
   const [importExchangeRate, setImportExchangeRate] = useState("10.03");
   const [importCostFactor, setImportCostFactor] = useState("1.5");
   const [importHermanaFactor, setImportHermanaFactor] = useState("1.6");
   const [dragActive, setDragActive] = useState(false);
 
   const [manufacturers, setManufacturers] = useState<{ id: number; name: string; description: string | null }[]>([]);
+  const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([]);
   const [showManufacturerModal, setShowManufacturerModal] = useState(false);
   const [newManufacturer, setNewManufacturer] = useState("");
   const [manufacturerSaving, setManufacturerSaving] = useState(false);
@@ -278,6 +280,17 @@ export default function InventoryPage() {
   }, []);
 
   useEffect(() => { fetchManufacturers(); }, [fetchManufacturers]);
+
+  const fetchSuppliers = useCallback(async () => {
+    try {
+      const res = await api.get("/suppliers?limit=100");
+      setSuppliers(res.data.suppliers || []);
+    } catch {
+      setSuppliers([]);
+    }
+  }, []);
+
+  useEffect(() => { fetchSuppliers(); }, [fetchSuppliers]);
 
   const saveManufacturer = async () => {
     if (!newManufacturer.trim()) { toast.error("Escribe el nombre del fabricante"); return; }
@@ -529,6 +542,7 @@ export default function InventoryPage() {
         formData.append("hermanaFactor", importHermanaFactor || "1.6");
       }
       if (importManufacturer) formData.append("manufacturer", importManufacturer);
+      if (importSupplierId) formData.append("supplierId", importSupplierId);
       if (importLocationId) formData.append("locationId", importLocationId);
       const res = await api.post("/products/import", formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -1526,6 +1540,15 @@ export default function InventoryPage() {
               </div>
                 {!importResult ? (
                   <div className="space-y-3">
+                  <div>
+                    <label htmlFor="import-supplier" className="block text-xs text-gray-400 mb-1">Proveedor</label>
+                    <select id="import-supplier" value={importSupplierId} onChange={(e) => setImportSupplierId(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                      <option value="">Sin proveedor</option>
+                      {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <p className="text-xs text-gray-600 mt-1">Asocia el costo de cada fila al proveedor (aparece en sus costos).</p>
+                  </div>
                   <div>
                     <label htmlFor="import-loc" className="block text-xs text-gray-400 mb-1">Ubicación de los productos</label>
                     <select id="import-loc" value={importLocationId} onChange={(e) => setImportLocationId(e.target.value)}

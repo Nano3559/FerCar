@@ -19,6 +19,14 @@ const priceLadder = (cost: number | null | undefined): Record<string, number | n
   return ladder;
 };
 
+// Registra el costo de una fila importada contra un proveedor (evita duplicados).
+const recordSupplierCost = async (productId: number, supplierId: number, cost: number, exchangeRate: number | null): Promise<void> => {
+  const dup = await prisma.cost.findFirst({ where: { productId, supplierId, costPrice: cost } });
+  if (!dup) {
+    await prisma.cost.create({ data: { productId, supplierId, costPrice: cost, exchangeRate } });
+  }
+};
+
 // Mantiene el registro de fabricantes sincronizado con los productos.
 const IGNORED_MANUFACTURER_NAMES = ["sin especificar", ""];
 const syncManufacturer = async (name?: string | null): Promise<void> => {
@@ -624,6 +632,14 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const costFactor = parseFloat(req.body.costFactor) > 0 ? parseFloat(req.body.costFactor) : 1.5;
     const hermanaFactor = parseFloat(req.body.hermanaFactor) > 0 ? parseFloat(req.body.hermanaFactor) : 1.6;
 
+    const supplierId = req.body.supplierId ? Number(req.body.supplierId) : null;
+    if (supplierId !== null) {
+      const supplier = await prisma.supplier.findUnique({ where: { id: supplierId } });
+      if (!supplier) {
+        return res.status(400).json({ message: "Proveedor no encontrado" });
+      }
+    }
+
     // Mapa de ubicaciones por nombre normalizado (con/sin tildes) para
     // distribuir stock usando columnas tipo "Tienda 1", "Almacén 1", etc.
     const allLocations = await prisma.location.findMany();
@@ -788,6 +804,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
             }
           }
           if (manufacturer && manufacturer !== "Sin especificar") await syncManufacturer(manufacturer);
+          if (supplierId !== null && cost > 0) await recordSupplierCost(existing.id, supplierId, cost, exchangeRate);
           if (perLocationStock.length > 0) {
             for (const { locationId, stock } of perLocationStock) {
               await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId } }, update: { stock: { increment: stock } }, create: { productId: existing.id, locationId, stock, minStock: 1 } });
@@ -834,6 +851,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
               });
             }
           }
+          if (supplierId !== null && cost > 0) await recordSupplierCost(product.id, supplierId, cost, exchangeRate);
 
           let locations = allLocations;
           if (perLocationStock.length > 0) {
