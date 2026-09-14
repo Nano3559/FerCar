@@ -14,9 +14,9 @@ const AVAILABLE_MODULES = [
   "despachos", "notas-compra",
 ];
 
-const DEFAULT_COLUMNS: Record<string, string[]> = {
-  inventario: ["ID", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles", "Cód. OEM", "Cód. Fábrica", "Proveedor", "Imagen", "Precio 1", "Precio 2", "Stock", "Acciones"],
-  ventas: ["ID", "Fecha", "Cliente", "Tienda", "Vendedor", "Total", "Estado", "Acciones"],
+const normalizeRolePermissions = (dbPermissions: string[] | null | undefined): string[] => {
+  const perms = dbPermissions || [];
+  return perms.includes("*") ? AVAILABLE_MODULES : perms;
 };
 
 // GET /roles — Listar roles con permisos y columnas
@@ -30,7 +30,7 @@ router.get("/roles", async (_req: AuthRequest, res: Response) => {
     const result = roles.map((r) => ({
       id: r.id,
       name: r.name,
-      permissions: r.permissions || [],
+      permissions: normalizeRolePermissions(r.permissions),
       columnConfig: r.columnConfig || {},
       userCount: r._count.users,
     }));
@@ -40,11 +40,6 @@ router.get("/roles", async (_req: AuthRequest, res: Response) => {
     console.error("Error al listar roles:", error);
     res.status(500).json({ message: "Error interno del servidor" });
   }
-});
-
-// GET /roles/modules — Módulos disponibles
-router.get("/roles/modules", (_req: AuthRequest, res: Response) => {
-  res.json({ modules: AVAILABLE_MODULES, defaultColumns: DEFAULT_COLUMNS });
 });
 
 // POST /roles — Crear rol (solo ADMIN)

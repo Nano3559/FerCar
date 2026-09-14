@@ -9,6 +9,8 @@ const prisma = new PrismaClient();
 
 router.use(authenticate);
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // GET / — Listar usuarios (solo ADMIN)
 router.get("/", authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
@@ -28,27 +30,13 @@ router.get("/", authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
         roleId: u.roleId,
         role: u.role.name,
         locationId: u.locationId,
-        locationName: u.location?.name || "N/A",
+        locationName: u.location?.name || "Sin ubicación",
         active: u.active,
         createdAt: u.createdAt,
       })),
     });
   } catch (error) {
     console.error("Error al listar usuarios:", error);
-    res.status(500).json({ message: "Error interno del servidor" });
-  }
-});
-
-// GET /roles — Listar roles disponibles (solo ADMIN)
-router.get("/roles", authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
-  try {
-    const roles = await prisma.roleModel.findMany({
-      select: { id: true, name: true, permissions: true },
-      orderBy: { name: "asc" },
-    });
-    res.json({ roles });
-  } catch (error) {
-    console.error("Error al listar roles:", error);
     res.status(500).json({ message: "Error interno del servidor" });
   }
 });
@@ -60,6 +48,12 @@ router.post("/", authorize("ADMIN"), async (req: AuthRequest, res: Response) => 
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: "Nombre, email y contraseña son obligatorios" });
+    }
+    if (!EMAIL_RE.test(String(email))) {
+      return res.status(400).json({ message: "El email no tiene un formato válido" });
+    }
+    if (typeof password !== "string" || password.length < 4) {
+      return res.status(400).json({ message: "La contraseña debe tener al menos 4 caracteres" });
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -102,9 +96,21 @@ router.post("/", authorize("ADMIN"), async (req: AuthRequest, res: Response) => 
       roleId: user.roleId,
       role: user.role.name,
       locationId: user.locationId,
-      locationName: user.location?.name || "N/A",
+      locationName: user.location?.name || "Sin ubicación",
       active: user.active,
     });
+
+    if (req.user) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.userId,
+          action: "CREATE_USER",
+          targetType: "USER",
+          targetId: user.id,
+          newValue: { name: user.name, email: user.email, role: user.role.name, locationId: user.locationId },
+        },
+      });
+    }
   } catch (error: any) {
     console.error("Error al crear usuario:", error);
     res.status(500).json({ message: error.message || "Error interno del servidor" });
@@ -156,6 +162,9 @@ router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) =
     const updateData: any = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
+    if (email !== undefined && !EMAIL_RE.test(String(email))) {
+      return res.status(400).json({ message: "El email no tiene un formato válido" });
+    }
     if (password) updateData.password = await bcrypt.hash(password, 10);
     if (finalRoleId) updateData.roleId = finalRoleId;
     if (locationId !== undefined) updateData.locationId = locationId ? Number(locationId) : null;
@@ -181,9 +190,34 @@ router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) =
       roleId: user.roleId,
       role: user.role.name,
       locationId: user.locationId,
-      locationName: user.location?.name || "N/A",
+      locationName: user.location?.name || "Sin ubicación",
       active: user.active,
     });
+
+    if (req.user) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.userId,
+          action: "UPDATE_USER",
+          targetType: "USER",
+          targetId: id,
+          oldValue: {
+            name: existing.name,
+            email: existing.email,
+            role: existing.role?.name,
+            locationId: existing.locationId,
+            active: existing.active,
+          },
+          newValue: {
+            name: user.name,
+            email: user.email,
+            role: user.role.name,
+            locationId: user.locationId,
+            active: user.active,
+          },
+        },
+      });
+    }
   } catch (error: any) {
     console.error("Error al actualizar usuario:", error);
     res.status(500).json({ message: error.message || "Error interno del servidor" });
@@ -239,7 +273,50 @@ router.delete("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response
       return res.status(400).json({ message: "No puedes eliminar tu propia cuenta" });
     }
 
+    const related = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        _count: {
+          select: {
+            sales: true, movements: true, requests: true,
+            purchaseNotes: true, despatchNotes: true,
+            auditLogs: true, notifications: true,
+          },
+        },
+      },
+    });
+
+    const counts = related?._count;
+    const blockers: string[] = [];
+    if (counts) {
+      if (counts.sales > 0) blockers.push("ventas");
+      if (counts.movements > 0) blockers.push("movimientos");
+      if (counts.requests > 0) blockers.push("solicitudes");
+      if (counts.purchaseNotes > 0) blockers.push("notas de compra");
+      if (counts.despatchNotes > 0) blockers.push("notas de despacho");
+      if (counts.auditLogs > 0) blockers.push("registros de auditoría");
+      if (counts.notifications > 0) blockers.push("notificaciones");
+    }
+    if (blockers.length > 0) {
+      return res.status(400).json({
+        message: `No se puede eliminar: el usuario tiene registros de ${blockers.join(", ")}. En su lugar, desactívelo.`,
+      });
+    }
+
     await prisma.user.delete({ where: { id } });
+
+    if (req.user) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.userId,
+          action: "DELETE_USER",
+          targetType: "USER",
+          targetId: id,
+          oldValue: { name: existing.name, email: existing.email },
+        },
+      });
+    }
+
     res.json({ message: "Usuario eliminado" });
   } catch (error: any) {
     console.error("Error al eliminar usuario:", error);

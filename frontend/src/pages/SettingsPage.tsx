@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  Users, Shield, Plus, Pencil, Trash2, X, User, RefreshCw, Check, History, Store, Home, UserX, UserCheck,
+  Users, Shield, Plus, Pencil, Trash2, X, User, RefreshCw, Check, History, Store, Home, UserX, UserCheck, Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
 import { useDialogBehavior } from "../components/ui/useDialog";
+import { useAuthStore } from "../stores/authStore";
 
 interface UserRecord {
   id: number; name: string; email: string; role: string; roleId: number;
@@ -50,6 +51,46 @@ const MODULE_LABELS: Record<string, string> = {
   despachos: "Lista de Despacho", "notas-compra": "Notas de Compra",
 };
 
+// Lista vacía = cualquier rol (ruta con allowedRoles={ALL})
+const MODULE_ACCESS: Record<string, string[]> = {
+  inventario: ["ADMIN", "INVENTARIO", "TIENDA"],
+  ventas: ["ADMIN", "TIENDA"],
+  "ventas-mayor": ["ADMIN", "TIENDA"],
+  devoluciones: ["ADMIN", "TIENDA"],
+  solicitudes: [],
+  movimientos: ["ADMIN", "INVENTARIO"],
+  despachos: [],
+  costos: ["ADMIN"],
+  precios: ["ADMIN"],
+  "notas-compra": ["ADMIN"],
+  reportes: ["ADMIN", "TIENDA"],
+  configuracion: ["ADMIN"],
+};
+
+const CANONICAL_ROLES = ["ADMIN", "INVENTARIO", "TIENDA"];
+
+const ROLE_PALETTE = [
+  "bg-violet-500/10 text-violet-400 border-violet-500/20",
+  "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  "bg-pink-500/10 text-pink-400 border-pink-500/20",
+  "bg-teal-500/10 text-teal-400 border-teal-500/20",
+];
+
+const roleBadgeClass = (name: string): string =>
+  ROLE_COLORS[name] || ROLE_PALETTE[[...name].reduce((acc, c) => acc + c.charCodeAt(0), 0) % ROLE_PALETTE.length];
+
+const roleDescription = (name: string): string =>
+  ROLE_DESCRIPTIONS[name] || "Rol personalizado";
+
+const canRoleOpenModule = (roleName: string, mod: string): boolean => {
+  const allowed = MODULE_ACCESS[mod];
+  if (!allowed || allowed.length === 0) return true;
+  return allowed.includes(roleName);
+};
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<"users" | "roles" | "audit" | "locations">("users");
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -60,6 +101,7 @@ export default function SettingsPage() {
   const [auditPage, setAuditPage] = useState(1);
   const [auditTotal, setAuditTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const { user: currentUser } = useAuthStore();
 
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState<number | null>(null);
@@ -139,14 +181,17 @@ export default function SettingsPage() {
     if (!userForm.name || !userForm.email || !userForm.role) {
       toast.error("Completa todos los campos obligatorios"); return;
     }
+    if (!EMAIL_RE.test(userForm.email.trim())) {
+      toast.error("El email no tiene un formato válido"); return;
+    }
     if (!editingUser && !userForm.password) {
       toast.error("La contraseña es obligatoria"); return;
     }
     try {
       setSaving(true);
       const payload: any = {
-        name: userForm.name,
-        email: userForm.email,
+        name: userForm.name.trim(),
+        email: userForm.email.trim(),
         role: userForm.role,
         locationId: userForm.locationId ? Number(userForm.locationId) : null,
       };
@@ -402,7 +447,7 @@ export default function SettingsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-300">{u.email}</td>
                       <td className="px-4 py-3">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${ROLE_COLORS[u.role] || "bg-gray-500/10 text-gray-400 border-gray-500/20"}`}>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${roleBadgeClass(u.role)}`}>
                           {ROLE_LABELS[u.role] || u.role}
                         </span>
                       </td>
@@ -419,10 +464,14 @@ export default function SettingsPage() {
                           <button onClick={() => openEdit(u)} className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all" title="Editar">
                             <Pencil size={14} />
                           </button>
-                          <button onClick={() => setShowToggleConfirm(u)} className="p-1.5 text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all" title={u.active ? "Desactivar" : "Activar"}>
+                          <button onClick={() => setShowToggleConfirm(u)} disabled={u.id === currentUser?.id}
+                            className="p-1.5 text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={u.id === currentUser?.id ? "No puedes desactivar tu propia cuenta" : (u.active ? "Desactivar" : "Activar")}>
                             {u.active ? <UserX size={14} /> : <UserCheck size={14} />}
                           </button>
-                          <button onClick={() => setShowDeleteConfirm(u.id)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all" title="Eliminar">
+                          <button onClick={() => setShowDeleteConfirm(u.id)} disabled={u.id === currentUser?.id}
+                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={u.id === currentUser?.id ? "No puedes eliminar tu propia cuenta" : "Eliminar"}>
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -449,12 +498,12 @@ export default function SettingsPage() {
             <div key={role.id} className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${ROLE_COLORS[role.name] || ""}`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${roleBadgeClass(role.name)}`}>
                     <Shield size={18} />
                   </div>
                   <div>
                     <h4 className="text-foreground font-medium">{ROLE_LABELS[role.name] || role.name}</h4>
-                    <p className="text-gray-400 text-xs mt-0.5">{ROLE_DESCRIPTIONS[role.name] || role.name}</p>
+                    <p className="text-gray-400 text-xs mt-0.5">{roleDescription(role.name)}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -472,25 +521,35 @@ export default function SettingsPage() {
                 <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Módulos visibles</p>
                 <div className="flex flex-wrap gap-2">
                   {allModules.map((mod) => {
-                    const hasPerm = role.name === "ADMIN" || role.permissions.includes(mod);
                     const isAdmin = role.name === "ADMIN";
+                    const locked = !isAdmin && !canRoleOpenModule(role.name, mod);
+                    const hasPerm = isAdmin || role.permissions.includes(mod);
+                    const lockReason = (MODULE_ACCESS[mod]?.length
+                      ? `Solo rol(es): ${MODULE_ACCESS[mod].join(", ")}`
+                      : "Acceso restringido por rol");
                     return (
                       <button
                         key={mod}
-                        onClick={() => !isAdmin && togglePermission(role.id, mod)}
-                        disabled={isAdmin}
+                        onClick={() => !isAdmin && !locked && togglePermission(role.id, mod)}
+                        disabled={isAdmin || locked}
+                        title={locked ? `No disponible para el rol ${role.name}. ${lockReason}.` : undefined}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5 ${
                           hasPerm
                             ? "bg-primary-600/10 border-primary-600/30 text-primary-400"
                             : "bg-dark-900/50 border-dark-700/50 text-gray-500 hover:text-gray-400"
-                        } ${isAdmin ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:border-primary-500/40"}`}
+                        } ${isAdmin || locked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-primary-500/40"}`}
                       >
-                        {hasPerm && <Check size={12} />}
+                        {locked ? <Lock size={12} /> : hasPerm && <Check size={12} />}
                         {MODULE_LABELS[mod] || mod}
                       </button>
                     );
                   })}
                 </div>
+                {!CANONICAL_ROLES.includes(role.name) && (
+                  <p className="text-[11px] text-gray-600 mt-2">
+                    Los roles personalizados solo pueden abrir los módulos accesibles para cualquier rol (Lista de Despacho y Solicitudes).
+                  </p>
+                )}
               </div>
 
               {role.columnConfig && typeof role.columnConfig === "object" && (
@@ -812,18 +871,29 @@ export default function SettingsPage() {
                 <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Módulos visibles</p>
                 <div className="flex flex-wrap gap-2">
                   {allModules.map((mod) => {
+                    const prospectiveName = roleForm.name.trim().toUpperCase();
+                    const locked = prospectiveName !== "" && !canRoleOpenModule(prospectiveName, mod);
                     const on = roleForm.permissions.includes(mod);
+                    const lockReason = (MODULE_ACCESS[mod]?.length
+                      ? `Solo rol(es): ${MODULE_ACCESS[mod].join(", ")}`
+                      : "Acceso restringido por rol");
                     return (
-                      <button key={mod} type="button" onClick={() => toggleRoleModule(mod)}
+                      <button key={mod} type="button" onClick={() => !locked && toggleRoleModule(mod)} disabled={locked}
+                        title={locked ? `No disponible para un rol personalizado. ${lockReason}.` : undefined}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5 ${
-                          on ? "bg-primary-600/10 border-primary-600/30 text-primary-400" : "bg-dark-900/50 border-dark-700/50 text-gray-500 hover:text-gray-400 hover:border-primary-500/40"
-                        }`}>
-                        {on && <Check size={12} />}
+                          on ? "bg-primary-600/10 border-primary-600/30 text-primary-400" : "bg-dark-900/50 border-dark-700/50 text-gray-500 hover:text-gray-400"
+                        } ${locked ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-primary-500/40"}`}>
+                        {locked ? <Lock size={12} /> : on && <Check size={12} />}
                         {MODULE_LABELS[mod] || mod}
                       </button>
                     );
                   })}
                 </div>
+                {roleForm.name.trim().toUpperCase() !== "" && !CANONICAL_ROLES.includes(roleForm.name.trim().toUpperCase()) && (
+                  <p className="text-[11px] text-gray-600 mt-2">
+                    Los roles personalizados solo pueden abrir los módulos accesibles para cualquier rol (Lista de Despacho y Solicitudes).
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Categorías visibles</p>

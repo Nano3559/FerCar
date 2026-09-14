@@ -46,6 +46,18 @@ router.post("/", authorize("ADMIN"), async (req: AuthRequest, res: Response) => 
       },
     });
 
+    if (req.user) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.userId,
+          action: "CREATE_LOCATION",
+          targetType: "LOCATION",
+          targetId: location.id,
+          newValue: { name: location.name, type: location.type, address: location.address },
+        },
+      });
+    }
+
     res.status(201).json({ location });
   } catch (error: any) {
     console.error("Error al crear ubicación:", error);
@@ -87,6 +99,20 @@ router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) =
     }
 
     const location = await prisma.location.update({ where: { id }, data });
+
+    if (req.user) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.userId,
+          action: "UPDATE_LOCATION",
+          targetType: "LOCATION",
+          targetId: id,
+          oldValue: { name: existing.name, type: existing.type, address: existing.address },
+          newValue: { name: location.name, type: location.type, address: location.address },
+        },
+      });
+    }
+
     res.json({ location });
   } catch (error: any) {
     console.error("Error al actualizar ubicación:", error);
@@ -123,6 +149,19 @@ router.delete("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response
     }
 
     await prisma.location.delete({ where: { id } });
+
+    if (req.user) {
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user.userId,
+          action: "DELETE_LOCATION",
+          targetType: "LOCATION",
+          targetId: id,
+          oldValue: { name: location.name, type: location.type, address: location.address },
+        },
+      });
+    }
+
     res.json({ message: "Ubicación eliminada" });
   } catch (error: any) {
     console.error("Error al eliminar ubicación:", error);
