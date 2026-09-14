@@ -36,6 +36,7 @@ model User {
   auditLogs    AuditLog[]
   notifications Notification[]
   purchaseNotes PurchaseNote[] @relation("PurchaseNoteUser")
+  despatchNotes DespatchNote[] @relation("DespatchNoteUser")
 }
 
 model Location {
@@ -94,6 +95,7 @@ model Product {
   returns        Return[]
   saleItems      SaleItem[]
   purchaseItems  PurchaseNoteItem[]
+  despatchItems  DespatchNoteItem[]
 }
 
 model Inventory {
@@ -296,6 +298,46 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
+model DespatchNote {
+  id              Int                @id @default(autoincrement())
+  noteNumber      String             @unique
+  date            DateTime           @default(now())
+  userId          Int
+  totalUnits      Int                @default(0)
+  status          DespatchNoteStatus @default(EMITIDA)
+  entregadoA      String?
+  entregadoAt     DateTime?
+  observacion     String?
+  cancelledAt     DateTime?
+  cancelledReason String?
+  cancelledBy     Int?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  user            User               @relation("DespatchNoteUser", fields: [userId], references: [id])
+  items           DespatchNoteItem[]
+}
+
+model DespatchNoteItem {
+  id           Int          @id @default(autoincrement())
+  noteId       Int
+  productId    Int
+  itemCode     String
+  name         String
+  manufacturer String
+  brand        String
+  model        String
+  locationId   Int
+  locationName String
+  locationType String
+  quantity     Int
+  createdAt    DateTime     @default(now())
+  product      Product      @relation(fields: [productId], references: [id])
+  note         DespatchNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+  @@index([productId])
+}
+
 model Manufacturer {
   id          Int      @id @default(autoincrement())
   name        String   @unique
@@ -353,6 +395,12 @@ enum PaymentMethod {
 
 enum PurchaseNoteStatus {
   ACTIVA
+  ANULADA
+}
+
+enum DespatchNoteStatus {
+  EMITIDA
+  ENTREGADA
   ANULADA
 }
 

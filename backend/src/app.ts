@@ -25,6 +25,7 @@ import publicRoutes from "./modules/public/public.routes";
 import permissionsRoutes from "./modules/permissions/permissions.routes";
 import notificationsRoutes from "./modules/notifications/notifications.routes";
 import purchaseNotesRoutes from "./modules/purchase-notes/purchaseNotes.routes";
+import despatchNotesRoutes from "./modules/despatch-notes/despatchNotes.routes";
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/permissions", permissionsRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/purchase-notes", purchaseNotesRoutes);
+app.use("/api/despatch-notes", despatchNotesRoutes);
 app.use("/api/public", publicRoutes);
 
 app.use(errorHandler);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ListChecks, Plus, Trash2, Printer, Image as ImageIcon, FileDown, X,
-  AlertTriangle, PackageOpen,
+  AlertTriangle, PackageOpen, History, Save, CheckCircle2, Ban, Eye,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import html2canvas from "html2canvas";
@@ -25,11 +25,56 @@ interface LineItem {
   locationId: number; locationName: string; quantity: number;
 }
 
+interface NoteItemDto {
+  id: number; itemCode: string; name: string;
+  manufacturer: string; brand: string; model: string;
+  locationName: string; locationType: string; quantity: number;
+}
+
+interface DespatchNoteRow {
+  id: number; noteNumber: string; date: string;
+  userName: string; totalUnits: number; status: "EMITIDA" | "ENTREGADA" | "ANULADA";
+  entregadoA: string | null; entregadoAt: string | null;
+  observacion: string | null; cancelledReason: string | null;
+  createdAt: string; items: NoteItemDto[];
+}
+
+interface DocData {
+  number: string;
+  dateLabel: string;
+  elaboradoPor: string;
+  entregadoA: string | null;
+  items: Array<Pick<LineItem, "name" | "manufacturer" | "brand" | "model" | "itemCode" | "locationName" | "quantity">>;
+}
+
 const STORAGE_KEY = "repuesto_despacho_list";
 const SEQ_KEY = "repuesto_despacho_seq";
 
+const fmtDate = (d: string | Date) =>
+  new Date(d).toLocaleDateString("es-BO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+const fmtShort = (d: string | Date) =>
+  new Date(d).toLocaleDateString("es-BO", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+const StatusBadge = ({ status }: { status: DespatchNoteRow["status"] }) => {
+  const styles = {
+    EMITIDA: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+    ENTREGADA: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+    ANULADA: "bg-red-500/10 text-red-400 border-red-500/30",
+  } as const;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${styles[status]}`}>
+      {status === "ENTREGADA" && <CheckCircle2 size={11} />}
+      {status === "ANULADA" && <Ban size={11} />}
+      {status}
+    </span>
+  );
+};
+
 export default function DespatchListPage() {
   const { user } = useAuthStore();
+  const isAdmin = user?.role === "ADMIN";
+
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [locations, setLocations] = useState<LocationLite[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
@@ -40,12 +85,26 @@ export default function DespatchListPage() {
   const [locationId, setLocationId] = useState("");
   const [qty, setQty] = useState("1");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [observacion, setObservacion] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const [showPreview, setShowPreview] = useState(false);
+  const [tab, setTab] = useState<"nueva" | "historial">("nueva");
+  const [notes, setNotes] = useState<DespatchNoteRow[]>([]);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatus, setHistoryStatus] = useState("TODOS");
+  const [loadingNotes, setLoadingNotes] = useState(false);
+
+  const [preview, setPreview] = useState<DocData | null>(null);
   const [exporting, setExporting] = useState<"pdf" | "png" | null>(null);
   const [docSeq, setDocSeq] = useState(1);
-  const [viewSeq, setViewSeq] = useState(1);
   const docRef = useRef<HTMLDivElement>(null);
+
+  const [deliverTo, setDeliverTo] = useState("");
+  const [delivering, setDelivering] = useState(false);
+  const [deliverNote, setDeliverNote] = useState<DespatchNoteRow | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelNote, setCancelNote] = useState<DespatchNoteRow | null>(null);
 
   useEffect(() => {
     try {
@@ -99,6 +158,24 @@ export default function DespatchListPage() {
       toast.error("Error al refrescar stock");
     }
   }, []);
+
+  const loadNotes = useCallback(async () => {
+    setLoadingNotes(true);
+    try {
+      const params: any = { limit: 200 };
+      if (historyStatus !== "TODOS") params.status = historyStatus;
+      const res = await api.get("/despatch-notes", { params });
+      setNotes(res.data.notes || []);
+    } catch {
+      toast.error("Error al cargar el historial");
+    } finally {
+      setLoadingNotes(false);
+    }
+  }, [historyStatus]);
+
+  useEffect(() => {
+    if (isAdmin) loadNotes();
+  }, [loadNotes, isAdmin]);
 
   const suggestions = useMemo(
     () => products.map((p) => `${p.name} — ${p.itemCode}`),
@@ -164,7 +241,7 @@ export default function DespatchListPage() {
 
   const totalUnits = items.reduce((sum, it) => sum + (isNaN(it.quantity) ? 0 : it.quantity), 0);
   const activeItems = items.filter((it) => it.quantity > 0);
-  const today = new Date().toLocaleDateString("es-BO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
   const userDisplay = user?.name || user?.email || "";
 
   const selectedAvail = selected ? availableOf(selected.id, Number(locationId)) : null;
@@ -183,7 +260,7 @@ export default function DespatchListPage() {
       let pw = w; let ph = w / ratio;
       if (ph > h - 12) { ph = h - 12; pw = ph * ratio; }
       pdf.addImage(img, "JPEG", (w - pw) / 2, 8, pw, ph);
-      pdf.save(`despacho_${new Date().getTime()}.pdf`);
+      pdf.save(`despacho_${preview?.number || ""}.pdf`);
       toast.success("PDF descargado");
     } catch {
       toast.error("Error al generar el PDF");
@@ -198,7 +275,7 @@ export default function DespatchListPage() {
       const canvas = await buildCanvas();
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
-      a.download = `despacho_${new Date().getTime()}.png`;
+      a.download = `despacho_${preview?.number || ""}.png`;
       a.click();
       toast.success("Imagen descargada");
     } catch {
@@ -211,158 +288,421 @@ export default function DespatchListPage() {
   const openPreview = async () => {
     if (activeItems.length === 0) return;
     await refreshStock();
-    setShowPreview(true);
-    setViewSeq(docSeq);
+    setPreview({
+      number: String(docSeq).padStart(4, "0"),
+      dateLabel: fmtDate(new Date()),
+      elaboradoPor: userDisplay,
+      entregadoA: null,
+      items: activeItems,
+    });
     const next = docSeq + 1;
     setDocSeq(next);
     try { localStorage.setItem(SEQ_KEY, String(next)); } catch { /* ignore */ }
   };
+
+  const openNotePreview = (note: DespatchNoteRow) => {
+    setPreview({
+      number: note.noteNumber,
+      dateLabel: fmtDate(note.date),
+      elaboradoPor: note.userName,
+      entregadoA: note.entregadoA,
+      items: note.items,
+    });
+  };
+
+  const saveNote = async () => {
+    if (activeItems.length === 0) return;
+    setSaving(true);
+    try {
+      const res = await api.post("/despatch-notes", {
+        items: activeItems.map((it) => ({ productId: it.productId, quantity: it.quantity, locationId: it.locationId })),
+        observacion: observacion.trim() || undefined,
+      });
+      toast.success(`Nota ${res.data.note.noteNumber} guardada (${res.data.note.totalUnits} unidades)`);
+      setItems([]);
+      setObservacion("");
+      if (isAdmin) loadNotes();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || "Error al guardar la nota");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitDeliver = async () => {
+    if (!deliverNote) return;
+    if (!deliverTo.trim()) { toast.error("Indica a quién se entregó"); return; }
+    setDelivering(true);
+    try {
+      const res = await api.patch(`/despatch-notes/${deliverNote.id}`, { entregadoA: deliverTo.trim() });
+      toast.success(`${res.data.noteNumber} entregada a ${res.data.entregadoA}`);
+      setDeliverNote(null);
+      setDeliverTo("");
+      loadNotes();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || "Error al marcar entregada");
+    } finally {
+      setDelivering(false);
+    }
+  };
+
+  const submitCancel = async () => {
+    if (!cancelNote) return;
+    setCancelling(true);
+    try {
+      const res = await api.post(`/despatch-notes/${cancelNote.id}/cancel`, {
+        reason: cancelReason.trim() || undefined,
+      });
+      toast.success(`${res.data.noteNumber} anulada`);
+      setCancelNote(null);
+      setCancelReason("");
+      loadNotes();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || "Error al anular la nota");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const filteredNotes = useMemo(() => {
+    const q = historySearch.trim().toLowerCase();
+    if (!q) return notes;
+    return notes.filter(
+      (n) =>
+        n.noteNumber.toLowerCase().includes(q) ||
+        n.userName.toLowerCase().includes(q) ||
+        (n.entregadoA ?? "").toLowerCase().includes(q) ||
+        n.items.some(
+          (i) =>
+            i.name.toLowerCase().includes(q) ||
+            i.itemCode.toLowerCase().includes(q) ||
+            i.brand.toLowerCase().includes(q)
+        )
+    );
+  }, [notes, historySearch]);
 
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Lista de Despacho</h1>
-          <p className="text-gray-400 text-sm mt-1">Arma la lista de productos a sacar, elige la tienda o almacén de origen y la cantidad, luego imprímela como PDF o imagen.</p>
+          <p className="text-gray-400 text-sm mt-1">Arma la lista de productos a sacar, elige la tienda o almacén de origen y la cantidad, luego imprime o guarda la nota.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={clearAll}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
-              confirmClear
-                ? "bg-red-600 hover:bg-red-700 text-white border-red-600/30"
-                : "text-gray-400 hover:text-red-400 hover:bg-red-500/10 border-dark-700/50 hover:border-red-500/30"
-            }`}>
-            <Trash2 size={14} /> {confirmClear ? "¿Vaciar lista?" : "Vaciar"}
+          {tab === "nueva" && (
+            <button onClick={clearAll}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
+                confirmClear
+                  ? "bg-red-600 hover:bg-red-700 text-white border-red-600/30"
+                  : "text-gray-400 hover:text-red-400 hover:bg-red-500/10 border-dark-700/50 hover:border-red-500/30"
+              }`}>
+              <Trash2 size={14} /> {confirmClear ? "¿Vaciar lista?" : "Vaciar"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Pestañas */}
+      <div className="flex gap-1 border border-dark-700/50 rounded-xl p-1 w-fit">
+        <button
+          onClick={() => setTab("nueva")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "nueva" ? "bg-dark-700/70 text-foreground" : "text-gray-400 hover:text-foreground"}`}>
+          <ListChecks size={15} /> Nueva lista
+        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setTab("historial")}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "historial" ? "bg-dark-700/70 text-foreground" : "text-gray-400 hover:text-foreground"}`}>
+            <History size={15} /> Historial
           </button>
-        </div>
-      </div>
-
-      {/* Añadir producto */}
-      <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4 md:p-5 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-1">
-            <Autocomplete
-              value={search}
-              onChange={handleSearchChange}
-              suggestions={suggestions}
-              placeholder="Buscar producto..."
-              label="Producto"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1.5" htmlFor="desp-origen">Sacar desde</label>
-            <select id="desp-origen" value={locationId} onChange={(e) => setLocationId(e.target.value)}
-              className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
-              <option value="">Seleccionar...</option>
-              {locations.map((l) => {
-                const avail = selected ? availableOf(selected.id, l.id) : null;
-                return (
-                  <option key={l.id} value={l.id}>
-                    {l.name} ({l.type === "ALMACEN" ? "Almacén" : "Tienda"}){avail != null ? ` — ${avail} disp.` : ""}
-                  </option>
-                );
-              })}
-            </select>
-            {selected && locationId && (
-              <p className={`text-xs mt-1 ${selectedAvail != null ? (selectedAvail > 0 ? "text-gray-500" : "text-red-400") : "text-gray-600"}`}>
-                {selectedAvail != null
-                  ? `Disponible: ${selectedAvail} en ${locations.find((l) => l.id === Number(locationId))?.name}`
-                  : "Sin stock registrado en esa ubicación"}
-              </p>
-            )}
-          </div>
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <label className="block text-xs text-gray-400 mb-1.5" htmlFor="desp-cant">Cantidad</label>
-              <input id="desp-cant" type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)}
-                className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-            </div>
-            <button onClick={addItem}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shrink-0">
-              <Plus size={16} /> Agregar
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabla de items */}
-      <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-          <h3 className="text-foreground font-medium">Productos a despachar ({activeItems.length})</h3>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">{totalUnits} unidades</span>
-            <button onClick={openPreview} disabled={activeItems.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all">
-              <ListChecks size={14} /> Ver / Imprimir
-            </button>
-          </div>
-        </div>
-        {activeItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-14 text-center">
-            <PackageOpen size={40} className="text-gray-600 mb-3" />
-            <p className="text-gray-500 text-sm">La lista está vacía</p>
-            <p className="text-gray-600 text-xs mt-1">Agrega productos arriba para comenzar</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-dark-700/50">
-                  <th className="text-left px-4 py-3 text-gray-400 font-medium w-10">N°</th>
-                  <th className="text-left px-4 py-3 text-gray-400 font-medium">Producto</th>
-                  <th className="text-left px-4 py-3 text-gray-400 font-medium">Desde</th>
-                  <th className="text-center px-4 py-3 text-gray-400 font-medium w-28">Cantidad</th>
-                  <th className="text-center px-4 py-3 text-gray-400 font-medium w-24">Disp.</th>
-                  <th className="text-center px-4 py-3 text-gray-400 font-medium w-12"> </th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeItems.map((it, idx) => {
-                  const avail = availableOf(it.productId, it.locationId);
-                  const over = avail != null && it.quantity > avail;
-                  return (
-                    <tr key={it.uid} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                      <td className="px-4 py-2.5 text-gray-500">{idx + 1}</td>
-                      <td className="px-4 py-2.5">
-                        <p className="text-foreground font-medium">{it.name}</p>
-                        <p className="text-xs text-gray-500">{it.manufacturer} · {it.brand} {it.model} · {it.itemCode}</p>
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-300 text-xs">{it.locationName}</td>
-                      <td className="px-4 py-2.5">
-                        <input type="number" min={1} value={it.quantity || ""}
-                          onChange={(e) => updateQty(it.uid, e.target.value)}
-                          className={`w-full px-2 py-1.5 text-center bg-dark-900/50 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none ${
-                            over ? "border-red-500/60 text-red-400" : "border-dark-600/50 text-foreground"
-                          }`} />
-                      </td>
-                      <td className={`px-4 py-2.5 text-center text-xs ${over ? "text-red-400 font-medium" : "text-gray-500"}`}>
-                        {avail != null ? avail : "—"}
-                        {over && <span className="flex items-center justify-center gap-1 mt-0.5"><AlertTriangle size={11} /> sobre stock</span>}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <button onClick={() => removeItem(it.uid)} title="Quitar" aria-label="Quitar producto"
-                          className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
-                          <X size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
         )}
       </div>
 
+      {tab === "nueva" ? (
+        <>
+          {/* Añadir producto */}
+          <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4 md:p-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-1">
+                <Autocomplete
+                  value={search}
+                  onChange={handleSearchChange}
+                  suggestions={suggestions}
+                  placeholder="Buscar producto..."
+                  label="Producto"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1.5" htmlFor="desp-origen">Sacar desde</label>
+                <select id="desp-origen" value={locationId} onChange={(e) => setLocationId(e.target.value)}
+                  className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                  <option value="">Seleccionar...</option>
+                  {locations.map((l) => {
+                    const avail = selected ? availableOf(selected.id, l.id) : null;
+                    return (
+                      <option key={l.id} value={l.id}>
+                        {l.name} ({l.type === "ALMACEN" ? "Almacén" : "Tienda"}){avail != null ? ` — ${avail} disp.` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                {selected && locationId && (
+                  <p className={`text-xs mt-1 ${selectedAvail != null ? (selectedAvail > 0 ? "text-gray-500" : "text-red-400") : "text-gray-600"}`}>
+                    {selectedAvail != null
+                      ? `Disponible: ${selectedAvail} en ${locations.find((l) => l.id === Number(locationId))?.name}`
+                      : "Sin stock registrado en esa ubicación"}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="block text-xs text-gray-400 mb-1.5" htmlFor="desp-cant">Cantidad</label>
+                  <input id="desp-cant" type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)}
+                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                </div>
+                <button onClick={addItem}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shrink-0">
+                  <Plus size={16} /> Agregar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla de items */}
+          <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between flex-wrap gap-2">
+              <h3 className="text-foreground font-medium">Productos a despachar ({activeItems.length})</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">{totalUnits} unidades</span>
+                <button onClick={openPreview} disabled={activeItems.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all">
+                  <ListChecks size={14} /> Ver / Imprimir
+                </button>
+              </div>
+            </div>
+            {isAdmin && (
+              <div className="px-4 py-2.5 border-b border-dark-700/50 flex items-center gap-2 flex-wrap bg-dark-900/30">
+                <input value={observacion} onChange={(e) => setObservacion(e.target.value)} maxLength={300}
+                  placeholder="Observación de la nota (opcional)"
+                  className="flex-1 min-w-[200px] px-3 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                <button onClick={saveNote} disabled={activeItems.length === 0 || saving}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-all">
+                  <Save size={14} /> {saving ? "Guardando..." : "Guardar Nota"}
+                </button>
+              </div>
+            )}
+            {activeItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-14 text-center">
+                <PackageOpen size={40} className="text-gray-600 mb-3" />
+                <p className="text-gray-500 text-sm">La lista está vacía</p>
+                <p className="text-gray-600 text-xs mt-1">Agrega productos arriba para comenzar</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-dark-700/50">
+                      <th className="text-left px-4 py-3 text-gray-400 font-medium w-10">N°</th>
+                      <th className="text-left px-4 py-3 text-gray-400 font-medium">Producto</th>
+                      <th className="text-left px-4 py-3 text-gray-400 font-medium">Desde</th>
+                      <th className="text-center px-4 py-3 text-gray-400 font-medium w-28">Cantidad</th>
+                      <th className="text-center px-4 py-3 text-gray-400 font-medium w-24">Disp.</th>
+                      <th className="text-center px-4 py-3 text-gray-400 font-medium w-12"> </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeItems.map((it, idx) => {
+                      const avail = availableOf(it.productId, it.locationId);
+                      const over = avail != null && it.quantity > avail;
+                      return (
+                        <tr key={it.uid} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
+                          <td className="px-4 py-2.5 text-gray-500">{idx + 1}</td>
+                          <td className="px-4 py-2.5">
+                            <p className="text-foreground font-medium">{it.name}</p>
+                            <p className="text-xs text-gray-500">{it.manufacturer} · {it.brand} {it.model} · {it.itemCode}</p>
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-300 text-xs">{it.locationName}</td>
+                          <td className="px-4 py-2.5">
+                            <input type="number" min={1} value={it.quantity || ""}
+                              onChange={(e) => updateQty(it.uid, e.target.value)}
+                              className={`w-full px-2 py-1.5 text-center bg-dark-900/50 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none ${
+                                over ? "border-red-500/60 text-red-400" : "border-dark-600/50 text-foreground"
+                              }`} />
+                          </td>
+                          <td className={`px-4 py-2.5 text-center text-xs ${over ? "text-red-400 font-medium" : "text-gray-500"}`}>
+                            {avail != null ? avail : "—"}
+                            {over && <span className="flex items-center justify-center gap-1 mt-0.5"><AlertTriangle size={11} /> sobre stock</span>}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <button onClick={() => removeItem(it.uid)} title="Quitar" aria-label="Quitar producto"
+                              className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
+                              <X size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        /* ---------- Historial ---------- */
+        <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between gap-2 flex-wrap">
+            <input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder="Buscar por N°, producto, entregado a..."
+              className="flex-1 min-w-[220px] px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+            <select value={historyStatus} onChange={(e) => setHistoryStatus(e.target.value)}
+              className="px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+              <option value="TODOS">Todos los estados</option>
+              <option value="EMITIDA">Emitidas</option>
+              <option value="ENTREGADA">Entregadas</option>
+              <option value="ANULADA">Anuladas</option>
+            </select>
+          </div>
+
+          {loadingNotes ? (
+            <div className="flex flex-col items-center justify-center py-14 text-center">
+              <p className="text-gray-500 text-sm">Cargando historial...</p>
+            </div>
+          ) : filteredNotes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-14 text-center">
+              <History size={40} className="text-gray-600 mb-3" />
+              <p className="text-gray-500 text-sm">No hay notas de despacho</p>
+              <p className="text-gray-600 text-xs mt-1">Guarda una nota desde la pestaña "Nueva lista"</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-dark-700/50">
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">N°</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Fecha</th>
+                    <th className="text-center px-4 py-3 text-gray-400 font-medium">Ítems</th>
+                    <th className="text-center px-4 py-3 text-gray-400 font-medium">Unidades</th>
+                    <th className="text-center px-4 py-3 text-gray-400 font-medium">Estado</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Elaborado por</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Entregado a</th>
+                    <th className="text-center px-4 py-3 text-gray-400 font-medium">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredNotes.map((n) => (
+                    <tr key={n.id} className={`border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors ${n.status === "ANULADA" ? "opacity-60" : ""}`}>
+                      <td className="px-4 py-2.5 font-medium text-foreground">{n.noteNumber}</td>
+                      <td className="px-4 py-2.5 text-gray-300">{fmtShort(n.date)}</td>
+                      <td className="px-4 py-2.5 text-center text-gray-300">{n.items.length}</td>
+                      <td className="px-4 py-2.5 text-center text-gray-300">{n.totalUnits}</td>
+                      <td className="px-4 py-2.5 text-center"><StatusBadge status={n.status} /></td>
+                      <td className="px-4 py-2.5 text-gray-300">{n.userName}</td>
+                      <td className="px-4 py-2.5 text-gray-300">{n.entregadoA ?? "—"}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => openNotePreview(n)} title="Ver / Imprimir" aria-label="Ver nota"
+                            className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all">
+                            <Eye size={15} />
+                          </button>
+                          {n.status === "EMITIDA" && (
+                            <button onClick={() => setDeliverNote(n)} title="Marcar entregada" aria-label="Marcar entregada"
+                              className="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all">
+                              <CheckCircle2 size={15} />
+                            </button>
+                          )}
+                          {n.status !== "ANULADA" && (
+                            <button onClick={() => setCancelNote(n)} title="Anular" aria-label="Anular nota"
+                              className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
+                              <Ban size={15} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal: marcar entregada */}
+      {deliverNote && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="min-h-full flex items-center justify-center py-6">
+            <div className="w-full max-w-md bg-dark-800 border border-dark-700 rounded-2xl p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-foreground font-bold text-lg">Marcar entregada</h3>
+                  <p className="text-gray-400 text-sm mt-1">Nota {deliverNote.noteNumber} · {deliverNote.totalUnits} unidades</p>
+                </div>
+                <button onClick={() => setDeliverNote(null)} className="p-1.5 text-gray-400 hover:text-red-400 rounded-lg transition-all">
+                  <X size={16} />
+                </button>
+              </div>
+              <label className="block text-xs text-gray-400 mt-4 mb-1.5" htmlFor="entregado-a">¿A quién se entregó? (obligatorio)</label>
+              <input id="entregado-a" value={deliverTo} onChange={(e) => setDeliverTo(e.target.value)} autoFocus
+                placeholder="Nombre del que recibe"
+                className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+              <div className="flex justify-end gap-2 mt-5">
+                <button onClick={() => setDeliverNote(null)}
+                  className="px-4 py-2 rounded-xl text-sm bg-dark-700 hover:bg-dark-600 text-foreground border border-dark-700 transition-all">
+                  Cancelar
+                </button>
+                <button onClick={submitDeliver} disabled={delivering}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-medium transition-all">
+                  <CheckCircle2 size={15} /> {delivering ? "Guardando..." : "Confirmar entrega"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: anular */}
+      {cancelNote && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="min-h-full flex items-center justify-center py-6">
+            <div className="w-full max-w-md bg-dark-800 border border-dark-700 rounded-2xl p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-foreground font-bold text-lg">Anular nota {cancelNote.noteNumber}</h3>
+                  <p className="text-gray-400 text-sm mt-1">La nota quedará anulada en el historial.</p>
+                </div>
+                <button onClick={() => setCancelNote(null)} className="p-1.5 text-gray-400 hover:text-red-400 rounded-lg transition-all">
+                  <X size={16} />
+                </button>
+              </div>
+              <label className="block text-xs text-gray-400 mt-4 mb-1.5" htmlFor="cancel-reason">Motivo (opcional)</label>
+              <textarea id="cancel-reason" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={3}
+                placeholder="Ej.: lista mal armada, cliente canceló..."
+                className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none" />
+              <div className="flex justify-end gap-2 mt-5">
+                <button onClick={() => setCancelNote(null)}
+                  className="px-4 py-2 rounded-xl text-sm bg-dark-700 hover:bg-dark-600 text-foreground border border-dark-700 transition-all">
+                  Cancelar
+                </button>
+                <button onClick={submitCancel} disabled={cancelling}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-medium transition-all">
+                  <Ban size={15} /> {cancelling ? "Anulando..." : "Anular nota"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Vista previa / impresión */}
-      {showPreview && (
+      {preview && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="min-h-full flex items-start justify-center py-6">
             <div className="w-full max-w-3xl">
               <div className="no-print flex items-center justify-between mb-3 flex-wrap gap-2">
-                <h2 className="text-foreground font-bold text-lg">Vista previa</h2>
+                <h2 className="text-foreground font-bold text-lg">Vista previa · {preview.number}</h2>
                 <div className="flex items-center gap-2">
-                  <button onClick={doPrint}
+                  <button onClick={() => window.print()}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-dark-800 hover:bg-dark-700 text-foreground font-medium border border-dark-700/50 transition-all">
                     <Printer size={15} /> Imprimir
                   </button>
@@ -374,7 +714,7 @@ export default function DespatchListPage() {
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-primary-600 hover:bg-primary-700 text-white font-medium transition-all disabled:opacity-50">
                     <FileDown size={15} /> {exporting === "pdf" ? "..." : "PDF"}
                   </button>
-                  <button onClick={() => setShowPreview(false)}
+                  <button onClick={() => setPreview(null)}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-dark-700 hover:bg-red-500/10 text-gray-200 hover:text-red-400 font-medium border border-dark-700/50 transition-all">
                     <X size={15} /> Cerrar
                   </button>
@@ -391,16 +731,19 @@ export default function DespatchListPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-xl font-bold uppercase">Nota de Despacho</p>
-                    <p className="text-xs text-gray-600 mt-1">N° {String(viewSeq).padStart(4, "0")}</p>
-                    <p className="text-xs text-gray-600">{today}</p>
+                    <p className="text-xs text-gray-600 mt-1">N° {preview.number}</p>
+                    <p className="text-xs text-gray-600">{preview.dateLabel}</p>
                   </div>
                 </div>
 
                 {/* Datos */}
                 <div className="flex flex-wrap gap-x-8 gap-y-1 py-3 text-sm border-b border-gray-300">
-                  <p className="font-medium">Elaborado por: <span className="font-normal text-gray-700">{userDisplay || "—"}</span></p>
-                  <p className="font-medium">Ítems: <span className="font-normal text-gray-700">{activeItems.length}</span></p>
-                  <p className="font-medium">Total unidades: <span className="font-normal text-gray-700">{totalUnits}</span></p>
+                  <p className="font-medium">Elaborado por: <span className="font-normal text-gray-700">{preview.elaboradoPor || "—"}</span></p>
+                  <p className="font-medium">Ítems: <span className="font-normal text-gray-700">{preview.items.length}</span></p>
+                  <p className="font-medium">Total unidades: <span className="font-normal text-gray-700">{preview.items.reduce((s, it) => s + (Number(it.quantity) || 0), 0)}</span></p>
+                  {preview.entregadoA && (
+                    <p className="font-medium">Recibido por: <span className="font-normal text-gray-700">{preview.entregadoA}</span></p>
+                  )}
                 </div>
 
                 {/* Tabla */}
@@ -415,8 +758,8 @@ export default function DespatchListPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {activeItems.map((it, idx) => (
-                      <tr key={it.uid}>
+                    {preview.items.map((it, idx) => (
+                      <tr key={idx}>
                         <td className="border border-gray-400 px-2 py-1.5 text-center">{idx + 1}</td>
                         <td className="border border-gray-400 px-2 py-1.5">
                           <p className="font-medium">{it.name}</p>
@@ -446,8 +789,4 @@ export default function DespatchListPage() {
       )}
     </div>
   );
-}
-
-function doPrint() {
-  window.print();
 }
