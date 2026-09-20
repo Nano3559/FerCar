@@ -305,7 +305,7 @@ router.get("/:id", optionalAuth, async (req: AuthRequest, res: Response) => {
 // POST — Crear producto (solo ADMIN)
 router.post("/", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
-    const { itemCode, manufacturer, name, brand, model, year, detail, oemCode, factoryCode, price1, price2, wholesalePrice, cost, unitPrice, priceHermana, categoryId, image, images, locationId, stock = 0, minStock = 1 } = req.body;
+    const { itemCode, manufacturer, name, brand, model, year, detail, detalles, oemCode, factoryCode, price1, price2, wholesalePrice, cost, unitPrice, priceHermana, categoryId, image, images, locationId, stock = 0, minStock = 1, supplierId } = req.body;
 
     if (!itemCode || !manufacturer || !name || !brand || !model || !year || price1 == null) {
       return res.status(400).json({ message: "Campos obligatorios: itemCode, manufacturer, name, brand, model, year, price1" });
@@ -325,6 +325,7 @@ router.post("/", authenticate, authorize("ADMIN"), async (req: AuthRequest, res:
         model,
         year,
         detail: detail || null,
+        detalles: detalles || null,
         oemCode: oemCode || null,
         factoryCode: factoryCode || null,
         price1,
@@ -343,6 +344,10 @@ router.post("/", authenticate, authorize("ADMIN"), async (req: AuthRequest, res:
       await prisma.inventory.create({ data: { productId: product.id, locationId: Number(locationId), stock: Number(stock) || 0, minStock: Number(minStock) || 1 } });
     }
 
+    if (supplierId && cost) {
+      await recordSupplierCost(product.id, Number(supplierId), Number(cost), null);
+    }
+
     res.status(201).json(product);
   } catch (error) {
     console.error("Error al crear producto:", error);
@@ -359,7 +364,7 @@ router.put("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, re
       return res.status(404).json({ message: "Producto no encontrado" });
     }
 
-    const { itemCode, manufacturer, name, brand, model, year, detail, oemCode, factoryCode, price1, price2, wholesalePrice, cost, unitPrice, priceHermana, categoryId, image, images } = req.body;
+    const { itemCode, manufacturer, name, brand, model, year, detail, detalles, oemCode, factoryCode, price1, price2, wholesalePrice, cost, unitPrice, priceHermana, categoryId, image, images, supplierId } = req.body;
 
     if (itemCode && itemCode !== existing.itemCode) {
       const dup = await prisma.product.findUnique({ where: { itemCode } });
@@ -378,6 +383,7 @@ router.put("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, re
         ...(model && { model }),
         ...(year && { year }),
         detail: detail !== undefined ? detail : existing.detail,
+        detalles: detalles !== undefined ? detalles : existing.detalles,
         oemCode: oemCode !== undefined ? oemCode : existing.oemCode,
         factoryCode: factoryCode !== undefined ? factoryCode : existing.factoryCode,
         ...(price1 != null && { price1 }),
@@ -393,6 +399,10 @@ router.put("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, re
           : existing.images,
       },
     });
+
+    if (supplierId && cost != null) {
+      await recordSupplierCost(id, Number(supplierId), Number(cost), null);
+    }
 
     res.json(product);
   } catch (error) {

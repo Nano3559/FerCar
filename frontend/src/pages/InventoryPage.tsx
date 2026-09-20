@@ -85,16 +85,18 @@ const inlineRawValue = (p: Product, column: string): string => {
 
 interface FormData {
   itemCode: string; manufacturer: string; name: string; brand: string;
-  model: string; year: string; detail: string; oemCode: string;
+  model: string; year: string; detail: string; detalles: string; oemCode: string;
   factoryCode: string; price1: string; price2: string;
-  wholesalePrice: string; cost: string; categoryId: string;
+  wholesalePrice: string; cost: string; unitPrice: string; priceHermana: string;
+  proveedorId: string; categoryId: string;
   image: string; stock: string; locationId: string;
 }
 
 const emptyForm: FormData = {
   itemCode: "", manufacturer: "", name: "", brand: "", model: "", year: "",
-  detail: "", oemCode: "", factoryCode: "", price1: "", price2: "",
-  wholesalePrice: "", cost: "", categoryId: "",
+  detail: "", detalles: "", oemCode: "", factoryCode: "", price1: "", price2: "",
+  wholesalePrice: "", cost: "", unitPrice: "", priceHermana: "",
+  proveedorId: "", categoryId: "",
   image: "", stock: "", locationId: "",
 };
 
@@ -268,10 +270,14 @@ export default function InventoryPage() {
     setForm({
       itemCode: p.itemCode, manufacturer: p.manufacturer, name: p.name,
       brand: p.brand, model: p.model, year: p.year, detail: p.detail || "",
+      detalles: p.detalles || "",
       oemCode: p.oemCode || "", factoryCode: p.factoryCode || "",
       price1: String(p.price1), price2: String(p.price2),
       wholesalePrice: p.wholesalePrice ? String(p.wholesalePrice) : "",
       cost: p.cost ? String(p.cost) : "",
+      unitPrice: p.unitPrice ? String(p.unitPrice) : "",
+      priceHermana: p.priceHermana ? String(p.priceHermana) : "",
+      proveedorId: "",
       categoryId: p.categoryId ? String(p.categoryId) : "",
       image: [p.image, ...(p.images || [])].filter(Boolean).join("\n"), stock: "", locationId: "",
     });
@@ -301,10 +307,14 @@ export default function InventoryPage() {
     const urls = form.image.split(/[,\n]+/).map((u) => u.trim()).filter(Boolean).map(normalizeImageUrl);
       const payload = {
         ...form,
+        detalles: form.detalles || null,
         price1: Number(form.price1),
         price2: form.price2 ? Number(form.price2) : Number(form.price1),
         wholesalePrice: form.wholesalePrice ? Number(form.wholesalePrice) : null,
         cost: form.cost ? Number(form.cost) : null,
+        unitPrice: form.unitPrice ? Number(form.unitPrice) : null,
+        priceHermana: form.priceHermana ? Number(form.priceHermana) : null,
+        supplierId: form.proveedorId ? Number(form.proveedorId) : null,
         categoryId: form.categoryId ? Number(form.categoryId) : null,
         image: urls[0] || null,
         images: urls,
@@ -989,16 +999,27 @@ const handleImportExcel = async () => {
                 <Field label="Modelo *" value={form.model} onChange={(v) => setField("model", v)} />
                 <Field label="Año *" value={form.year} onChange={(v) => setField("year", v)} placeholder="ej: 2020-2024" />
                 <Field label="Detalles" value={form.detail} onChange={(v) => setField("detail", v)} placeholder="Detalle opcional" />
+                <Field label="Calidad" value={form.detalles} onChange={(v) => setField("detalles", v)} placeholder="ej: Original, Nuevo" />
                 <Field label="Código OEM" value={form.oemCode} onChange={(v) => setField("oemCode", v)} />
                 <Field label="Código Fábrica" value={form.factoryCode} onChange={(v) => setField("factoryCode", v)} />
               </div>
               <div className="border-t border-dark-700/50 pt-4">
-                <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Precios (Bs.)</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Costos y Precios</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <Field label="Precio Mayorista (Bs.) *" value={form.price1} onChange={(v) => setField("price1", v)} type="number" />
                     <Field label="Precio Minorista (Bs.)" value={form.price2} onChange={(v) => setField("price2", v)} type="number" />
-                  <Field label="Precio Mayor" value={form.wholesalePrice} onChange={(v) => setField("wholesalePrice", v)} type="number" />
-                  <Field label="Costo" value={form.cost} onChange={(v) => setField("cost", v)} type="number" />
+                  <Field label="Precio Mayor (Bs.)" value={form.wholesalePrice} onChange={(v) => setField("wholesalePrice", v)} type="number" />
+                  <Field label="Costo (Bs.)" value={form.cost} onChange={(v) => setField("cost", v)} type="number" />
+                  <Field label="Costo $ (USD)" value={form.unitPrice} onChange={(v) => setField("unitPrice", v)} type="number" placeholder="ej: 9.90" />
+                  <Field label="Costo Tiendas (Bs.)" value={form.priceHermana} onChange={(v) => setField("priceHermana", v)} type="number" />
+                </div>
+                <div className="mt-4">
+                  <label htmlFor="inv-supplier" className="block text-xs text-gray-400 mb-1.5">Proveedor</label>
+                  <select id="inv-supplier" value={form.proveedorId} onChange={(e) => setField("proveedorId", e.target.value)} className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                    <option value="">Sin proveedor</option>
+                    {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <p className="text-[11px] text-gray-600 mt-1">Asocia el Costo (Bs.) a este proveedor (aparece en sus costos). Si guardas sin Costo, solo queda el vínculo del producto.</p>
                 </div>
               </div>
               <div className="relative">
