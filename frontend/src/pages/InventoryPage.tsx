@@ -723,7 +723,7 @@ const handleImportExcel = async () => {
       case "Costo Bs": return editableTd("px-4 py-3 text-right text-gray-400", p.cost ? formatCurrency(p.cost) : "—");
       case "Costo Tiendas": return editableTd("px-4 py-3 text-right text-purple-400", p.priceHermana ? formatCurrency(p.priceHermana) : "—");
       case "Stock": return <td key={column} className="px-4 py-3 text-center"><span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span></td>;
-      case "Acciones": return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1"><button onClick={() => navigate(`/panel/inventario/${p.id}`)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Ver detalle"><Eye size={16} /></button>{canEdit && <><button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title="Editar"><Pencil size={16} /></button><button onClick={() => classifyProduct(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all" title="Separar marca/modelo/año automáticamente"><Scissors size={16} /></button><button onClick={() => setShowDeleteConfirm(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Eliminar"><Trash2 size={16} /></button></>}<button onClick={() => openStock(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-purple-400 hover:bg-purple-500/10 transition-all" title="Ver stock por ubicación"><Package size={16} /></button></div></td>;
+      case "Acciones": return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1"><button onClick={() => window.open(`/panel/inventario/${p.id}`, "_blank", "noopener,noreferrer")} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Ver detalle (otra pestaña)"><Eye size={16} /></button>{canEdit && <><button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title="Editar todo el contenido"><Pencil size={16} /></button><button onClick={() => classifyProduct(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all" title="Separar marca/modelo/año automáticamente"><Scissors size={16} /></button></>}<button onClick={() => openStock(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-purple-400 hover:bg-purple-500/10 transition-all" title="Ver stock por ubicación"><Package size={16} /></button></div></td>;
       default: return null;
     }
   };
@@ -983,9 +983,7 @@ const handleImportExcel = async () => {
             </div>
             <div className="p-5 space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                {!editingId && (
-                  <Field label="Código Item *" value={form.itemCode} onChange={(v) => setField("itemCode", v)} />
-                )}
+                <Field label="Código Item *" value={form.itemCode} onChange={(v) => setField("itemCode", v)} />
                 <div>
                   <label htmlFor="product-manufacturer" className="block text-xs text-gray-500 mb-1.5">Fabricante *</label>
                   <input id="product-manufacturer" list="manufacturers-list" value={form.manufacturer} onChange={(e) => setField("manufacturer", e.target.value)}
