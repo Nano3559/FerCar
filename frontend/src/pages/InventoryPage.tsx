@@ -59,8 +59,8 @@ const INLINE_FIELDS: Record<string, { key: "manufacturer" | "name" | "brand" | "
   "Precio 1": { key: "price1", numeric: true },
   "Precio 2": { key: "price2", numeric: true },
   "Precio Mayor": { key: "wholesalePrice", numeric: true },
-  "Costo": { key: "cost", numeric: true },
-  "Precio USD": { key: "unitPrice", numeric: true },
+  "Costo $": { key: "unitPrice", numeric: true },
+  "Costo Bs": { key: "cost", numeric: true },
   "Costo Tiendas": { key: "priceHermana", numeric: true },
 };
 
@@ -99,50 +99,14 @@ const emptyForm: FormData = {
 };
 
 const ALL_COLUMNS = [
-  "ID", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
-  "Cód. OEM", "Cód. Fábrica", "Proveedor", "Imagen", "Precio 1", "Precio 2",
-  "Precio Mayor", "Costo", "Precio USD", "Costo Tiendas",
-  "20%", "30%", "40%", "50%", "60%", "70%", "80%",
-  "Stock", "Acciones",
+  "Proveedor", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
+  "Cód. OEM", "Cód. Fábrica", "Costo $", "Costo Bs", "Costo Tiendas",
+  "Precio 1", "Precio 2", "Precio Mayor", "Imagen", "Stock",
 ];
-
-// Migra etiquetas antiguas de columnas a los nombres actuales en español.
-const COLUMN_LABEL_MIGRATIONS: Record<string, string> = {
-  "Unit Price": "Precio USD",
-  "Hermana": "Costo Tiendas",
-};
-
-function migrateColumnLabels(cols: string[]): string[] {
-  return cols.map((c) => COLUMN_LABEL_MIGRATIONS[c] || c);
-}
-
-function getStoredColumns(): string[] | null {
-  try {
-    const raw = localStorage.getItem("columns_inventario");
-    const parsed = raw ? JSON.parse(raw) : null;
-    return Array.isArray(parsed) ? migrateColumnLabels(parsed) : null;
-  } catch {
-    return null;
-  }
-}
-
-const DEPO_DEFAULT_COLUMNS = ["Precio Mayor", "Costo", "Precio USD", "Costo Tiendas", "20%", "30%", "40%", "50%", "60%", "70%", "80%"];
-
-function ensureDepoColumns(stored: string[] | null): string[] | null {
-  if (!stored || stored.length === 0) return stored;
-  if (typeof window !== "undefined" && localStorage.getItem("columns_inventario_depo_v1") === "1") return stored;
-  const merged = [...stored];
-  DEPO_DEFAULT_COLUMNS.forEach((c) => { if (!merged.includes(c)) merged.push(c); });
-  try { localStorage.setItem("columns_inventario_depo_v1", "1"); } catch { /* noop */ }
-  if (merged.length !== stored.length) {
-    try { localStorage.setItem("columns_inventario", JSON.stringify(merged)); } catch { /* noop */ }
-  }
-  return merged;
-}
 
 export default function InventoryPage() {
   const navigate = useNavigate();
-  const { user, columnConfig, allowedCategories } = useAuthStore();
+  const { user, allowedCategories } = useAuthStore();
   const canEdit = user?.role === "ADMIN";
   const hasCategoryRestriction = user?.role === "TIENDA" && allowedCategories.length > 0;
   const [products, setProducts] = useState<Product[]>([]);
@@ -167,25 +131,7 @@ export default function InventoryPage() {
   const [detailFilter, setDetailFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
-    const stored = ensureDepoColumns(getStoredColumns());
-    const roleCols = columnConfig?.inventario ? migrateColumnLabels(columnConfig.inventario) : undefined;
-    const base = stored && stored.length ? stored : roleCols && roleCols.length ? (ensureDepoColumns([...roleCols]) || roleCols) : ALL_COLUMNS;
-    const merged = ALL_COLUMNS.filter((c) => base.includes(c));
-    return merged.length ? merged : ALL_COLUMNS;
-  });
-
-  // Si no hay configuración local, aplicar las columnas del rol cuando llegan
-  // (evita que las ocultas se muestren mientras columnConfig carga tarde).
-  useEffect(() => {
-    const stored = getStoredColumns();
-    if (stored && stored.length) return;
-    const roleCols = columnConfig?.inventario ? migrateColumnLabels(columnConfig.inventario) : undefined;
-    if (roleCols && roleCols.length) {
-      const merged = ALL_COLUMNS.filter((c) => roleCols.includes(c));
-      if (merged.length) setVisibleColumns(merged);
-    }
-  }, [columnConfig]);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(ALL_COLUMNS);
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -768,13 +714,9 @@ const handleImportExcel = async () => {
       case "Precio 1": return editableTd("px-4 py-3 text-right text-green-400 font-medium", formatCurrency(p.price1));
       case "Precio 2": return editableTd("px-4 py-3 text-right text-blue-400", formatCurrency(p.price2));
       case "Precio Mayor": return editableTd("px-4 py-3 text-right text-foreground", p.wholesalePrice ? formatCurrency(p.wholesalePrice) : "—");
-      case "Costo": return editableTd("px-4 py-3 text-right text-gray-400", p.cost ? formatCurrency(p.cost) : "—");
-      case "Precio USD": return editableTd("px-4 py-3 text-right text-gray-300", p.unitPrice ? `$${Number(p.unitPrice).toFixed(2)}` : "—");
+      case "Costo $": return editableTd("px-4 py-3 text-right text-gray-300", p.unitPrice ? `$${Number(p.unitPrice).toFixed(2)}` : "—");
+      case "Costo Bs": return editableTd("px-4 py-3 text-right text-gray-400", p.cost ? formatCurrency(p.cost) : "—");
       case "Costo Tiendas": return editableTd("px-4 py-3 text-right text-purple-400", p.priceHermana ? formatCurrency(p.priceHermana) : "—");
-      case "20%": case "30%": case "40%": case "50%": case "60%": case "70%": case "80%": {
-        const key = `price${parseInt(column, 10)}` as keyof Product;
-        return <td key={column} className="px-4 py-3 text-right text-gray-400" title="Se calcula desde Costo">{p[key] != null ? formatCurrency(String(p[key])) : "—"}</td>;
-      }
       case "Stock": return <td key={column} className="px-4 py-3 text-center"><span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span></td>;
       case "Acciones": return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1"><button onClick={() => navigate(`/panel/inventario/${p.id}`)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Ver detalle"><Eye size={16} /></button>{canEdit && <><button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all" title="Editar"><Pencil size={16} /></button><button onClick={() => classifyProduct(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all" title="Separar marca/modelo/año automáticamente"><Scissors size={16} /></button><button onClick={() => setShowDeleteConfirm(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Eliminar"><Trash2 size={16} /></button></>}<button onClick={() => openStock(p.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-purple-400 hover:bg-purple-500/10 transition-all" title="Ver stock por ubicación"><Package size={16} /></button></div></td>;
       default: return null;
@@ -942,7 +884,7 @@ const handleImportExcel = async () => {
                 <thead>
                   <tr className="text-gray-500 border-b border-dark-700/50">
                     {visibleColumns.map((col) => {
-                      const align = ["Precio 1", "Precio 2", "Precio Mayor", "Costo", "Precio USD", "Costo Tiendas", "20%", "30%", "40%", "50%", "60%", "70%", "80%"].includes(col) ? "text-right" : ["Imagen", "Stock", "Acciones"].includes(col) ? "text-center" : "text-left";
+                      const align = ["Precio 1", "Precio 2", "Precio Mayor", "Costo $", "Costo Bs", "Costo Tiendas"].includes(col) ? "text-right" : ["Imagen", "Stock"].includes(col) ? "text-center" : "text-left";
                       return (
                         <th key={col} className={`${align} px-4 py-3 font-medium`}>{col}</th>
                       );
