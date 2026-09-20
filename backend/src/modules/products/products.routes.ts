@@ -607,7 +607,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     // Plantilla única para todos los fabricantes: columns fijas Item Number /
     // Description / Quantity / Unit Price / XMAYOR y columnas calculadas con
     // las fórmulas del Excel; el fabricante lo elige el usuario en el modal.
-    const importType: "depo" | "generic" = "depo";
+    const importType: "depo" | "actualizar" = req.body.importType === "actualizar" ? "actualizar" : "depo";
     const exchangeRate = parseFloat(req.body.exchangeRate) > 0 ? parseFloat(req.body.exchangeRate) : 10.03;
     const costFactor = parseFloat(req.body.costFactor) > 0 ? parseFloat(req.body.costFactor) : 1.5;
     const hermanaFactor = parseFloat(req.body.hermanaFactor) > 0 ? parseFloat(req.body.hermanaFactor) : 1.6;
@@ -636,6 +636,10 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const locByName: Record<string, number> = {};
     allLocations.forEach((l) => { locByName[normalize(l.name)] = l.id; });
+
+    const suppliers = await prisma.supplier.findMany();
+    const supplierByName: Record<string, number> = {};
+    suppliers.forEach((s) => { supplierByName[normalize(s.name)] = s.id; });
 
     const getPerLocationStock = (row: any): { locationId: number; stock: number }[] => {
       const result: { locationId: number; stock: number }[] = [];
@@ -750,18 +754,76 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         calidad = "";
       }
 
-      if (!itemCode || !name) {
-        errors.push(`Fila ${i + 2}: Código y nombre son obligatorios`);
+      let proveedor = "";
+      let imagenUrls: string[] = [];
+
+      // Carga directa de inventario: el archivo trae las columnas mostradas
+      // en Pantalla (PROVEEDOR..IMAGEN) más una columna por cada ubicación
+      // con la cantidad existente ahí. No calcula nada: usa los valores tal cual.
+      if (importType === "actualizar") {
+        const cellA = (aliases: string[]): string => {
+          for (const a of aliases) {
+            if (row[a] !== undefined && row[a] !== null) return String(row[a]).trim();
+            const key = Object.keys(row).find((k) => k.trim().toLowerCase() === a.toLowerCase());
+            if (key !== undefined && row[key] !== null) return String(row[key]).trim();
+          }
+          return "";
+        };
+        const numA = (v: string): number => parseFloat(String(v).replace(/,/g, "")) || 0;
+        name = cellA(["PRODUCTO", "Producto", "Descripción", "Descripcion", "Nombre"]);
+        brand = cellA(["MARCA", "Marca"]);
+        model = cellA(["MODELO", "Modelo"]);
+        year = cellA(["AÑO", "Año", "Ano", "Años"]);
+        detail = cellA(["DETALLES", "Detalles", "Detalle"]);
+        oemCode = cellA(["COD OEM", "Código OEM", "Codigo OEM", "CÓD OEM", "Cód. OEM", "Cod. OEM", "OEM"]);
+        factoryCode = cellA(["COD FABRICA", "Código Fábrica", "Codigo Fabrica", "CÓD FÁBRICA", "Cód. Fábrica", "Cod. Fabrica", "CODIGO FABRICA"]);
+        manufacturer = cellA(["FABRICANTE", "Fabricante"]) || "Sin especificar";
+        proveedor = cellA(["PROVEEDOR", "Proveedor"]);
+        unitPrice = numA(cellA(["COSTO $", "Costo $", "COSTO USD", "Unit Price", "Precio USD", "COSTO UNITARIO"]));
+        cost = numA(cellA(["COSTO BS", "Costo Bs", "COSTO Bs", "Costo BS"]));
+        priceHermana = numA(cellA(["COSTO TIENDAS", "Costo Tiendas", "Costo Tienda", "HERMANAS", "Hermanas"]));
+        price1 = numA(cellA(["PRECIO 1", "Precio 1"]));
+        price2 = numA(cellA(["PRECIO 2", "Precio 2"]));
+        wholesalePrice = numA(cellA(["PRECIO MAYOR", "Precio Mayor", "Precio mayor", "Precio Mayoreo"]));
+        imagenUrls = cellA(["IMAGEN", "Imagen", "Image", "URL Imagen"]).split(",").map((u) => u.trim()).filter(Boolean);
+        rowStock = 0;
+        calidad = "";
+        itemCode = factoryCode || oemCode;
+      }
+
+if (!name) {
+        errors.push(`Fila ${i + 2}: el nombre del producto es obligatorio`);
+        continue;
+      }
+      if (importType !== "actualizar" && !itemCode) {
+        errors.push(`Fila ${i + 2}: Código obligatorio`);
+        continue;
+      }
+      if (importType === "actualizar" && !factoryCode && !oemCode) {
+        errors.push(`Fila ${i + 2}: se necesita al menos COD FABRICA o COD OEM`);
         continue;
       }
 
       try {
         const rowWarnings: string[] = [];
-        const label = `Fila ${i + 2} (${itemCode})`;
-if (importType === "depo") {
-        if (!unitPrice) rowWarnings.push(`${label}: Unit Price vacío — precios quedan en 0, editarlo manualmente`);
-        if (!rowStock) rowWarnings.push(`${label}: Quantity vacío o en 0 — sin stock`);
-        if (hasDepoCol("XMAYOR") && !wholesalePrice) rowWarnings.push(`${label}: XMAYOR vacío — sin Precio Mayor`);
+        const label = `Fila ${i + 2} (${itemCode || (factoryCode || oemCode) || "nuevo"})`;
+
+        let rowLocationId = requestedLocationId;
+        if (rowLocation) {
+          const location = await prisma.location.findFirst({ where: { OR: [{ name: { equals: rowLocation, mode: "insensitive" } }, { id: Number(rowLocation) || -1 }] } });
+          if (!location) throw new Error(`Ubicación no encontrada: ${rowLocation}`);
+          rowLocationId = location.id;
+        }
+        const perLocationStock = getPerLocationStock(row);
+
+        if (importType === "depo") {
+          if (!unitPrice) rowWarnings.push(`${label}: Unit Price vacío — precios quedan en 0, editarlo manualmente`);
+          if (!rowStock) rowWarnings.push(`${label}: Quantity vacío o en 0 — sin stock`);
+          if (hasDepoCol("XMAYOR") && !wholesalePrice) rowWarnings.push(`${label}: XMAYOR vacío — sin Precio Mayor`);
+        } else if (importType === "actualizar") {
+          if (!price1) rowWarnings.push(`${label}: Precio 1 vacío — quedó en 0, editarlo manualmente`);
+          if (!cost) rowWarnings.push(`${label}: COSTO BS vacío — quedó en 0, editarlo manualmente`);
+          if (!rowStock && perLocationStock.length === 0) rowWarnings.push(`${label}: sin stock en ninguna ubicación — quedó en 0`);
         } else {
           if (!price1) rowWarnings.push(`${label}: Precio 1 vacío — quedó en 0, editarlo manualmente`);
           if (!cost) rowWarnings.push(`${label}: Costo vacío — quedó en 0, editarlo manualmente`);
@@ -774,16 +836,14 @@ if (importType === "depo") {
           categoryId = catMap[category.toLowerCase()];
         }
 
-        let rowLocationId = requestedLocationId;
-        if (rowLocation) {
-          const location = await prisma.location.findFirst({ where: { OR: [{ name: { equals: rowLocation, mode: "insensitive" } }, { id: Number(rowLocation) || -1 }] } });
-          if (!location) throw new Error(`Ubicación no encontrada: ${rowLocation}`);
-          rowLocationId = location.id;
+        let existing = null;
+        if (importType === "actualizar") {
+          existing = itemCode ? await prisma.product.findUnique({ where: { itemCode } }) : null;
+          if (!existing && factoryCode && itemCode !== factoryCode) existing = await prisma.product.findFirst({ where: { factoryCode } });
+          if (!existing && oemCode) existing = await prisma.product.findFirst({ where: { oemCode } });
+        } else {
+          existing = await prisma.product.findUnique({ where: { itemCode } });
         }
-
-        const perLocationStock = getPerLocationStock(row);
-
-        const existing = await prisma.product.findUnique({ where: { itemCode } });
 
         if (existing) {
           const updateData: any = {};
@@ -803,6 +863,7 @@ if (importType === "depo") {
           if (priceHermana > 0) updateData.priceHermana = priceHermana;
           if (categoryId) updateData.categoryId = categoryId;
           if (calidad) updateData.detalles = calidad;
+          if (imagenUrls.length > 0) { updateData.image = imagenUrls[0]; updateData.images = imagenUrls; }
 
           if (Object.keys(updateData).length > 0) {
             await prisma.product.update({ where: { id: existing.id }, data: updateData });
@@ -823,6 +884,11 @@ if (importType === "depo") {
             }
           }
           if (supplierId !== null && cost > 0) await recordSupplierCost(existing.id, supplierId, cost, exchangeRate);
+          if (importType === "actualizar" && proveedor && cost > 0) {
+            const supId = supplierByName[normalize(proveedor)];
+            if (supId) await recordSupplierCost(existing.id, supId, cost, null);
+            else warnings.push(`${label}: Proveedor "${proveedor}" no encontrado en el sistema — costo sin asociar`);
+          }
           if (perLocationStock.length > 0) {
             for (const { locationId, stock } of perLocationStock) {
               await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId } }, update: { stock: { increment: stock } }, create: { productId: existing.id, locationId, stock, minStock: 1 } });
@@ -851,6 +917,8 @@ if (importType === "depo") {
               priceHermana: priceHermana || null,
               categoryId,
               detalles: calidad || null,
+              image: imagenUrls[0] || null,
+              images: imagenUrls,
             },
           });
           if (importType === "depo") {
@@ -869,6 +937,11 @@ if (importType === "depo") {
             }
           }
           if (supplierId !== null && cost > 0) await recordSupplierCost(product.id, supplierId, cost, exchangeRate);
+          if (importType === "actualizar" && proveedor && cost > 0) {
+            const supId = supplierByName[normalize(proveedor)];
+            if (supId) await recordSupplierCost(product.id, supId, cost, null);
+            else warnings.push(`${label}: Proveedor "${proveedor}" no encontrado en el sistema — costo sin asociar`);
+          }
 
           let locations = allLocations;
           if (perLocationStock.length > 0) {
