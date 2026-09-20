@@ -304,11 +304,11 @@ export default function InventoryPage() {
       }
       const driveFile = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
       if (driveFile) {
-        return `https://drive.google.com/uc?export=view&id=${driveFile[1]}`;
+        return `https://lh3.googleusercontent.com/d/${driveFile[1]}=w1600`;
       }
       const driveOpen = u.match(/drive\.google\.com\/open\?id=([^&#]+)/);
       if (driveOpen) {
-        return `https://drive.google.com/uc?export=view&id=${driveOpen[1]}`;
+        return `https://lh3.googleusercontent.com/d/${driveOpen[1]}=w1600`;
       }
       return u;
     };

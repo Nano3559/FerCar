@@ -635,9 +635,9 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     }
     const toDirectImage = (u: string): string => {
       const driveFile = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
-      if (driveFile) return `https://drive.google.com/uc?export=view&id=${driveFile[1]}`;
+      if (driveFile) return `https://lh3.googleusercontent.com/d/${driveFile[1]}=w1600`;
       const driveOpen = u.match(/drive\.google\.com\/open\?id=([^&#]+)/);
-      if (driveOpen) return `https://drive.google.com/uc?export=view&id=${driveOpen[1]}`;
+      if (driveOpen) return `https://lh3.googleusercontent.com/d/${driveOpen[1]}=w1600`;
       return u;
     };
 

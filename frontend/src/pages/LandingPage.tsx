@@ -12,6 +12,7 @@ import {
   Search,
 } from "lucide-react";
 import api from "../services/api";
+import { toEmbedUrl } from "../components/public/ProductImage";
 
 interface FeaturedProduct {
   id: number;
@@ -86,7 +87,7 @@ function ProductCardPlaceholder({ product }: { product: FeaturedProduct }) {
       <div className="aspect-square bg-dark-800/50 flex items-center justify-center p-6 border-b border-white/[0.04]">
         {product.image ? (
           <img
-            src={product.image}
+            src={toEmbedUrl(product.image)}
             alt={product.name}
             className="w-full h-full object-contain"
           />

@@ -15,11 +15,21 @@ const categoryConfig: Record<string, { bg: string; icon: string; label: string }
   Transmisión: { bg: "#0D9488", icon: "⛓", label: "TRANSMISIÓN" },
 };
 
+const embedAngleUrl = "https://lh3.googleusercontent.com/d/";
+
+export const toEmbedUrl = (u: string): string => {
+  const driveFile = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
+  if (driveFile) return `${embedAngleUrl}${driveFile[1]}=w1600`;
+  const driveOpen = u.match(/drive\.google\.com\/open\?id=([^&#]+)/);
+  if (driveOpen) return `${embedAngleUrl}${driveOpen[1]}=w1600`;
+  return u;
+};
+
 export default function ProductImage({ category, name, image, className = "" }: ProductImageProps) {
   if (image) {
     return (
       <img
-        src={image}
+        src={toEmbedUrl(image)}
         alt={name || "Producto"}
         className={`w-full h-full object-contain ${className}`}
         onError={(e) => {
