@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  Users, Shield, Plus, Pencil, Trash2, X, User, RefreshCw, Check, History, Store, Home, UserX, UserCheck, Lock,
+  Users, Shield, Plus, Pencil, Trash2, X, User, RefreshCw, Check, History, Store, Home, UserX, UserCheck, Lock, Building2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -18,6 +18,10 @@ interface Role {
 
 interface Location {
   id: number; name: string; type: string; address: string | null;
+}
+
+interface Supplier {
+  id: number; name: string; nit: string | null; phone: string | null; costsCount?: number;
 }
 
 interface AuditLogEntry {
@@ -92,10 +96,11 @@ const canRoleOpenModule = (roleName: string, mod: string): boolean => {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"users" | "roles" | "audit" | "locations">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "roles" | "audit" | "locations" | "suppliers">("users");
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditPage, setAuditPage] = useState(1);
@@ -130,17 +135,27 @@ export default function SettingsPage() {
   const locationPanelRef = useDialogBehavior(showLocationModal, () => setShowLocationModal(false));
   const deleteLocationConfirmPanelRef = useDialogBehavior(showDeleteLocationConfirm !== null, () => setShowDeleteLocationConfirm(null));
 
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<number | null>(null);
+  const [supplierForm, setSupplierForm] = useState({ name: "", nit: "", phone: "" });
+  const [supplierSaving, setSupplierSaving] = useState(false);
+  const [showDeleteSupplierConfirm, setShowDeleteSupplierConfirm] = useState<number | null>(null);
+  const supplierPanelRef = useDialogBehavior(showSupplierModal, () => setShowSupplierModal(false));
+  const deleteSupplierConfirmPanelRef = useDialogBehavior(showDeleteSupplierConfirm !== null, () => setShowDeleteSupplierConfirm(null));
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [usersRes, rolesRes, locsRes] = await Promise.all([
+      const [usersRes, rolesRes, locsRes, suppliersRes] = await Promise.all([
         api.get("/users"),
         api.get("/permissions/roles"),
         api.get("/locations"),
+        api.get("/suppliers?limit=100"),
       ]);
       setUsers(usersRes.data.users);
       setRoles(rolesRes.data.roles);
       setLocations(locsRes.data.locations || locsRes.data);
+      setSuppliers(suppliersRes.data.suppliers || []);
       try {
         const catRes = await api.get("/products/filters");
         setCategories(catRes.data.categories || []);
@@ -353,6 +368,52 @@ export default function SettingsPage() {
     }
   };
 
+  const openCreateSupplier = () => {
+    setEditingSupplier(null);
+    setSupplierForm({ name: "", nit: "", phone: "" });
+    setShowSupplierModal(true);
+  };
+
+  const openEditSupplier = (s: Supplier) => {
+    setEditingSupplier(s.id);
+    setSupplierForm({ name: s.name, nit: s.nit || "", phone: s.phone || "" });
+    setShowSupplierModal(true);
+  };
+
+  const saveSupplier = async () => {
+    if (!supplierForm.name.trim()) {
+      toast.error("El nombre del proveedor es obligatorio"); return;
+    }
+    setSupplierSaving(true);
+    try {
+      if (editingSupplier) {
+        await api.put(`/suppliers/${editingSupplier}`, { name: supplierForm.name.trim(), nit: supplierForm.nit.trim(), phone: supplierForm.phone.trim() });
+        toast.success("Proveedor actualizado");
+      } else {
+        await api.post("/suppliers", { name: supplierForm.name.trim(), nit: supplierForm.nit.trim(), phone: supplierForm.phone.trim() });
+        toast.success("Proveedor creado");
+      }
+      setShowSupplierModal(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al guardar proveedor");
+    } finally {
+      setSupplierSaving(false);
+    }
+  };
+
+  const deleteSupplier = async () => {
+    if (showDeleteSupplierConfirm == null) return;
+    try {
+      await api.delete(`/suppliers/${showDeleteSupplierConfirm}`);
+      toast.success("Proveedor eliminado");
+      setShowDeleteSupplierConfirm(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al eliminar proveedor");
+    }
+  };
+
   const getRoleCategories = (role: Role): string[] => {
     const raw = role.columnConfig?.__categorias;
     return Array.isArray(raw) ? (raw as string[]) : [];
@@ -404,6 +465,12 @@ export default function SettingsPage() {
             activeTab === "locations" ? "bg-primary-600/20 text-primary-400 border border-primary-600/30" : "text-gray-400 hover:text-gray-200 border border-transparent"
           }`}>
           <Store size={16} /> Ubicaciones
+        </button>
+        <button onClick={() => setActiveTab("suppliers")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === "suppliers" ? "bg-primary-600/20 text-primary-400 border border-primary-600/30" : "text-gray-400 hover:text-gray-200 border border-transparent"
+          }`}>
+          <Building2 size={16} /> Proveedores
         </button>
       </div>
 
@@ -732,6 +799,65 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {activeTab === "suppliers" && (
+        <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
+            <h3 className="text-foreground font-medium">Proveedores / Importadores ({suppliers.length})</h3>
+            <div className="flex items-center gap-2">
+              <button onClick={fetchData} className="p-1.5 text-gray-400 hover:text-foreground rounded-lg transition-all"><RefreshCw size={14} /></button>
+              <button onClick={openCreateSupplier}
+                className="flex items-center gap-1 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-medium transition-all">
+                <Plus size={14} /> Nuevo Proveedor
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-dark-700/50">
+                  <th className="text-left px-4 py-3 text-gray-400 font-medium">Nombre</th>
+                  <th className="text-left px-4 py-3 text-gray-400 font-medium">NIT</th>
+                  <th className="text-left px-4 py-3 text-gray-400 font-medium">Teléfono</th>
+                  <th className="text-center px-4 py-3 text-gray-400 font-medium">Costos</th>
+                  <th className="text-center px-4 py-3 text-gray-400 font-medium">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">Cargando...</td></tr>
+                ) : suppliers.length === 0 ? (
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">Sin proveedores registrados</td></tr>
+                ) : suppliers.map((s) => (
+                  <tr key={s.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-dark-700 rounded-full flex items-center justify-center">
+                          <Building2 size={14} className="text-gray-400" />
+                        </div>
+                        <span className="text-foreground font-medium">{s.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-300 font-mono text-xs">{s.nit || "—"}</td>
+                    <td className="px-4 py-3 text-gray-300">{s.phone || "—"}</td>
+                    <td className="px-4 py-3 text-gray-400 text-center text-xs">{s.costsCount || 0}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => openEditSupplier(s)} className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all" title="Editar">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => setShowDeleteSupplierConfirm(s.id)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all" title="Eliminar">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div ref={deleteConfirmPanelRef} role="dialog" aria-modal="true" aria-label="Eliminar usuario" className="bg-dark-800 border border-dark-700/50 rounded-2xl p-6 w-full max-w-sm text-center">
@@ -975,6 +1101,58 @@ export default function SettingsPage() {
               <button onClick={saveLocation} disabled={locationSaving}
                 className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
                 {locationSaving ? "Guardando..." : editingLocation ? "Guardar Cambios" : "Crear Ubicación"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    {showDeleteSupplierConfirm != null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div ref={deleteSupplierConfirmPanelRef} role="dialog" aria-modal="true" aria-label="Eliminar proveedor" className="bg-dark-800 border border-dark-700/50 rounded-2xl p-6 w-full max-w-sm text-center">
+            <Trash2 size={40} className="text-red-400 mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-foreground mb-2">¿Eliminar proveedor?</h3>
+            <p className="text-gray-400 text-sm mb-6">
+              {suppliers.find((s) => s.id === showDeleteSupplierConfirm)?.name || "Este proveedor"} será eliminado. Esta acción no se puede deshacer.
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <button onClick={() => setShowDeleteSupplierConfirm(null)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">Cancelar</button>
+              <button onClick={deleteSupplier} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all">Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSupplierModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div ref={supplierPanelRef} role="dialog" aria-modal="true" aria-label={editingSupplier ? "Editar proveedor" : "Nuevo proveedor"} className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
+              <h3 className="text-lg font-bold text-foreground">{editingSupplier ? "Editar Proveedor" : "Nuevo Proveedor"}</h3>
+              <button onClick={() => setShowSupplierModal(false)} aria-label="Cerrar" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Nombre *</label>
+                <input value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} placeholder="Ej: VALERIA ZUBIETA"
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">NIT</label>
+                <input value={supplierForm.nit} onChange={(e) => setSupplierForm({ ...supplierForm, nit: e.target.value })}
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Teléfono</label>
+                <input value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-dark-700/50">
+              <button onClick={() => setShowSupplierModal(false)} className="px-4 py-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl text-sm transition-all">Cancelar</button>
+              <button onClick={saveSupplier} disabled={supplierSaving}
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
+                {supplierSaving ? "Guardando..." : editingSupplier ? "Guardar Cambios" : "Crear Proveedor"}
               </button>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus, X, Upload, Search, Pencil, Trash2, Download,
-  ChevronLeft, ChevronRight, Building2, RefreshCw,
+  ChevronLeft, ChevronRight, RefreshCw,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -26,7 +26,6 @@ export default function CostsPage() {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [search, setSearch] = useState("");
-  const [supplierSearch, setSupplierSearch] = useState("");
 
   // Cost form
   const [showCostModal, setShowCostModal] = useState(false);
@@ -53,13 +52,7 @@ export default function CostsPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
 
-  // Supplier form
-  const [showSupplierModal, setShowSupplierModal] = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<number | null>(null);
-  const [supplierForm, setSupplierForm] = useState({ name: "", nit: "", phone: "" });
-
   const costPanelRef = useDialogBehavior(showCostModal, () => setShowCostModal(false));
-  const supplierPanelRef = useDialogBehavior(showSupplierModal, () => setShowSupplierModal(false));
   const invoicePanelRef = useDialogBehavior(showInvoiceModal, () => setShowInvoiceModal(false));
 
   const formatBs = (v: number) =>
@@ -218,52 +211,6 @@ export default function CostsPage() {
     } finally { setImporting(false); }
   };
 
-  // ========== SUPPLIER CRUD ==========
-  const openCreateSupplier = () => {
-    setEditingSupplier(null);
-    setSupplierForm({ name: "", nit: "", phone: "" });
-    setShowSupplierModal(true);
-  };
-
-  const openEditSupplier = (s: Supplier) => {
-    setEditingSupplier(s.id);
-    setSupplierForm({ name: s.name, nit: s.nit || "", phone: s.phone || "" });
-    setShowSupplierModal(true);
-  };
-
-  const saveSupplier = async () => {
-    if (!supplierForm.name) { toast.error("El nombre es obligatorio"); return; }
-    try {
-      if (editingSupplier) {
-        await api.put(`/suppliers/${editingSupplier}`, supplierForm);
-        toast.success("Proveedor actualizado");
-      } else {
-        await api.post("/suppliers", supplierForm);
-        toast.success("Proveedor creado");
-      }
-      setShowSupplierModal(false);
-      fetchSuppliers();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Error al guardar proveedor");
-    }
-  };
-
-  const deleteSupplier = async (id: number) => {
-    try {
-      await api.delete(`/suppliers/${id}`);
-      toast.success("Proveedor eliminado");
-      fetchSuppliers();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Error al eliminar proveedor");
-    }
-  };
-
-  const filteredSuppliers = suppliers.filter((s) =>
-    !supplierSearch || s.name.toLowerCase().includes(supplierSearch.toLowerCase()) ||
-    (s.nit && s.nit.includes(supplierSearch)) ||
-    (s.phone && s.phone.includes(supplierSearch))
-  );
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -272,10 +219,6 @@ export default function CostsPage() {
           <p className="text-gray-400 text-sm mt-1">Gestión de costos, facturas y proveedores</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={openCreateSupplier}
-            className="flex items-center gap-2 px-4 py-2.5 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-xl text-sm transition-all border border-dark-600">
-            <Building2 size={16} /> Proveedor
-          </button>
           <button onClick={openImportInvoice}
             className="flex items-center gap-2 px-4 py-2.5 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-xl text-sm transition-all border border-dark-600">
             <Upload size={16} /> Importar Factura
@@ -371,57 +314,6 @@ export default function CostsPage() {
             )}
           </>
         )}
-      </div>
-
-      {/* Suppliers */}
-      <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-dark-700/50">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-foreground font-medium">Proveedores ({filteredSuppliers.length})</h3>
-            <button onClick={openCreateSupplier} className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-all">
-              <Plus size={14} /> Agregar
-            </button>
-          </div>
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)} aria-label="Buscar proveedor"
-              placeholder="Buscar por nombre, NIT o teléfono..."
-              className="w-full pl-9 pr-3 py-2 bg-dark-900/50 border border-dark-700/50 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 transition-all" />
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-dark-700/50">
-                <th className="text-left px-4 py-3 text-gray-400 font-medium">Nombre</th>
-                <th className="text-left px-4 py-3 text-gray-400 font-medium">NIT</th>
-                <th className="text-left px-4 py-3 text-gray-400 font-medium">Teléfono</th>
-                <th className="text-center px-4 py-3 text-gray-400 font-medium">Costos</th>
-                <th className="text-center px-4 py-3 text-gray-400 font-medium">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredSuppliers.map((s) => (
-                <tr key={s.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                  <td className="px-4 py-3 text-foreground font-medium">{s.name}</td>
-                  <td className="px-4 py-3 text-gray-300 font-mono text-xs">{s.nit || "—"}</td>
-                  <td className="px-4 py-3 text-gray-300">{s.phone || "—"}</td>
-                  <td className="px-4 py-3 text-gray-400 text-center text-xs">{s.costsCount || 0}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => openEditSupplier(s)} className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all" title="Editar">
-                        <Pencil size={14} />
-                      </button>
-                      <button onClick={() => deleteSupplier(s.id)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all" title="Eliminar">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </div>
 
       {/* Cost Modal */}
@@ -525,46 +417,6 @@ export default function CostsPage() {
         </div>
       )}
 
-      {/* Supplier Modal */}
-      {showSupplierModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div ref={supplierPanelRef} role="dialog" aria-modal="true" aria-label="Nuevo proveedor" className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
-              <h3 className="text-lg font-bold text-foreground">{editingSupplier ? "Editar Proveedor" : "Nuevo Proveedor"}</h3>
-              <button onClick={() => setShowSupplierModal(false)} aria-label="Cerrar" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Nombre *</label>
-                <input value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">NIT</label>
-                <input value={supplierForm.nit} onChange={(e) => setSupplierForm({ ...supplierForm, nit: e.target.value })}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Teléfono</label>
-                <input value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-dark-700/50">
-              <button onClick={() => setShowSupplierModal(false)}
-                className="px-4 py-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl text-sm transition-all">
-                Cancelar
-              </button>
-              <button onClick={saveSupplier}
-                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
-                {editingSupplier ? "Guardar Cambios" : "Crear Proveedor"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* Invoice Import Modal */}
       {showInvoiceModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
