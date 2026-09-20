@@ -101,7 +101,7 @@ const emptyForm: FormData = {
 const ALL_COLUMNS = [
   "Proveedor", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
   "Cód. OEM", "Cód. Fábrica", "Costo $", "Costo Bs", "Costo Tiendas",
-  "Precio 1", "Precio 2", "Precio Mayor", "Imagen", "Stock",
+  "Precio 1", "Precio 2", "Precio Mayor", "Imagen", "Stock", "Acciones",
 ];
 
 export default function InventoryPage() {
@@ -876,7 +876,7 @@ const handleImportExcel = async () => {
                 <thead>
                   <tr className="text-gray-500 border-b border-dark-700/50">
                     {visibleColumns.map((col) => {
-                      const align = ["Precio 1", "Precio 2", "Precio Mayor", "Costo $", "Costo Bs", "Costo Tiendas"].includes(col) ? "text-right" : ["Imagen", "Stock"].includes(col) ? "text-center" : "text-left";
+                      const align = ["Precio 1", "Precio 2", "Precio Mayor", "Costo $", "Costo Bs", "Costo Tiendas"].includes(col) ? "text-right" : ["Imagen", "Stock", "Acciones"].includes(col) ? "text-center" : "text-left";
                       return (
                         <th key={col} className={`${align} px-4 py-3 font-medium`}>{col}</th>
                       );
