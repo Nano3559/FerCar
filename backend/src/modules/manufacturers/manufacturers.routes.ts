@@ -62,30 +62,6 @@ router.post("/", authorize("ADMIN"), async (req: AuthRequest, res: Response) => 
   }
 });
 
-// POST /sync — Registrar fabricantes existentes en productos (solo ADMIN)
-router.post("/sync", authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
-  try {
-    const existing = await prisma.manufacturer.findMany();
-    const byKey = new Map(existing.map((m) => [m.name.toUpperCase(), m.name]));
-    const distinct = await prisma.product.findMany({
-      distinct: ["manufacturer"],
-      select: { manufacturer: true },
-    });
-    let created = 0;
-    for (const d of distinct) {
-      const key = d.manufacturer.trim().toUpperCase();
-      if (!key || byKey.has(key)) continue;
-      await prisma.manufacturer.create({ data: { name: d.manufacturer.trim() } });
-      byKey.set(key, d.manufacturer.trim());
-      created++;
-    }
-    res.json({ created, total: byKey.size });
-  } catch (error) {
-    console.error("Error al sincronizar fabricantes:", error);
-    res.status(500).json({ message: "Error interno del servidor" });
-  }
-});
-
 // PUT /:id — Editar fabricante (solo ADMIN)
 router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
   try {

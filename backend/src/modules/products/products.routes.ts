@@ -27,20 +27,6 @@ const recordSupplierCost = async (productId: number, supplierId: number, cost: n
   }
 };
 
-// Mantiene el registro de fabricantes sincronizado con los productos.
-const IGNORED_MANUFACTURER_NAMES = ["sin especificar", ""];
-const syncManufacturer = async (name?: string | null): Promise<void> => {
-  const trimmed = (name || "").trim();
-  if (IGNORED_MANUFACTURER_NAMES.includes(trimmed.toLowerCase())) return;
-  const key = trimmed.toUpperCase();
-  const exists = await prisma.manufacturer.findFirst({
-    where: { name: { equals: key, mode: "insensitive" } },
-  });
-  if (!exists) {
-    await prisma.manufacturer.create({ data: { name: trimmed } }).catch(() => { /* carrera: ya existe */ });
-  }
-};
-
 const router = Router();
 const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -330,8 +316,6 @@ router.post("/", authenticate, authorize("ADMIN"), async (req: AuthRequest, res:
       return res.status(409).json({ message: `Ya existe un producto con código "${itemCode}"` });
     }
 
-    await syncManufacturer(manufacturer);
-
     const product = await prisma.product.create({
       data: {
         itemCode,
@@ -410,8 +394,6 @@ router.put("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest, re
       },
     });
 
-    if (manufacturer) await syncManufacturer(manufacturer);
-
     res.json(product);
   } catch (error) {
     console.error("Error al editar producto:", error);
@@ -451,8 +433,6 @@ router.post("/:id/classify", authenticate, authorize("ADMIN"), async (req: AuthR
       data,
       select: { id: true, name: true, brand: true, model: true, year: true, detail: true },
     });
-
-    if (updated.brand) await syncManufacturer(updated.brand);
 
     res.json({ classified: true, product: updated });
   } catch (error) {
@@ -842,7 +822,6 @@ if (importType === "depo") {
               });
             }
           }
-          if (manufacturer && manufacturer !== "Sin especificar") await syncManufacturer(manufacturer);
           if (supplierId !== null && cost > 0) await recordSupplierCost(existing.id, supplierId, cost, exchangeRate);
           if (perLocationStock.length > 0) {
             for (const { locationId, stock } of perLocationStock) {
@@ -853,7 +832,6 @@ if (importType === "depo") {
           }
           updated.push({ id: existing.id, itemCode, name, action: "actualizado" });
         } else {
-          await syncManufacturer(manufacturer);
           const product = await prisma.product.create({
             data: {
               itemCode,

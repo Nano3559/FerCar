@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  Users, Shield, Plus, Pencil, Trash2, X, User, RefreshCw, Check, History, Store, Home, UserX, UserCheck, Lock, Building2,
+  Users, Shield, Plus, Pencil, Trash2, X, User, RefreshCw, Check, History, Store, Home, UserX, UserCheck, Lock, Building2, Factory,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -22,6 +22,10 @@ interface Location {
 
 interface Supplier {
   id: number; name: string; nit: string | null; phone: string | null; costsCount?: number;
+}
+
+interface Manufacturer {
+  id: number; name: string; description: string | null;
 }
 
 interface AuditLogEntry {
@@ -96,11 +100,12 @@ const canRoleOpenModule = (roleName: string, mod: string): boolean => {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"users" | "roles" | "audit" | "locations" | "suppliers">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "roles" | "audit" | "locations" | "suppliers" | "manufacturers">("users");
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditPage, setAuditPage] = useState(1);
@@ -143,19 +148,29 @@ export default function SettingsPage() {
   const supplierPanelRef = useDialogBehavior(showSupplierModal, () => setShowSupplierModal(false));
   const deleteSupplierConfirmPanelRef = useDialogBehavior(showDeleteSupplierConfirm !== null, () => setShowDeleteSupplierConfirm(null));
 
+  const [showManufacturerModal, setShowManufacturerModal] = useState(false);
+  const [editingManufacturer, setEditingManufacturer] = useState<number | null>(null);
+  const [manufacturerForm, setManufacturerForm] = useState({ name: "", description: "" });
+  const [manufacturerSaving, setManufacturerSaving] = useState(false);
+  const [showDeleteManufacturerConfirm, setShowDeleteManufacturerConfirm] = useState<number | null>(null);
+  const manufacturerPanelRef = useDialogBehavior(showManufacturerModal, () => setShowManufacturerModal(false));
+  const deleteManufacturerConfirmPanelRef = useDialogBehavior(showDeleteManufacturerConfirm !== null, () => setShowDeleteManufacturerConfirm(null));
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [usersRes, rolesRes, locsRes, suppliersRes] = await Promise.all([
+      const [usersRes, rolesRes, locsRes, suppliersRes, manufacturersRes] = await Promise.all([
         api.get("/users"),
         api.get("/permissions/roles"),
         api.get("/locations"),
         api.get("/suppliers?limit=100"),
+        api.get("/manufacturers"),
       ]);
       setUsers(usersRes.data.users);
       setRoles(rolesRes.data.roles);
       setLocations(locsRes.data.locations || locsRes.data);
       setSuppliers(suppliersRes.data.suppliers || []);
+      setManufacturers(manufacturersRes.data.manufacturers || []);
       try {
         const catRes = await api.get("/products/filters");
         setCategories(catRes.data.categories || []);
@@ -414,6 +429,52 @@ export default function SettingsPage() {
     }
   };
 
+  const openCreateManufacturer = () => {
+    setEditingManufacturer(null);
+    setManufacturerForm({ name: "", description: "" });
+    setShowManufacturerModal(true);
+  };
+
+  const openEditManufacturer = (m: Manufacturer) => {
+    setEditingManufacturer(m.id);
+    setManufacturerForm({ name: m.name, description: m.description || "" });
+    setShowManufacturerModal(true);
+  };
+
+  const saveManufacturer = async () => {
+    if (!manufacturerForm.name.trim()) {
+      toast.error("El nombre del fabricante es obligatorio"); return;
+    }
+    setManufacturerSaving(true);
+    try {
+      if (editingManufacturer) {
+        await api.put(`/manufacturers/${editingManufacturer}`, { name: manufacturerForm.name.trim(), description: manufacturerForm.description.trim() });
+        toast.success("Fabricante actualizado");
+      } else {
+        await api.post("/manufacturers", { name: manufacturerForm.name.trim(), description: manufacturerForm.description.trim() });
+        toast.success("Fabricante creado");
+      }
+      setShowManufacturerModal(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al guardar fabricante");
+    } finally {
+      setManufacturerSaving(false);
+    }
+  };
+
+  const deleteManufacturer = async () => {
+    if (showDeleteManufacturerConfirm == null) return;
+    try {
+      await api.delete(`/manufacturers/${showDeleteManufacturerConfirm}`);
+      toast.success("Fabricante eliminado");
+      setShowDeleteManufacturerConfirm(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al eliminar fabricante");
+    }
+  };
+
   const getRoleCategories = (role: Role): string[] => {
     const raw = role.columnConfig?.__categorias;
     return Array.isArray(raw) ? (raw as string[]) : [];
@@ -471,6 +532,12 @@ export default function SettingsPage() {
             activeTab === "suppliers" ? "bg-primary-600/20 text-primary-400 border border-primary-600/30" : "text-gray-400 hover:text-gray-200 border border-transparent"
           }`}>
           <Building2 size={16} /> Proveedores
+        </button>
+        <button onClick={() => setActiveTab("manufacturers")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === "manufacturers" ? "bg-primary-600/20 text-primary-400 border border-primary-600/30" : "text-gray-400 hover:text-gray-200 border border-transparent"
+          }`}>
+          <Factory size={16} /> Fabricantes
         </button>
       </div>
 
@@ -858,6 +925,61 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {activeTab === "manufacturers" && (
+        <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
+            <h3 className="text-foreground font-medium">Fabricantes ({manufacturers.length})</h3>
+            <div className="flex items-center gap-2">
+              <button onClick={fetchData} className="p-1.5 text-gray-400 hover:text-foreground rounded-lg transition-all"><RefreshCw size={14} /></button>
+              <button onClick={openCreateManufacturer}
+                className="flex items-center gap-1 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-medium transition-all">
+                <Plus size={14} /> Nuevo Fabricante
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-dark-700/50">
+                  <th className="text-left px-4 py-3 text-gray-400 font-medium">Nombre</th>
+                  <th className="text-left px-4 py-3 text-gray-400 font-medium">Descripción</th>
+                  <th className="text-center px-4 py-3 text-gray-400 font-medium">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-500">Cargando...</td></tr>
+                ) : manufacturers.length === 0 ? (
+                  <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-500">Sin fabricantes registrados</td></tr>
+                ) : manufacturers.map((mf) => (
+                  <tr key={mf.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-dark-700 rounded-full flex items-center justify-center">
+                          <Factory size={14} className="text-gray-400" />
+                        </div>
+                        <span className="text-foreground font-medium">{mf.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{mf.description || "—"}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => openEditManufacturer(mf)} className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all" title="Editar">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => setShowDeleteManufacturerConfirm(mf.id)} className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all" title="Eliminar">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div ref={deleteConfirmPanelRef} role="dialog" aria-modal="true" aria-label="Eliminar usuario" className="bg-dark-800 border border-dark-700/50 rounded-2xl p-6 w-full max-w-sm text-center">
@@ -1153,6 +1275,55 @@ export default function SettingsPage() {
               <button onClick={saveSupplier} disabled={supplierSaving}
                 className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
                 {supplierSaving ? "Guardando..." : editingSupplier ? "Guardar Cambios" : "Crear Proveedor"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteManufacturerConfirm != null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div ref={deleteManufacturerConfirmPanelRef} role="dialog" aria-modal="true" aria-label="Eliminar fabricante" className="bg-dark-800 border border-dark-700/50 rounded-2xl p-6 w-full max-w-sm text-center">
+            <Trash2 size={40} className="text-red-400 mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-foreground mb-2">¿Eliminar fabricante?</h3>
+            <p className="text-gray-400 text-sm mb-6">
+              {manufacturers.find((m) => m.id === showDeleteManufacturerConfirm)?.name || "Este fabricante"} será eliminado. Esta acción no se puede deshacer.
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <button onClick={() => setShowDeleteManufacturerConfirm(null)} className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">Cancelar</button>
+              <button onClick={deleteManufacturer} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all">Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showManufacturerModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div ref={manufacturerPanelRef} role="dialog" aria-modal="true" aria-label={editingManufacturer ? "Editar fabricante" : "Nuevo fabricante"} className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
+              <h3 className="text-lg font-bold text-foreground">{editingManufacturer ? "Editar Fabricante" : "Nuevo Fabricante"}</h3>
+              <button onClick={() => setShowManufacturerModal(false)} aria-label="Cerrar" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Nombre *</label>
+                <input value={manufacturerForm.name} onChange={(e) => setManufacturerForm({ ...manufacturerForm, name: e.target.value })} placeholder="Ej: DEPO, TYC, FARET..."
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                <p className="text-[11px] text-gray-600 mt-1">Se guardará en mayúsculas.</p>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Descripción</label>
+                <input value={manufacturerForm.description} onChange={(e) => setManufacturerForm({ ...manufacturerForm, description: e.target.value })} placeholder="Opcional"
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-dark-700/50">
+              <button onClick={() => setShowManufacturerModal(false)} className="px-4 py-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl text-sm transition-all">Cancelar</button>
+              <button onClick={saveManufacturer} disabled={manufacturerSaving}
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20 disabled:opacity-50">
+                {manufacturerSaving ? "Guardando..." : editingManufacturer ? "Guardar Cambios" : "Crear Fabricante"}
               </button>
             </div>
           </div>
