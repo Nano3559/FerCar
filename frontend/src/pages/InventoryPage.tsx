@@ -302,6 +302,14 @@ export default function InventoryPage() {
       if (m) {
         return `${m[1]}wiki/Special:FilePath/${encodeURIComponent(m[2].split(/[?#]/)[0].replace(/\s+/g, "_"))}`;
       }
+      const driveFile = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
+      if (driveFile) {
+        return `https://drive.google.com/uc?export=view&id=${driveFile[1]}`;
+      }
+      const driveOpen = u.match(/drive\.google\.com\/open\?id=([^&#]+)/);
+      if (driveOpen) {
+        return `https://drive.google.com/uc?export=view&id=${driveOpen[1]}`;
+      }
       return u;
     };
     const urls = form.image.split(/[,\n]+/).map((u) => u.trim()).filter(Boolean).map(normalizeImageUrl);

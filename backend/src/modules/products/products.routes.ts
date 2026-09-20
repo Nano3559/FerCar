@@ -606,6 +606,41 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet);
 
+    // sheet_to_json no expone los hipervínculos: una celda IMAGEN puede ser
+    // un link con texto de muestra (p. ej. "Ir"). Extraemos el destino real
+    // de la columna IMAGEN y convertimos links de Google Drive a imagen directa.
+    const imagenLinkCol = (() => {
+      for (const addr of Object.keys(sheet)) {
+        const m = /^([A-Z]+)1$/.exec(addr);
+        if (!m) continue;
+        const v = String(sheet[addr]?.v ?? "").trim().toLowerCase();
+        if (["imagen", "image", "url imagen", "imagenes", "imagenes"].includes(v)) return m[1];
+        if (v.includes("imagen") || v.includes("image")) return m[1];
+      }
+      return "";
+    })();
+    const imagenLinks: Record<number, string> = {};
+    if (imagenLinkCol) {
+      const re = new RegExp(`^${imagenLinkCol}(\\d+)$`);
+      for (const addr of Object.keys(sheet)) {
+        const m = re.exec(addr);
+        if (!m) continue;
+        const rowNum = Number(m[1]);
+        if (rowNum <= 1) continue;
+        const cell = sheet[addr];
+        if (!cell?.l) continue;
+        const target = cell.l.hyperlink?.Target || cell.l.Target;
+        if (typeof target === "string" && target.trim()) imagenLinks[rowNum] = target.trim();
+      }
+    }
+    const toDirectImage = (u: string): string => {
+      const driveFile = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
+      if (driveFile) return `https://drive.google.com/uc?export=view&id=${driveFile[1]}`;
+      const driveOpen = u.match(/drive\.google\.com\/open\?id=([^&#]+)/);
+      if (driveOpen) return `https://drive.google.com/uc?export=view&id=${driveOpen[1]}`;
+      return u;
+    };
+
     if (rows.length === 0) {
       return res.status(400).json({ message: "El archivo está vacío" });
     }
@@ -800,6 +835,19 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         calidad = "";
         itemCode = factoryCode || oemCode;
       }
+
+      // Imágenes: prioridad al hipervínculo real de la celda (sheet_to_json
+      // entrega el texto mostrado, p. ej. "Ir"); se descartan valores que no
+      // son URLs y se convierten los links de Google Drive a imagen directa.
+      const linkImg = (imagenLinks[i + 2] || "").trim();
+      imagenUrls = [
+        ...(linkImg ? [toDirectImage(linkImg)] : []),
+        ...imagenUrls
+          .map((u) => u.trim())
+          .filter((u) => /^https?:\/\//i.test(u))
+          .map(toDirectImage),
+      ];
+      imagenUrls = [...new Set(imagenUrls)];
 
 if (!name) {
         errors.push(`Fila ${i + 2}: el nombre del producto es obligatorio`);
