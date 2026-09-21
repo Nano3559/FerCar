@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { Readable } from "stream";
 import { config } from "./config";
 import { errorHandler } from "./shared/middlewares";
 
@@ -38,6 +39,36 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Proxy de imágenes de Google Drive: el <img> del navegador recibe 403 al
+// cargar drive.google.com/uc?export=view por el Referer y las cookies de
+// Google. Aquí el servidor descarga el archivo sin cookies ni referer (que
+// es el único modo en que Drive lo entrega) y lo reenvía con cache de 1h.
+app.get("/api/images/proxy", async (req, res) => {
+  const id = String(req.query.id || "").trim();
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+    return res.status(400).end("invalid id");
+  }
+  const upstream = `https://drive.google.com/uc?export=view&id=${id}`;
+  try {
+    const resp = await fetch(upstream, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(25000),
+    });
+    if (!resp.ok || !resp.body) {
+      return res.status(resp.status || 502).end();
+    }
+    const ct = resp.headers.get("content-type") || "image/jpeg";
+    res.setHeader("Content-Type", ct);
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+    const body = Readable.fromWeb(resp.body as any);
+    body.on("error", () => res.end());
+    return body.pipe(res);
+  } catch {
+    return res.status(502).end();
+  }
 });
 
 app.use("/api/auth", authRoutes);

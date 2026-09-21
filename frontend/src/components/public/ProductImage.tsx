@@ -15,13 +15,26 @@ const categoryConfig: Record<string, { bg: string; icon: string; label: string }
   Transmisión: { bg: "#0D9488", icon: "⛓", label: "TRANSMISIÓN" },
 };
 
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3000/api").replace(/\/+$/, "");
+
+const driveIdOf = (u: string): string | null => {
+  const patterns = [
+    /lh3\.googleusercontent\.com\/d\/([A-Za-z0-9_-]+)/,
+    /drive\.google\.com\/file\/d\/([^/?#]+)/,
+    /drive\.google\.com\/open\?id=([^&#]+)/,
+    /drive\.google\.com\/uc\?.*[?&]id=([A-Za-z0-9_-]+)/,
+    /drive\.google\.com.*?[?&]id=([A-Za-z0-9_-]+)/,
+  ];
+  for (const re of patterns) {
+    const m = u.match(re);
+    if (m) return m[1];
+  }
+  return null;
+};
+
 export const toEmbedUrl = (u: string): string => {
-  const idFromLh3 = u.match(/lh3\.googleusercontent\.com\/d\/([A-Za-z0-9_-]+)/);
-  if (idFromLh3) return `https://drive.google.com/uc?export=view&id=${idFromLh3[1]}`;
-  const driveFile = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
-  if (driveFile) return `https://drive.google.com/uc?export=view&id=${driveFile[1]}`;
-  const driveOpen = u.match(/drive\.google\.com\/open\?id=([^&#]+)/);
-  if (driveOpen) return `https://drive.google.com/uc?export=view&id=${driveOpen[1]}`;
+  const id = driveIdOf(u);
+  if (id) return `${API_BASE}/images/proxy?id=${encodeURIComponent(id)}`;
   return u;
 };
 
