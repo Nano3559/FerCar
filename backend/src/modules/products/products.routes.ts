@@ -942,10 +942,13 @@ if (!name) {
             }
           }
           if (supplierId !== null && cost > 0) await recordSupplierCost(existing.id, supplierId, cost, exchangeRate);
-          if (importType === "actualizar" && proveedor && cost > 0) {
+          if (importType === "actualizar" && proveedor) {
+            const costForSupplier = cost > 0 ? cost : unitPrice;
             const supId = supplierByName[normalize(proveedor)];
-            if (supId) await recordSupplierCost(existing.id, supId, cost, null);
-            else warnings.push(`${label}: Proveedor "${proveedor}" no encontrado en el sistema — costo sin asociar`);
+            if (supId) {
+              if (costForSupplier > 0) await recordSupplierCost(existing.id, supId, costForSupplier, null);
+              else warnings.push(`${label}: Proveedor "${proveedor}" sin COSTO BS ni COSTO $ — costo sin registrar`);
+            } else warnings.push(`${label}: Proveedor "${proveedor}" no encontrado en el sistema — costo sin asociar`);
           }
           if (perLocationStock.length > 0) {
             for (const { locationId, stock } of perLocationStock) {
@@ -995,10 +998,13 @@ if (!name) {
             }
           }
           if (supplierId !== null && cost > 0) await recordSupplierCost(product.id, supplierId, cost, exchangeRate);
-          if (importType === "actualizar" && proveedor && cost > 0) {
+          if (importType === "actualizar" && proveedor) {
+            const costForSupplier = cost > 0 ? cost : unitPrice;
             const supId = supplierByName[normalize(proveedor)];
-            if (supId) await recordSupplierCost(product.id, supId, cost, null);
-            else warnings.push(`${label}: Proveedor "${proveedor}" no encontrado en el sistema — costo sin asociar`);
+            if (supId) {
+              if (costForSupplier > 0) await recordSupplierCost(product.id, supId, costForSupplier, null);
+              else warnings.push(`${label}: Proveedor "${proveedor}" sin COSTO BS ni COSTO $ — costo sin registrar`);
+            } else warnings.push(`${label}: Proveedor "${proveedor}" no encontrado en el sistema — costo sin asociar`);
           }
 
           let locations = allLocations;
