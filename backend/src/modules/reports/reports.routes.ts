@@ -138,7 +138,7 @@ router.get("/inventory", async (req: AuthRequest, res: Response) => {
 
     let filtered = inventories;
     if (lowStock === "true") {
-      filtered = inventories.filter((i) => i.stock <= i.minStock);
+      filtered = inventories.filter((i) => i.minStock > 0 && i.stock <= i.minStock);
     }
 
     const byLocation = filtered.reduce((acc: any, inv) => {
@@ -159,7 +159,7 @@ router.get("/inventory", async (req: AuthRequest, res: Response) => {
       locations: Object.values(byLocation),
       totalProducts: filtered.length,
       totalStock: filtered.reduce((sum, i) => sum + i.stock, 0),
-      lowStockCount: filtered.filter((i) => i.stock <= i.minStock).length,
+      lowStockCount: filtered.filter((i) => i.minStock > 0 && i.stock <= i.minStock).length,
     });
   } catch (error) {
     console.error("Error en reporte de inventario:", error);

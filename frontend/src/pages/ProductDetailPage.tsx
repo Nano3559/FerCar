@@ -305,7 +305,7 @@ export default function ProductDetailPage() {
                         <span className={`text-sm font-bold ${s.stock === 0 ? "text-red-400" : s.stock <= s.minStock ? "text-yellow-400" : "text-green-400"}`}>
                           {s.stock}
                         </span>
-                        <span className="text-xs text-gray-600 ml-1">/ {s.minStock} min</span>
+                        {s.locationType !== "ALMACEN" && <span className="text-xs text-gray-600 ml-1">/ {s.minStock} min</span>}
                       </div>
                     </div>
                   ))}

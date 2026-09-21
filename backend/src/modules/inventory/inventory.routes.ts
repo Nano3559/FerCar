@@ -47,7 +47,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
     }));
 
     if (lowStock === "true") {
-      result = result.filter((r) => r.stock <= r.minStock);
+      result = result.filter((r) => r.minStock > 0 && r.stock <= r.minStock);
     }
 
     res.json(result);
@@ -105,10 +105,15 @@ router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) =
       return res.status(403).json({ message: "Contraseña de administrador incorrecta" });
     }
 
-    const existing = await prisma.inventory.findUnique({ where: { id } });
+    const existing = await prisma.inventory.findUnique({
+      where: { id },
+      include: { location: { select: { type: true } } },
+    });
     if (!existing) {
       return res.status(404).json({ message: "Registro de inventario no encontrado" });
     }
+
+    const isAlmacen = existing.location.type === "ALMACEN";
 
     const data: any = {};
     let stockChanged = false;
@@ -125,7 +130,13 @@ router.put("/:id", authorize("ADMIN"), async (req: AuthRequest, res: Response) =
       if (!Number.isInteger(m) || m < 0) {
         return res.status(400).json({ message: "El stock mínimo debe ser un entero mayor o igual a 0" });
       }
+      if (isAlmacen && m > 0) {
+        return res.status(400).json({ message: "Los almacenes no manejan stock mínimo" });
+      }
       data.minStock = m;
+    }
+    if (isAlmacen && data.minStock === undefined) {
+      data.minStock = 0;
     }
 
     const validReasons = ["COMPRA", "AJUSTE", "DEVOLUCION", "MERMA"];

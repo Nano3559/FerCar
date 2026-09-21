@@ -341,7 +341,9 @@ router.post("/", authenticate, authorize("ADMIN"), async (req: AuthRequest, res:
     });
 
     if (locationId) {
-      await prisma.inventory.create({ data: { productId: product.id, locationId: Number(locationId), stock: Number(stock) || 0, minStock: Number(minStock) || 1 } });
+      const loc = await prisma.location.findUnique({ where: { id: Number(locationId) } });
+      const m = loc?.type === "ALMACEN" ? 0 : (Number(minStock) || 1);
+      await prisma.inventory.create({ data: { productId: product.id, locationId: Number(locationId), stock: Number(stock) || 0, minStock: m } });
     }
 
     if (supplierId && cost) {
@@ -707,6 +709,9 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const locByName: Record<string, number> = {};
     allLocations.forEach((l) => { locByName[normalize(l.name)] = l.id; });
+    const locTypeById: Record<number, "TIENDA" | "ALMACEN"> = {};
+    allLocations.forEach((l) => { locTypeById[l.id] = l.type; });
+    const minStockFor = (locationId: number) => (locTypeById[locationId] === "ALMACEN" ? 0 : 1);
     const defaultLocation = allLocations.find((l) => normalize(l.name) === "chiquicollo");
     const defaultLocationId = defaultLocation?.id ?? null;
 
@@ -980,12 +985,12 @@ if (!name) {
           }
           if (perLocationStock.length > 0) {
             for (const { locationId, stock } of perLocationStock) {
-              await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId } }, update: { stock: { increment: stock } }, create: { productId: existing.id, locationId, stock, minStock: 1 } });
+              await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId } }, update: { stock: { increment: stock } }, create: { productId: existing.id, locationId, stock, minStock: minStockFor(locationId) } });
             }
           } else if (rowLocationId && rowStock > 0) {
-            await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: rowLocationId } }, update: { stock: { increment: rowStock } }, create: { productId: existing.id, locationId: rowLocationId, stock: rowStock, minStock: 1 } });
+            await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: rowLocationId } }, update: { stock: { increment: rowStock } }, create: { productId: existing.id, locationId: rowLocationId, stock: rowStock, minStock: minStockFor(rowLocationId) } });
           } else if (importType === "actualizar" && defaultLocationId && rowStock > 0) {
-            await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: defaultLocationId } }, update: { stock: { increment: rowStock } }, create: { productId: existing.id, locationId: defaultLocationId, stock: rowStock, minStock: 1 } });
+            await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: defaultLocationId } }, update: { stock: { increment: rowStock } }, create: { productId: existing.id, locationId: defaultLocationId, stock: rowStock, minStock: minStockFor(defaultLocationId) } });
             warnings.push(`${label}: stock sin ubicación asignada — fue a CHIQUICOLLO`);
           }
           updated.push({ id: existing.id, itemCode, name, action: "actualizado" });
@@ -1043,18 +1048,18 @@ if (!name) {
             const stockByLoc: Record<number, number> = {};
             allLocations.forEach((l) => { stockByLoc[l.id] = 0; });
             perLocationStock.forEach((p) => { stockByLoc[p.locationId] = p.stock; });
-            for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: 1 } });
+            for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: minStockFor(loc.id) } });
           } else if (importType === "actualizar" && defaultLocationId && rowStock > 0) {
             const stockByLoc: Record<number, number> = {};
             allLocations.forEach((l) => { stockByLoc[l.id] = 0; });
             stockByLoc[defaultLocationId] = rowStock;
-            for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: 1 } });
+            for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: minStockFor(loc.id) } });
             warnings.push(`${label}: stock sin ubicación asignada — fue a CHIQUICOLLO`);
           } else {
             locations = rowLocationId
               ? allLocations.filter((l) => l.id === rowLocationId)
               : allLocations;
-            for (const loc of locations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: rowLocationId ? rowStock : 0, minStock: 1 } });
+            for (const loc of locations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: rowLocationId ? rowStock : 0, minStock: minStockFor(loc.id) } });
           }
 
           imported.push({ id: product.id, itemCode, name, action: "creado" });
@@ -1295,7 +1300,7 @@ router.post("/import-invoice", authenticate, authorize("ADMIN"), upload.single("
         await prisma.inventory.upsert({
           where: { productId_locationId: { productId: finalProduct.id, locationId } },
           update: { stock: { increment: p.qty } },
-          create: { productId: finalProduct.id, locationId, stock: p.qty, minStock: 1 },
+          create: { productId: finalProduct.id, locationId, stock: p.qty, minStock: location.type === "ALMACEN" ? 0 : 1 },
         });
       } catch (err: any) {
         errors.push(`Fila ${i + 2}: ${err.message}`);

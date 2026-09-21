@@ -147,7 +147,7 @@ export default function InventoryPage() {
   const [oemCode, setOemCode] = useState("");
   const [factoryCode, setFactoryCode] = useState("");
   const [detailFilter, setDetailFilter] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(ALL_COLUMNS);
 
@@ -1236,13 +1236,17 @@ const handleImportExcel = async () => {
                             </div>
                             <div>
                               <label htmlFor={`loc-min-${loc.id}`} className="block text-xs text-gray-500 mb-0.5">Stock mínimo</label>
-                              <input
-                                id={`loc-min-${loc.id}`}
-                                type="number" min={0} disabled={!canEdit}
-                                value={edit.minStock}
-                                onChange={(e) => setStockEdits((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], minStock: e.target.value } }))}
-                                className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-foreground text-sm focus:outline-none focus:border-primary-500 disabled:opacity-60"
-                              />
+                              {loc.locationType === "ALMACEN" ? (
+                                <span className="block w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-gray-500 text-sm">Sin mínimo</span>
+                              ) : (
+                                <input
+                                  id={`loc-min-${loc.id}`}
+                                  type="number" min={0} disabled={!canEdit}
+                                  value={edit.minStock}
+                                  onChange={(e) => setStockEdits((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], minStock: e.target.value } }))}
+                                  className="w-full px-2.5 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-foreground text-sm focus:outline-none focus:border-primary-500 disabled:opacity-60"
+                                />
+                              )}
                             </div>
                           </div>
                           {canEdit && (
