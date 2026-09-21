@@ -457,7 +457,15 @@ router.delete("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest,
     const id = Number(req.params.id);
     const existing = await prisma.product.findUnique({
       where: { id },
-      include: { saleItems: { take: 1 } },
+      include: {
+        saleItems: { take: 1 },
+        movements: { take: 1 },
+        returns: { take: 1 },
+        purchaseItems: { take: 1 },
+        despatchItems: { take: 1 },
+        requests: { take: 1 },
+        costs: { take: 1 },
+      },
     });
 
     if (!existing) {
@@ -466,6 +474,24 @@ router.delete("/:id", authenticate, authorize("ADMIN"), async (req: AuthRequest,
 
     if (existing.saleItems.length > 0) {
       return res.status(409).json({ message: "No se puede eliminar: el producto tiene ventas asociadas" });
+    }
+    if (existing.movements.length > 0) {
+      return res.status(409).json({ message: "No se puede eliminar: el producto tiene movimientos de stock" });
+    }
+    if (existing.returns.length > 0) {
+      return res.status(409).json({ message: "No se puede eliminar: el producto tiene devoluciones asociadas" });
+    }
+    if (existing.purchaseItems.length > 0) {
+      return res.status(409).json({ message: "No se puede eliminar: el producto está en notas de compra" });
+    }
+    if (existing.despatchItems.length > 0) {
+      return res.status(409).json({ message: "No se puede eliminar: el producto está en notas de despacho" });
+    }
+    if (existing.requests.length > 0) {
+      return res.status(409).json({ message: "No se puede eliminar: el producto tiene solicitudes activas o históricas" });
+    }
+    if (existing.costs.length > 0) {
+      await prisma.cost.deleteMany({ where: { productId: id } });
     }
 
     await prisma.inventory.deleteMany({ where: { productId: id } });

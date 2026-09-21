@@ -740,10 +740,14 @@ router.post("/:id/cancel", async (req: AuthRequest, res: Response) => {
       for (const it of note.items) {
         const inv = await tx.inventory.findUnique({ where: { productId_locationId: { productId: it.productId, locationId: note.locationId } } });
         const next = Math.max(0, (inv?.stock ?? 0) - it.quantity);
-        await tx.inventory.update({
-          where: { id: inv!.id },
-          data: { stock: next },
-        });
+        if (inv) {
+          await tx.inventory.update({
+            where: { id: inv.id },
+            data: { stock: next },
+          });
+        } else if (next > 0) {
+          await tx.inventory.create({ data: { productId: it.productId, locationId: note.locationId, stock: next, minStock: 1 } });
+        }
       }
       await tx.purchaseNote.update({
         where: { id },
