@@ -9,6 +9,7 @@ interface AuthState {
   permissions: string[];
   columnConfig: Record<string, string[]>;
   allowedCategories: string[];
+  hydrated: boolean;
   login: (user: User, token: string) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => void;
@@ -41,10 +42,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   permissions: [],
   columnConfig: {},
   allowedCategories: [],
+  hydrated: false,
   login: async (user, token) => {
     localStorage.setItem("token", token);
     localStorage.setItem("user", JSON.stringify(user));
-    set({ user, token, isAuthenticated: true });
+    set({ user, token, isAuthenticated: true, hydrated: true });
 
     try {
       const res = await api.get("/permissions/permissions/me");
@@ -58,7 +60,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    set({ user: null, token: null, isAuthenticated: false, permissions: [], columnConfig: {}, allowedCategories: [] });
+    set({ user: null, token: null, isAuthenticated: false, permissions: [], columnConfig: {}, allowedCategories: [], hydrated: true });
   },
   loadFromStorage: () => {
     const token = localStorage.getItem("token");
@@ -73,15 +75,18 @@ export const useAuthStore = create<AuthState>((set) => ({
           .get("/permissions/permissions/me")
           .then((res) => {
             const cc = res.data.columnConfig || {};
-            set({ permissions: normalizePermissions(res.data.permissions || []), columnConfig: cc, allowedCategories: getAllowedCategories(user.role, cc) });
+            set({ permissions: normalizePermissions(res.data.permissions || []), columnConfig: cc, allowedCategories: getAllowedCategories(user.role, cc), hydrated: true });
           })
           .catch(() => {
-            set({ permissions: fallbackPermissions(user.role), allowedCategories: getAllowedCategories(user.role, {}) });
+            set({ permissions: fallbackPermissions(user.role), allowedCategories: getAllowedCategories(user.role, {}), hydrated: true });
           });
       } catch {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
+        set({ hydrated: true });
       }
+    } else {
+      set({ hydrated: true });
     }
   },
 }));

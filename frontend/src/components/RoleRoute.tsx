@@ -8,8 +8,9 @@ interface RoleRouteProps {
 }
 
 export default function RoleRoute({ children, allowedRoles, module }: RoleRouteProps) {
-  const { user, isAuthenticated, permissions } = useAuthStore();
+  const { user, isAuthenticated, permissions, hydrated } = useAuthStore();
 
+  if (!hydrated) return null;
   if (!isAuthenticated) return <Navigate to="/login" />;
   if (!user || !allowedRoles.includes(user.role)) return <Navigate to="/panel" />;
 
