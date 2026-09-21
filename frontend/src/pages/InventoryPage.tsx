@@ -106,6 +106,22 @@ const ALL_COLUMNS = [
   "Precio 1", "Precio 2", "Precio Mayor", "Imagen", "Stock", "Acciones",
 ];
 
+const normalizeImageUrl = (u: string) => {
+  const m = u.match(/^(.*\/)wiki\/File:(.+)$/i);
+  if (m) {
+    return `${m[1]}wiki/Special:FilePath/${encodeURIComponent(m[2].split(/[?#]/)[0].replace(/\s+/g, "_"))}`;
+  }
+  const driveFile = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
+  if (driveFile) {
+    return `https://drive.google.com/uc?export=view&id=${driveFile[1]}`;
+  }
+  const driveOpen = u.match(/drive\.google\.com\/open\?id=([^&#]+)/);
+  if (driveOpen) {
+    return `https://drive.google.com/uc?export=view&id=${driveOpen[1]}`;
+  }
+  return u;
+};
+
 export default function InventoryPage() {
   const navigate = useNavigate();
   const { user, allowedCategories } = useAuthStore();
@@ -279,7 +295,7 @@ export default function InventoryPage() {
       priceHermana: p.priceHermana ? String(p.priceHermana) : "",
       proveedorId: "",
       categoryId: p.categoryId ? String(p.categoryId) : "",
-      image: [p.image, ...(p.images || [])].filter(Boolean).join("\n"), stock: "", locationId: "",
+      image: [p.image, ...(p.images || [])].filter((x): x is string => !!x).map(normalizeImageUrl).join("\n"), stock: "", locationId: "",
     });
     setShowModal(true);
   };
@@ -297,22 +313,7 @@ export default function InventoryPage() {
     }
     try {
       setSaving(true);
-      const normalizeImageUrl = (u: string) => {
-      const m = u.match(/^(.*\/)wiki\/File:(.+)$/i);
-      if (m) {
-        return `${m[1]}wiki/Special:FilePath/${encodeURIComponent(m[2].split(/[?#]/)[0].replace(/\s+/g, "_"))}`;
-      }
-      const driveFile = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
-      if (driveFile) {
-        return `https://drive.google.com/uc?export=view&id=${driveFile[1]}`;
-      }
-      const driveOpen = u.match(/drive\.google\.com\/open\?id=([^&#]+)/);
-      if (driveOpen) {
-        return `https://drive.google.com/uc?export=view&id=${driveOpen[1]}`;
-      }
-      return u;
-    };
-    const urls = form.image.split(/[,\n]+/).map((u) => u.trim()).filter(Boolean).map(normalizeImageUrl);
+      const urls = form.image.split(/[,\n]+/).map((u) => u.trim()).filter(Boolean).map(normalizeImageUrl);
       const payload = {
         ...form,
         detalles: form.detalles || null,
