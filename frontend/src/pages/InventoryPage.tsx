@@ -178,9 +178,6 @@ export default function InventoryPage() {
   const [importManufacturerId, setImportManufacturerId] = useState("");
   const [importType, setImportType] = useState<"depo" | "actualizar">("depo");
   const [importSupplierId, setImportSupplierId] = useState("");
-  const [importExchangeRate, setImportExchangeRate] = useState("10.03");
-  const [importCostFactor, setImportCostFactor] = useState("1.5");
-  const [importHermanaFactor, setImportHermanaFactor] = useState("1.6");
   const [dragActive, setDragActive] = useState(false);
 
   const [manufacturers, setManufacturers] = useState<{ id: number; name: string; description: string | null }[]>([]);
@@ -489,14 +486,17 @@ export default function InventoryPage() {
   const formatCurrency = (v: string) => `Bs. ${Number(v).toLocaleString("es-BO", { minimumFractionDigits: 2 })}`;
 
   const downloadImportTemplate = () => {
-    const headers = ["CODIGO OEM", "CODIGO FABRICA", "Description", "CANTIDAD", "COSTO UNITARIO", "COSTO TOTAL", "XMAYOR"];
+    const headers = ["CODIGO OEM", "CODIGO FABRICA", "Description", "CANTIDAD", "COSTO UNITARIO", "COSTO BS", "COSTO TIENDAS", "PRECIO 1", "PRECIO 2", "XMAYOR"];
     const example: Record<string, unknown> = {
       "CODIGO OEM": "100000-100000",
       "CODIGO FABRICA": "11-11920005B3",
       Description: "BISEL TOYOTA COROLLA 84-87 VAGONETA LH",
       CANTIDAD: 20,
       "COSTO UNITARIO": 9.9,
-      "COSTO TOTAL": 198,
+      "COSTO BS": 68.88,
+      "COSTO TIENDAS": 110.21,
+      "PRECIO 1": 110.21,
+      "PRECIO 2": 124,
       XMAYOR: "",
     };
     const ws = XLSX.utils.json_to_sheet([example], { header: headers });
@@ -549,9 +549,6 @@ const handleImportExcel = async () => {
       formData.append("file", importFile);
       formData.append("importType", importType);
       if (importType === "depo") formData.append("manufacturerId", importManufacturerId);
-      formData.append("exchangeRate", importExchangeRate || "10.03");
-      formData.append("costFactor", importCostFactor || "1.5");
-      formData.append("hermanaFactor", importHermanaFactor || "1.6");
       if (importSupplierId) formData.append("supplierId", importSupplierId);
       if (importLocationId) formData.append("locationId", importLocationId);
       const res = await api.post("/products/import", formData, {
@@ -1542,7 +1539,7 @@ const handleImportExcel = async () => {
                   className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left ${
                     importType === "depo" ? "bg-primary-600/10 border-primary-600/30 text-primary-400" : "bg-dark-900/50 border-dark-700/50 text-gray-500 hover:text-gray-300"
                   }`}>
-                  Catálogo DEPO (fórmulas)
+                  Catálogo DEPO
                 </button>
                 <button type="button" onClick={() => setImportType("actualizar")}
                   className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left ${
@@ -1560,26 +1557,11 @@ const handleImportExcel = async () => {
                     {manufacturers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                   <div className="mt-3">
-                    <p className="text-gray-400 text-xs">Todos los fabricantes usan la misma plantilla. Para importar, el archivo debe tener las columnas del modelo (no importa el orden, se reconocen por el nombre). El COSTO BS, el COSTO TIENDAS y la escalera 20%..80% se calculan automáticamente con las fórmulas del Excel.</p>
+                    <p className="text-gray-400 text-xs">Todos los fabricantes usan la misma plantilla. Para importar, el archivo debe tener las columnas del modelo (no importa el orden, se reconocen por el nombre). El COSTO BS, el COSTO TIENDAS, los PRECIOS y la escalera 20%..80% se toman tal cual del archivo, sin fórmulas.</p>
                     <button onClick={downloadImportTemplate} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 hover:text-primary-200 border border-primary-600/30 rounded-lg text-xs font-medium transition-all">
                       <Download size={14} /> Descargar plantilla (con nombres y orden de columnas)
                     </button>
-                    <div className="grid grid-cols-3 gap-2 mt-3">
-                      <div>
-                        <label htmlFor="import-tc" className="block text-xs text-gray-400 mb-1">Tipo de cambio</label>
-                        <input id="import-tc" type="number" step="any" min="0" value={importExchangeRate} onChange={(e) => setImportExchangeRate(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                      </div>
-                      <div>
-                        <label htmlFor="import-cf" className="block text-xs text-gray-400 mb-1">Factor costo</label>
-                        <input id="import-cf" type="number" step="any" min="0" value={importCostFactor} onChange={(e) => setImportCostFactor(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                      </div>
-                      <div>
-                        <label htmlFor="import-hf" className="block text-xs text-gray-400 mb-1">Factor Costo Tiendas</label>
-                        <input id="import-hf" type="number" step="any" min="0" value={importHermanaFactor} onChange={(e) => setImportHermanaFactor(e.target.value)} className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                      </div>
-                    </div>
                   </div>
-                  <p className="text-xs text-gray-600 mt-2">Fórmulas: Costo = Unit Price × TC × Factor costo · Costo Tiendas = Unit Price × TC × Factor Costo Tiendas · 20..80% = Costo × 1.2..1.8.</p>
                 </div>
               ) : (
                 <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">

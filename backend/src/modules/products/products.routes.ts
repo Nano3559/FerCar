@@ -682,12 +682,10 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     categories.forEach((c) => { catMap[c.name.toLowerCase()] = c.id; });
 
     // Plantilla única para todos los fabricantes: columns fijas Item Number /
-    // Description / Quantity / Unit Price / XMAYOR y columnas calculadas con
-    // las fórmulas del Excel; el fabricante lo elige el usuario en el modal.
+    // Description / Quantity / Unit Price / XMAYOR y columnas de costos y
+    // precios que se leen tal cual del archivo (sin fórmulas); el fabricante
+    // lo elige el usuario en el modal.
     const importType: "depo" | "actualizar" = req.body.importType === "actualizar" ? "actualizar" : "depo";
-    const exchangeRate = parseFloat(req.body.exchangeRate) > 0 ? parseFloat(req.body.exchangeRate) : 10.03;
-    const costFactor = parseFloat(req.body.costFactor) > 0 ? parseFloat(req.body.costFactor) : 1.5;
-    const hermanaFactor = parseFloat(req.body.hermanaFactor) > 0 ? parseFloat(req.body.hermanaFactor) : 1.6;
 
     const selectedManufacturerId = Number(req.body.manufacturerId) || null;
     let selectedManufacturer = "DEPO";
@@ -798,6 +796,10 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         Quantity: ["Quantity", "CANTIDAD", "Cantidad", "Stock"],
         "Unit Price": ["Unit Price", "Precio USD", "PRECIO USD", "COSTO UNITARIO", "Costo Unitario", "COSTO UNIT.", "Precio Unitario"],
         XMAYOR: ["XMAYOR", "Precio Mayor", "PRECIO MAYOR", "Precio Mayoreo"],
+        "COSTO BS": ["COSTO BS", "Costo Bs", "COSTO Bs", "Costo BS", "COSTO BS."],
+        "COSTO TIENDAS": ["COSTO TIENDAS", "Costo Tiendas", "COSTO TIENDAS.", "Hermanas", "HERMANAS"],
+        "PRECIO 1": ["PRECIO 1", "Precio 1", "Precio Minorista"],
+        "PRECIO 2": ["PRECIO 2", "Precio 2", "Precio Mayoreo"],
       };
       const hasDepoCol = (name: string): boolean => {
         const aliases = depoAliases[name] || [name];
@@ -816,7 +818,8 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
           }
           return undefined;
         };
-        const unitPriceUsd = parseFloat(String(depoCell("Unit Price") ?? "0")) || 0;
+        const cellNum = (v: any): number => parseFloat(String(v).replace(/,/g, "")) || 0;
+        const unitPriceUsd = cellNum(depoCell("Unit Price"));
         itemCode = String(depoCell("Item Number") ?? "").toString().trim();
         name = String(depoCell("Description") ?? depoCell("Descripcion") ?? "").toString().trim();
         manufacturer = selectedManufacturer;
@@ -827,11 +830,11 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         oemCode = cellOf(["OEM", "Codigo OEM", "Codigo oem", "Cód. OEM", "Cod. OEM", "Cod.OEM", "Código OEM"]);
         factoryCode = cellOf(["Codigo Fabrica", "Codigo fabrica", "Codigo Fábrica", "Código fábrica", "Código fabrica", "Cód. Fábrica", "Cod. Fabrica", "CODIGO FABRICA"]);
         unitPrice = unitPriceUsd;
-        cost = round2(unitPriceUsd * exchangeRate * costFactor);
-        priceHermana = round2(unitPriceUsd * exchangeRate * hermanaFactor);
-        price1 = priceHermana || cost;
-        price2 = round2(cost * 1.8);
-        wholesalePrice = parseFloat(String(depoCell("XMAYOR") ?? "0")) || 0;
+        cost = cellNum(depoCell("COSTO BS"));
+        priceHermana = cellNum(depoCell("COSTO TIENDAS"));
+        price1 = cellNum(depoCell("PRECIO 1"));
+        price2 = cellNum(depoCell("PRECIO 2"));
+        wholesalePrice = cellNum(depoCell("XMAYOR"));
         rowStock = parseInt(String(depoCell("Quantity") ?? "0"), 10) || 0;
         calidad = "";
       }
@@ -912,7 +915,8 @@ if (!name) {
         const perLocationStock = getPerLocationStock(row);
 
         if (importType === "depo") {
-          if (!unitPrice) rowWarnings.push(`${label}: Unit Price vacío — precios quedan en 0, editarlo manualmente`);
+          if (!unitPrice) rowWarnings.push(`${label}: Unit Price vacío — costos USD en 0, editarlo manualmente`);
+          if (!cost) rowWarnings.push(`${label}: COSTO BS vacío — quedó en 0, editarlo manualmente`);
           if (!rowStock) rowWarnings.push(`${label}: Quantity vacío o en 0 — sin stock`);
           if (hasDepoCol("XMAYOR") && !wholesalePrice) rowWarnings.push(`${label}: XMAYOR vacío — sin Precio Mayor`);
         } else if (importType === "actualizar") {
@@ -978,7 +982,7 @@ if (!name) {
               });
             }
           }
-          if (supplierId !== null && cost > 0) await recordSupplierCost(existing.id, supplierId, cost, exchangeRate);
+          if (supplierId !== null && cost > 0) await recordSupplierCost(existing.id, supplierId, cost, null);
           if (importType === "actualizar" && proveedor) {
             const costForSupplier = cost > 0 ? cost : unitPrice;
             const supId = supplierByName[normalize(proveedor)];
@@ -1037,7 +1041,7 @@ if (!name) {
               });
             }
           }
-          if (supplierId !== null && cost > 0) await recordSupplierCost(product.id, supplierId, cost, exchangeRate);
+          if (supplierId !== null && cost > 0) await recordSupplierCost(product.id, supplierId, cost, null);
           if (importType === "actualizar" && proveedor) {
             const costForSupplier = cost > 0 ? cost : unitPrice;
             const supId = supplierByName[normalize(proveedor)];
