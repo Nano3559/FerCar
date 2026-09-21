@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
-import ProductImage, { toEmbedUrl } from "../components/public/ProductImage";
+import ProductImage from "../components/public/ProductImage";
 import ImagePreview from "../components/ui/ImagePreview";
 import { validateYearRanges } from "../utils/yearRanges";
 import Autocomplete from "../components/ui/Autocomplete";
@@ -1681,23 +1681,28 @@ function ImageUrlsPreview({ text }: { text: string }) {
   const urls = text.split(/[,\n]+/).map((u) => u.trim()).filter(Boolean);
   if (urls.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-2 mt-2" aria-live="polite">
+    <div className="mt-2 space-y-1.5" aria-live="polite">
       {urls.map((u, i) => (
-        <div key={i} title={u} className="relative w-12 h-12 rounded-lg overflow-hidden bg-dark-900/50 border border-dark-700">
-          <img
-            src={toEmbedUrl(u)}
-            referrerPolicy="no-referrer"
-            alt={`Vista previa foto ${i + 1}`}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.opacity = "0.2";
-              (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
-            }}
-          />
-          <div className="absolute inset-0 hidden items-center justify-center bg-red-500/20">
-            <X size={14} className="text-red-400" />
+        <div key={i} className="flex items-center gap-2">
+          <div className="relative w-12 h-12 shrink-0 rounded-lg overflow-hidden bg-dark-900/50 border border-dark-700">
+            <img
+              src={u}
+              referrerPolicy="no-referrer"
+              alt={`Vista previa foto ${i + 1}`}
+              loading="lazy"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.opacity = "0.2";
+                (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
+              }}
+            />
+            <div className="absolute inset-0 hidden items-center justify-center bg-red-500/20">
+              <X size={14} className="text-red-400" />
+            </div>
           </div>
+          <span title={u} className="text-[11px] text-gray-400 break-all leading-snug">
+            {u}
+          </span>
         </div>
       ))}
     </div>
