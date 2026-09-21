@@ -174,10 +174,7 @@ export default function InventoryPage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
-  const [importLocationId, setImportLocationId] = useState("");
-  const [importManufacturerId, setImportManufacturerId] = useState("");
   const [importType, setImportType] = useState<"depo" | "actualizar">("depo");
-  const [importSupplierId, setImportSupplierId] = useState("");
   const [dragActive, setDragActive] = useState(false);
 
   const [manufacturers, setManufacturers] = useState<{ id: number; name: string; description: string | null }[]>([]);
@@ -485,30 +482,6 @@ export default function InventoryPage() {
 
   const formatCurrency = (v: string) => `Bs. ${Number(v).toLocaleString("es-BO", { minimumFractionDigits: 2 })}`;
 
-  const downloadImportTemplate = () => {
-    const headers = ["CODIGO OEM", "CODIGO FABRICA", "Description", "CANTIDAD", "COSTO UNITARIO", "COSTO BS", "COSTO TIENDAS", "PRECIO 1", "PRECIO 2", "XMAYOR", "PROVEEDOR", "IMAGEN"];
-    const example: Record<string, unknown> = {
-      "CODIGO OEM": "100000-100000",
-      "CODIGO FABRICA": "11-11920005B3",
-      Description: "BISEL TOYOTA COROLLA 84-87 VAGONETA LH",
-      CANTIDAD: 20,
-      "COSTO UNITARIO": 9.9,
-      "COSTO BS": 68.88,
-      "COSTO TIENDAS": 110.21,
-      "PRECIO 1": 110.21,
-      "PRECIO 2": 124,
-      XMAYOR: "",
-      PROVEEDOR: "SARA GARCIA",
-      IMAGEN: "",
-    };
-    const ws = XLSX.utils.json_to_sheet([example], { header: headers });
-    ws["!cols"] = headers.map((h) => ({ wch: Math.max(h.length, String(example[h] ?? "").length) + 2 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
-    XLSX.writeFile(wb, "Plantilla_Importacion_Productos.xlsx");
-    toast.success("Plantilla descargada");
-  };
-
   const downloadInventoryTemplate = () => {
     const headers = ["PROVEEDOR", "FABRICANTE", "PRODUCTO", "MARCA", "MODELO", "AÑO", "DETALLES", "COD OEM", "COD FABRICA", "COSTO $", "COSTO BS", "COSTO TIENDAS", "PRECIO 1", "PRECIO 2", "PRECIO MAYOR", "IMAGEN", ...locations.map((l) => l.name)];
     const example: Record<string, unknown> = {
@@ -540,19 +513,12 @@ export default function InventoryPage() {
 
 const handleImportExcel = async () => {
     if (!importFile) return;
-    if (importType === "depo" && !importManufacturerId) {
-      toast.error("Selecciona el fabricante del archivo");
-      return;
-    }
     try {
       setImporting(true);
       setImportResult(null);
       const formData = new FormData();
       formData.append("file", importFile);
       formData.append("importType", importType);
-      if (importType === "depo") formData.append("manufacturerId", importManufacturerId);
-      if (importSupplierId) formData.append("supplierId", importSupplierId);
-      if (importLocationId) formData.append("locationId", importLocationId);
       const res = await api.post("/products/import", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -1541,66 +1507,27 @@ const handleImportExcel = async () => {
                   className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left ${
                     importType === "depo" ? "bg-primary-600/10 border-primary-600/30 text-primary-400" : "bg-dark-900/50 border-dark-700/50 text-gray-500 hover:text-gray-300"
                   }`}>
-                  Importar Catálogo nuevo
+                  Importar 1
                 </button>
                 <button type="button" onClick={() => setImportType("actualizar")}
                   className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left ${
                     importType === "actualizar" ? "bg-primary-600/10 border-primary-600/30 text-primary-400" : "bg-dark-900/50 border-dark-700/50 text-gray-500 hover:text-gray-300"
                   }`}>
-                  Actualizar inventario
+                  Importar 2
                 </button>
               </div>
 
-              {importType === "depo" ? (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
-                  <p className="text-blue-400 text-xs font-medium mb-1">Fabricante del archivo:</p>
-                  <select value={importManufacturerId} onChange={(e) => setImportManufacturerId(e.target.value)} aria-label="Fabricante" className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none mt-1">
-                    <option value="">Selecciona el fabricante</option>
-                    {manufacturers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                  <div className="mt-3">
-                    <p className="text-gray-400 text-xs">Todos los fabricantes usan la misma plantilla. Para importar, el archivo debe tener las columnas del modelo (no importa el orden, se reconocen por el nombre). El COSTO BS, el COSTO TIENDAS, los PRECIOS y el XMAYOR se toman tal cual del archivo. La marca, el modelo, el año y los detalles se calculan automáticamente desde la descripción. Opcionalmente puede incluir PROVEEDOR (asocia el costo al proveedor) e IMAGEN (URL o hipervínculo).</p>
-                    <button onClick={downloadImportTemplate} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 hover:text-primary-200 border border-primary-600/30 rounded-lg text-xs font-medium transition-all">
-                      <Download size={14} /> Descargar plantilla (con nombres y orden de columnas)
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
-                  <p className="text-blue-400 text-xs font-medium mb-1">Carga directa del inventario</p>
-                  <p className="text-gray-400 text-xs">El archivo debe traer las columnas PROVEEDOR, FABRICANTE, PRODUCTO, MARCA, MODELO, AÑO, DETALLES, COD OEM, COD FABRICA, COSTO $, COSTO BS, COSTO TIENDAS, PRECIO 1, PRECIO 2, PRECIO MAYOR e IMAGEN (en cualquier orden, se reconocen por el nombre), más una columna por cada ubicación (Tienda 1, Almacén 1...) con la cantidad que hay en cada una. El stock de cada producto es la suma de las ubicaciones. Los costos, precios y la imagen se toman tal cual, sin fórmulas.</p>
-                  <button onClick={downloadInventoryTemplate} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 hover:text-primary-200 border border-primary-600/30 rounded-lg text-xs font-medium transition-all">
-                    <Download size={14} /> Descargar plantilla de inventario
-                  </button>
-                </div>
-              )}
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+                <p className="text-gray-400 text-xs">El archivo debe traer las columnas PROVEEDOR, FABRICANTE, PRODUCTO/DESCRIPCION, COD OEM, COD FABRICA, COSTO $, COSTO BS, COSTO TIENDAS, PRECIO 1, PRECIO 2, PRECIO MAYOR e IMAGEN (en cualquier orden, se reconocen por el nombre), más una columna por cada ubicación (TUMUSLA, MELCHOR...) con la cantidad que hay en cada una. El stock sin ubicación asignada va a CHIQUICOLLO. Los costos, precios y la imagen se toman tal cual, sin fórmulas. La diferencia entre Importar 1 e Importar 2: en Importar 1 el PRODUCTO/DESCRIPCION se divide automáticamente en marca, modelo, año y detalles.</p>
+                <button onClick={downloadInventoryTemplate} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 hover:text-primary-200 border border-primary-600/30 rounded-lg text-xs font-medium transition-all">
+                  <Download size={14} /> Descargar plantilla
+                </button>
+              </div>
 
               <p className="text-gray-400 text-xs">Podés usar columnas que coincidan con el nombre de cada ubicación (Tienda 1, Almacén 1...) para repartir el stock entre varias ubicaciones.</p>
             </div>
                 {!importResult ? (
                   <div className="space-y-3">
-                  {importType === "depo" && (
-                    <>
-                  <div>
-                    <label htmlFor="import-supplier" className="block text-xs text-gray-400 mb-1">Proveedor</label>
-                    <select id="import-supplier" value={importSupplierId} onChange={(e) => setImportSupplierId(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
-                      <option value="">Sin proveedor</option>
-                      {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                    <p className="text-xs text-gray-600 mt-1">Asocia el costo de cada fila al proveedor (aparece en sus costos).</p>
-                  </div>
-                  <div>
-                    <label htmlFor="import-loc" className="block text-xs text-gray-400 mb-1">Ubicación de los productos</label>
-                    <select id="import-loc" value={importLocationId} onChange={(e) => setImportLocationId(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
-                      <option value="">Todas las ubicaciones (stock 0)</option>
-                      {locations.map((location) => <option key={location.id} value={location.id}>{location.name} ({location.type})</option>)}
-                    </select>
-                    <p className="text-xs text-gray-600 mt-1">Si eliges una ubicación, la columna Stock se asigna allí.</p>
-                  </div>
-                    </>
-                  )}
                   <label
                     onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                     onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragActive(false); }}

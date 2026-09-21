@@ -687,23 +687,11 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     // lo elige el usuario en el modal.
     const importType: "depo" | "actualizar" = req.body.importType === "actualizar" ? "actualizar" : "depo";
 
-    const selectedManufacturerId = Number(req.body.manufacturerId) || null;
-    let selectedManufacturer = "DEPO";
-    if (selectedManufacturerId !== null) {
-      const found = await prisma.manufacturer.findUnique({ where: { id: selectedManufacturerId } });
-      if (!found) {
-        return res.status(400).json({ message: "Fabricante no encontrado" });
-      }
-      selectedManufacturer = found.name;
-    }
-
-    const supplierId = req.body.supplierId ? Number(req.body.supplierId) : null;
-    if (supplierId !== null) {
-      const supplier = await prisma.supplier.findUnique({ where: { id: supplierId } });
-      if (!supplier) {
-        return res.status(400).json({ message: "Proveedor no encontrado" });
-      }
-    }
+    // El proveedor, el fabricante y las ubicaciones vienen en el propio Excel
+    // (columnas PROVEEDOR, FABRICANTE y una por cada ubicación), igual que en
+    // la opción de actualizar inventario. Ya no se eligen en el modal.
+    const supplierId: number | null = null;
+    const requestedLocationId = 0;
 
     // Mapa de ubicaciones por nombre normalizado (con/sin tildes) para
     // distribuir stock usando columnas tipo "Tienda 1", "Almacén 1", etc.
@@ -731,15 +719,6 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       }
       return result;
     };
-
-    // Validar que locationId global exista si se proporciona
-    const requestedLocationId = Number(req.body.locationId) || 0;
-    if (requestedLocationId) {
-      const globalLocation = await prisma.location.findUnique({ where: { id: requestedLocationId } });
-      if (!globalLocation) {
-        return res.status(400).json({ message: `Ubicación no encontrada (ID: ${requestedLocationId})` });
-      }
-    }
 
     const imported: any[] = [];
     const updated: any[] = [];
@@ -783,105 +762,44 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       let rowStock = parseInt(row["Stock"] || row["stock"] || "0", 10) || 0;
       const rowLocation = (row["Ubicación"] || row["Ubicacion"] || row["Tienda"] || row["Almacén"] || row["Almacen"] || "").toString().trim();
 
-      // Plantilla por fabricante (DEPO): las columnas fijas del Excel son
-      // Item Number, Description, Quantity, Unit Price y XMAYOR; el resto
-      // (COSTO BS, HERMANAS, 20%..80%) se calcula con las fórmulas del archivo
-      // a partir de Unit Price y los factores que el usuario carga en el modal.
-      // También se aceptan variantes del mismo archivo (listado/precios), con
-      // los aliases CANTIDAD↔Quantity, COSTO UNITARIO↔Unit Price y
-      // CODIGO FABRICA↔Item Number.
-      const depoAliases: Record<string, string[]> = {
-        "Item Number": ["Item Number", "CODIGO FABRICA", "Codigo Fabrica", "Código Fábrica", "Código fabrica", "Codigo de Fabrica", "N° Parte", "No. Parte"],
-        Description: ["Description", "Descripcion", "Descripción"],
-        Quantity: ["Quantity", "CANTIDAD", "Cantidad", "Stock"],
-        "Unit Price": ["Unit Price", "Precio USD", "PRECIO USD", "COSTO UNITARIO", "Costo Unitario", "COSTO UNIT.", "Precio Unitario"],
-        XMAYOR: ["XMAYOR", "Precio Mayor", "PRECIO MAYOR", "Precio Mayoreo"],
-        "COSTO BS": ["COSTO BS", "Costo Bs", "COSTO Bs", "Costo BS", "COSTO BS."],
-        "COSTO TIENDAS": ["COSTO TIENDAS", "Costo Tiendas", "COSTO TIENDAS.", "Hermanas", "HERMANAS"],
-        "PRECIO 1": ["PRECIO 1", "Precio 1", "Precio Minorista"],
-        "PRECIO 2": ["PRECIO 2", "Precio 2", "Precio Mayoreo"],
-        PROVEEDOR: ["PROVEEDOR", "Proveedor"],
-        IMAGEN: ["IMAGEN", "Imagen", "Image", "URL Imagen"],
+      // Lectura unificada para ambas opciones: Importar 1 (catálogo nuevo) e
+      // Importar 2 (actualizar inventario) comparten el mismo formato de Excel.
+      // Se reconocen por nombre (no importa el orden): PROVEEDOR, FABRICANTE,
+      // PRODUCTO/DESCRIPCION, MARCA, MODELO, AÑO, DETALLES, COD OEM,
+      // COD FABRICA, COSTO $, COSTO BS, COSTO TIENDAS, PRECIO 1, PRECIO 2,
+      // PRECIO MAYOR, IMAGEN, STOCK más una columna por cada ubicación.
+      // La única diferencia: Importar 1 divide la columna descripción en
+      // producto, marca, modelo, año y detalles (classifyProductName).
+      const cellA = (aliases: string[]): string => {
+        for (const a of aliases) {
+          if (row[a] !== undefined && row[a] !== null) return String(row[a]).trim();
+          const key = Object.keys(row).find((k) => k.trim().toLowerCase() === a.toLowerCase());
+          if (key !== undefined && row[key] !== null) return String(row[key]).trim();
+        }
+        return "";
       };
-      const hasDepoCol = (name: string): boolean => {
-        const aliases = depoAliases[name] || [name];
-        return aliases.some((a) => {
-          if (row[a] !== undefined && row[a] !== null) return true;
-          return Object.keys(row).some((k) => k.trim().toLowerCase() === a.toLowerCase());
-        });
-      };
+      const numA = (v: string): number => parseFloat(String(v).replace(/,/g, "")) || 0;
       let proveedor = "";
       let imagenUrls: string[] = [];
-      if (importType === "depo") {
-        const depoCell = (name: string): any => {
-          const aliases = depoAliases[name] || [name];
-          for (const a of aliases) {
-            if (row[a] !== undefined && row[a] !== null && String(row[a]).trim() !== "") return row[a];
-            const found = Object.keys(row).find((k) => k.trim().toLowerCase() === a.toLowerCase());
-            if (found !== undefined && String(row[found]).trim() !== "") return row[found];
-          }
-          return undefined;
-        };
-        const cellNum = (v: any): number => parseFloat(String(v).replace(/,/g, "")) || 0;
-        const unitPriceUsd = cellNum(depoCell("Unit Price"));
-        itemCode = String(depoCell("Item Number") ?? "").toString().trim();
-        name = String(depoCell("Description") ?? depoCell("Descripcion") ?? "").toString().trim();
-        manufacturer = selectedManufacturer;
-        brand = "Sin marca";
-        model = "Sin modelo";
-        year = "";
-        detail = "";
-        oemCode = cellOf(["OEM", "Codigo OEM", "Codigo oem", "Cód. OEM", "Cod. OEM", "Cod.OEM", "Código OEM"]);
-        factoryCode = cellOf(["Codigo Fabrica", "Codigo fabrica", "Codigo Fábrica", "Código fábrica", "Código fabrica", "Cód. Fábrica", "Cod. Fabrica", "CODIGO FABRICA"]);
-        unitPrice = unitPriceUsd;
-        cost = cellNum(depoCell("COSTO BS"));
-        priceHermana = cellNum(depoCell("COSTO TIENDAS"));
-        price1 = cellNum(depoCell("PRECIO 1"));
-        price2 = cellNum(depoCell("PRECIO 2"));
-        wholesalePrice = cellNum(depoCell("XMAYOR"));
-        rowStock = parseInt(String(depoCell("Quantity") ?? "0"), 10) || 0;
-        calidad = "";
-
-        // Columnas adicionales opcionales: proveedor e imagen se leen si el
-        // archivo las trae. Marca/Modelo/Año/Detalles se calculan después con
-        // classifyProductName a partir de la descripción (lógica original).
-        proveedor = String(depoCell("PROVEEDOR") ?? "").toString().trim();
-        imagenUrls = String(depoCell("IMAGEN") ?? "").split(",").map((u) => u.trim()).filter(Boolean);
-      }
-
-      // Carga directa de inventario: el archivo trae las columnas mostradas
-      // en Pantalla (PROVEEDOR..IMAGEN) más una columna por cada ubicación
-      // con la cantidad existente ahí. No calcula nada: usa los valores tal cual.
-      if (importType === "actualizar") {
-        const cellA = (aliases: string[]): string => {
-          for (const a of aliases) {
-            if (row[a] !== undefined && row[a] !== null) return String(row[a]).trim();
-            const key = Object.keys(row).find((k) => k.trim().toLowerCase() === a.toLowerCase());
-            if (key !== undefined && row[key] !== null) return String(row[key]).trim();
-          }
-          return "";
-        };
-        const numA = (v: string): number => parseFloat(String(v).replace(/,/g, "")) || 0;
-        name = cellA(["PRODUCTO", "Producto", "Descripción", "Descripcion", "Nombre"]);
-        brand = cellA(["MARCA", "Marca"]);
-        model = cellA(["MODELO", "Modelo"]);
-        year = cellA(["AÑO", "Año", "Ano", "Años"]);
-        detail = cellA(["DETALLES", "Detalles", "Detalle"]);
-        oemCode = cellA(["COD OEM", "Código OEM", "Codigo OEM", "CÓD OEM", "Cód. OEM", "Cod. OEM", "OEM"]);
-        factoryCode = cellA(["COD FABRICA", "Código Fábrica", "Codigo Fabrica", "CÓD FÁBRICA", "Cód. Fábrica", "Cod. Fabrica", "CODIGO FABRICA"]);
-        manufacturer = cellA(["FABRICANTE", "Fabricante"]) || "Sin especificar";
-        proveedor = cellA(["PROVEEDOR", "Proveedor"]);
-        unitPrice = numA(cellA(["COSTO $", "Costo $", "COSTO USD", "Unit Price", "Precio USD", "COSTO UNITARIO"]));
-        cost = numA(cellA(["COSTO BS", "Costo Bs", "COSTO Bs", "Costo BS"]));
-        priceHermana = numA(cellA(["COSTO TIENDAS", "Costo Tiendas", "Costo Tienda", "HERMANAS", "Hermanas"]));
-        price1 = numA(cellA(["PRECIO 1", "Precio 1"]));
-        price2 = numA(cellA(["PRECIO 2", "Precio 2"]));
-        wholesalePrice = numA(cellA(["PRECIO MAYOR", "Precio Mayor", "Precio mayor", "Precio Mayoreo"]));
-        imagenUrls = cellA(["IMAGEN", "Imagen", "Image", "URL Imagen"]).split(",").map((u) => u.trim()).filter(Boolean);
-        rowStock = numA(cellA(["STOCK", "Stock"]));
-        calidad = "";
-        itemCode = factoryCode || oemCode;
-      }
+      name = cellA(["DESCRIPCION", "Descripcion", "Descripción", "Description", "PRODUCTO", "Producto", "Nombre"]);
+      brand = cellA(["MARCA", "Marca"]);
+      model = cellA(["MODELO", "Modelo"]);
+      year = cellA(["AÑO", "Año", "Ano", "Años"]);
+      detail = cellA(["DETALLES", "Detalles", "Detalle"]);
+      oemCode = cellA(["COD OEM", "Código OEM", "Codigo OEM", "CÓD OEM", "Cód. OEM", "Cod. OEM", "OEM"]);
+      factoryCode = cellA(["COD FABRICA", "Código Fábrica", "Codigo Fabrica", "CÓD FÁBRICA", "Cód. Fábrica", "Cod. Fabrica", "CODIGO FABRICA", "Item Number", "Item #", "N° Parte", "No. Parte"]);
+      manufacturer = cellA(["FABRICANTE", "Fabricante"]) || "Sin especificar";
+      proveedor = cellA(["PROVEEDOR", "Proveedor"]);
+      unitPrice = numA(cellA(["COSTO $", "Costo $", "COSTO USD", "Unit Price", "Precio USD", "COSTO UNITARIO", "COSTO UNIT.", "Precio Unitario"]));
+      cost = numA(cellA(["COSTO BS", "Costo Bs", "COSTO Bs", "Costo BS"]));
+      priceHermana = numA(cellA(["COSTO TIENDAS", "Costo Tiendas", "Costo Tienda", "HERMANAS", "Hermanas"]));
+      price1 = numA(cellA(["PRECIO 1", "Precio 1", "Precio Minorista"]));
+      price2 = numA(cellA(["PRECIO 2", "Precio 2", "Precio Mayoreo"]));
+      wholesalePrice = numA(cellA(["PRECIO MAYOR", "Precio Mayor", "Precio mayor", "Precio Mayoreo", "XMAYOR"]));
+      imagenUrls = cellA(["IMAGEN", "Imagen", "Image", "URL Imagen"]).split(",").map((u) => u.trim()).filter(Boolean);
+      rowStock = numA(cellA(["STOCK", "Stock", "CANTIDAD", "Cantidad", "Quantity"]));
+      calidad = "";
+      itemCode = itemCode || factoryCode || oemCode;
 
       // Imágenes: prioridad al hipervínculo real de la celda (sheet_to_json
       // entrega el texto mostrado, p. ej. "Ir"); se descartan valores que no
@@ -921,20 +839,12 @@ if (!name) {
         }
         const perLocationStock = getPerLocationStock(row);
 
-        if (importType === "depo") {
-          if (!unitPrice) rowWarnings.push(`${label}: Unit Price vacío — costos USD en 0, editarlo manualmente`);
-          if (!cost) rowWarnings.push(`${label}: COSTO BS vacío — quedó en 0, editarlo manualmente`);
-          if (!rowStock) rowWarnings.push(`${label}: Quantity vacío o en 0 — sin stock`);
-          if (hasDepoCol("XMAYOR") && !wholesalePrice) rowWarnings.push(`${label}: XMAYOR vacío — sin Precio Mayor`);
-        } else if (importType === "actualizar") {
-          if (!price1) rowWarnings.push(`${label}: Precio 1 vacío — quedó en 0, editarlo manualmente`);
-          if (!cost) rowWarnings.push(`${label}: COSTO BS vacío — quedó en 0, editarlo manualmente`);
-          if (!rowStock && perLocationStock.length === 0) rowWarnings.push(`${label}: sin stock en ninguna ubicación — quedó en 0`);
-        } else {
-          if (!price1) rowWarnings.push(`${label}: Precio 1 vacío — quedó en 0, editarlo manualmente`);
-          if (!cost) rowWarnings.push(`${label}: Costo vacío — quedó en 0, editarlo manualmente`);
-          if (!rowStock) rowWarnings.push(`${label}: Stock vacío o en 0 — sin stock`);
-        }
+        if (!price1) rowWarnings.push(`${label}: Precio 1 vacío — quedó en 0, editarlo manualmente`);
+        if (!price2) rowWarnings.push(`${label}: Precio 2 vacío — quedó en 0, editarlo manualmente`);
+        if (!cost) rowWarnings.push(`${label}: COSTO BS vacío — quedó en 0, editarlo manualmente`);
+        if (!unitPrice) rowWarnings.push(`${label}: COSTO $ vacío — costos USD en 0, editarlo manualmente`);
+        if (!wholesalePrice) rowWarnings.push(`${label}: PRECIO MAYOR vacío — sin Precio Mayor`);
+        if (!rowStock && perLocationStock.length === 0) rowWarnings.push(`${label}: sin stock en ninguna ubicación — quedó en 0`);
         rowWarnings.forEach((w) => warnings.push(w));
 
         let categoryId: number | null = null;
@@ -943,13 +853,9 @@ if (!name) {
         }
 
         let existing = null;
-        if (importType === "actualizar") {
-          existing = itemCode ? await prisma.product.findUnique({ where: { itemCode } }) : null;
-          if (!existing && factoryCode && itemCode !== factoryCode) existing = await prisma.product.findFirst({ where: { factoryCode } });
-          if (!existing && oemCode) existing = await prisma.product.findFirst({ where: { oemCode } });
-        } else {
-          existing = await prisma.product.findUnique({ where: { itemCode } });
-        }
+        existing = itemCode ? await prisma.product.findUnique({ where: { itemCode } }) : null;
+        if (!existing && factoryCode && itemCode !== factoryCode) existing = await prisma.product.findFirst({ where: { factoryCode } });
+        if (!existing && oemCode) existing = await prisma.product.findFirst({ where: { oemCode } });
 
         if (existing) {
           const updateData: any = {};
@@ -1004,7 +910,7 @@ if (!name) {
             }
           } else if (rowLocationId && rowStock > 0) {
             await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: rowLocationId } }, update: { stock: { increment: rowStock } }, create: { productId: existing.id, locationId: rowLocationId, stock: rowStock, minStock: minStockFor(rowLocationId) } });
-          } else if (importType === "actualizar" && defaultLocationId && rowStock > 0) {
+          } else if (defaultLocationId && rowStock > 0) {
             await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: defaultLocationId } }, update: { stock: { increment: rowStock } }, create: { productId: existing.id, locationId: defaultLocationId, stock: rowStock, minStock: minStockFor(defaultLocationId) } });
             warnings.push(`${label}: stock sin ubicación asignada — fue a CHIQUICOLLO`);
           }
@@ -1064,7 +970,7 @@ if (!name) {
             allLocations.forEach((l) => { stockByLoc[l.id] = 0; });
             perLocationStock.forEach((p) => { stockByLoc[p.locationId] = p.stock; });
             for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: minStockFor(loc.id) } });
-          } else if (importType === "actualizar" && defaultLocationId && rowStock > 0) {
+          } else if (defaultLocationId && rowStock > 0) {
             const stockByLoc: Record<number, number> = {};
             allLocations.forEach((l) => { stockByLoc[l.id] = 0; });
             stockByLoc[defaultLocationId] = rowStock;
