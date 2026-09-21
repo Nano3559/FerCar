@@ -15,13 +15,13 @@ const categoryConfig: Record<string, { bg: string; icon: string; label: string }
   Transmisión: { bg: "#0D9488", icon: "⛓", label: "TRANSMISIÓN" },
 };
 
-const embedAngleUrl = "https://lh3.googleusercontent.com/d/";
-
 export const toEmbedUrl = (u: string): string => {
+  const idFromLh3 = u.match(/lh3\.googleusercontent\.com\/d\/([A-Za-z0-9_-]+)/);
+  if (idFromLh3) return `https://drive.google.com/uc?export=view&id=${idFromLh3[1]}`;
   const driveFile = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
-  if (driveFile) return `${embedAngleUrl}${driveFile[1]}=w1600`;
+  if (driveFile) return `https://drive.google.com/uc?export=view&id=${driveFile[1]}`;
   const driveOpen = u.match(/drive\.google\.com\/open\?id=([^&#]+)/);
-  if (driveOpen) return `${embedAngleUrl}${driveOpen[1]}=w1600`;
+  if (driveOpen) return `https://drive.google.com/uc?export=view&id=${driveOpen[1]}`;
   return u;
 };
 
@@ -30,6 +30,7 @@ export default function ProductImage({ category, name, image, className = "" }: 
     return (
       <img
         src={toEmbedUrl(image)}
+        referrerPolicy="no-referrer"
         alt={name || "Producto"}
         className={`w-full h-full object-contain ${className}`}
         onError={(e) => {

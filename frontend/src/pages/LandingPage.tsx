@@ -88,6 +88,7 @@ function ProductCardPlaceholder({ product }: { product: FeaturedProduct }) {
         {product.image ? (
           <img
             src={toEmbedUrl(product.image)}
+            referrerPolicy="no-referrer"
             alt={product.name}
             className="w-full h-full object-contain"
           />

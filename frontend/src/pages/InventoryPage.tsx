@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
-import ProductImage from "../components/public/ProductImage";
+import ProductImage, { toEmbedUrl } from "../components/public/ProductImage";
 import ImagePreview from "../components/ui/ImagePreview";
 import { validateYearRanges } from "../utils/yearRanges";
 import Autocomplete from "../components/ui/Autocomplete";
@@ -304,11 +304,11 @@ export default function InventoryPage() {
       }
       const driveFile = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
       if (driveFile) {
-        return `https://lh3.googleusercontent.com/d/${driveFile[1]}=w1600`;
+        return `https://drive.google.com/uc?export=view&id=${driveFile[1]}`;
       }
       const driveOpen = u.match(/drive\.google\.com\/open\?id=([^&#]+)/);
       if (driveOpen) {
-        return `https://lh3.googleusercontent.com/d/${driveOpen[1]}=w1600`;
+        return `https://drive.google.com/uc?export=view&id=${driveOpen[1]}`;
       }
       return u;
     };
@@ -1685,7 +1685,8 @@ function ImageUrlsPreview({ text }: { text: string }) {
       {urls.map((u, i) => (
         <div key={i} title={u} className="relative w-12 h-12 rounded-lg overflow-hidden bg-dark-900/50 border border-dark-700">
           <img
-            src={u}
+            src={toEmbedUrl(u)}
+            referrerPolicy="no-referrer"
             alt={`Vista previa foto ${i + 1}`}
             loading="lazy"
             className="w-full h-full object-cover"
