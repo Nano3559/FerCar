@@ -1541,13 +1541,13 @@ const handleImportExcel = async () => {
                   className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left ${
                     importType === "depo" ? "bg-primary-600/10 border-primary-600/30 text-primary-400" : "bg-dark-900/50 border-dark-700/50 text-gray-500 hover:text-gray-300"
                   }`}>
-                  Catálogo DEPO
+                  Importar Catálogo nuevo
                 </button>
                 <button type="button" onClick={() => setImportType("actualizar")}
                   className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all text-left ${
                     importType === "actualizar" ? "bg-primary-600/10 border-primary-600/30 text-primary-400" : "bg-dark-900/50 border-dark-700/50 text-gray-500 hover:text-gray-300"
                   }`}>
-                  Actualizar inventario (carga directa)
+                  Actualizar inventario
                 </button>
               </div>
 
