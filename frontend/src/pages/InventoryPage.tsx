@@ -147,6 +147,10 @@ export default function InventoryPage() {
   const [oemCode, setOemCode] = useState("");
   const [factoryCode, setFactoryCode] = useState("");
   const [detailFilter, setDetailFilter] = useState("");
+  const [supplierName, setSupplierName] = useState("");
+  const [supplierId, setSupplierId] = useState("");
+  const [locationName, setLocationName] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [showFilters, setShowFilters] = useState(true);
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(ALL_COLUMNS);
@@ -226,6 +230,8 @@ export default function InventoryPage() {
       if (oemCode) params.set("oemCode", oemCode);
       if (factoryCode) params.set("factoryCode", factoryCode);
       if (detailFilter) params.set("detail", detailFilter);
+      if (supplierId) params.set("supplierId", supplierId);
+      if (locationId) params.set("locationId", locationId);
       params.set("page", String(page));
       params.set("limit", "15");
 
@@ -238,7 +244,7 @@ export default function InventoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, page]);
+  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, locationId, page]);
 
   const fetchFilters = useCallback(async () => {
     try {
@@ -796,6 +802,17 @@ const handleImportExcel = async () => {
         {showFilters && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 pt-4 border-t border-dark-700/50">
             <Autocomplete
+              value={supplierName}
+              onChange={(v) => {
+                setSupplierName(v);
+                const found = suppliers.find((s) => s.name === v);
+                setSupplierId(found ? String(found.id) : "");
+              }}
+              suggestions={suppliers.map((s) => s.name)}
+              placeholder="Todos los proveedores"
+              label="Proveedor"
+            />
+            <Autocomplete
               value={itemCodeFilter}
               onChange={setItemCodeFilter}
               suggestions={filters.itemCodes || []}
@@ -857,13 +874,25 @@ const handleImportExcel = async () => {
               placeholder="Todos los códigos"
               label="Cód. Fábrica"
             />
-            {(nameFilter || itemCodeFilter || brand || manufacturer || model || year || categoryId || oemCode || factoryCode || detailFilter) && (
+            <Autocomplete
+              value={locationName}
+              onChange={(v) => {
+                setLocationName(v);
+                const found = locations.find((l) => l.name === v);
+                setLocationId(found ? String(found.id) : "");
+              }}
+              suggestions={locations.map((l) => l.name)}
+              placeholder="Todas las ubicaciones"
+              label="Ubicación"
+            />
+            {(nameFilter || itemCodeFilter || brand || manufacturer || model || year || categoryId || oemCode || factoryCode || detailFilter || supplierId || locationId) && (
               <div className="flex items-end md:col-span-3">
                 <button
                   onClick={() => {
                     setNameFilter(""); setItemCodeFilter(""); setBrand(""); setManufacturer("");
                     setModel(""); setYear(""); setCategoryName(""); setCategoryId("");
                     setOemCode(""); setFactoryCode(""); setDetailFilter("");
+                    setSupplierName(""); setSupplierId(""); setLocationName(""); setLocationId("");
                   }}
                   className="px-3 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-sm hover:bg-red-500/20 transition-colors"
                 >

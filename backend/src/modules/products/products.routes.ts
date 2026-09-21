@@ -43,7 +43,7 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
     const {
       search, name, itemCode, detail, brand, manufacturer, model, year, oemCode, factoryCode,
-      categoryId, locationId: queryLocationId, page = "1", limit = "20",
+      categoryId, supplierId, locationId: queryLocationId, page = "1", limit = "20",
     } = req.query;
 
     const where: any = {};
@@ -98,6 +98,10 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
 
     if (queryLocationId && typeof queryLocationId === "string") {
       AND.push({ inventories: { some: { locationId: Number(queryLocationId), stock: { gt: 0 } } } });
+    }
+
+    if (supplierId && typeof supplierId === "string") {
+      AND.push({ costs: { some: { supplierId: Number(supplierId) } } });
     }
 
     if (AND.length > 0) where.AND = AND;
