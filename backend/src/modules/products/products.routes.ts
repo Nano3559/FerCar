@@ -681,6 +681,8 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const locByName: Record<string, number> = {};
     allLocations.forEach((l) => { locByName[normalize(l.name)] = l.id; });
+    const defaultLocation = allLocations.find((l) => normalize(l.name) === "chiquicollo");
+    const defaultLocationId = defaultLocation?.id ?? null;
 
     const suppliers = await prisma.supplier.findMany();
     const supplierByName: Record<string, number> = {};
@@ -831,7 +833,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         price2 = numA(cellA(["PRECIO 2", "Precio 2"]));
         wholesalePrice = numA(cellA(["PRECIO MAYOR", "Precio Mayor", "Precio mayor", "Precio Mayoreo"]));
         imagenUrls = cellA(["IMAGEN", "Imagen", "Image", "URL Imagen"]).split(",").map((u) => u.trim()).filter(Boolean);
-        rowStock = 0;
+        rowStock = numA(cellA(["STOCK", "Stock"]));
         calidad = "";
         itemCode = factoryCode || oemCode;
       }
@@ -956,6 +958,9 @@ if (!name) {
             }
           } else if (rowLocationId && rowStock > 0) {
             await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: rowLocationId } }, update: { stock: { increment: rowStock } }, create: { productId: existing.id, locationId: rowLocationId, stock: rowStock, minStock: 1 } });
+          } else if (importType === "actualizar" && defaultLocationId && rowStock > 0) {
+            await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: defaultLocationId } }, update: { stock: { increment: rowStock } }, create: { productId: existing.id, locationId: defaultLocationId, stock: rowStock, minStock: 1 } });
+            warnings.push(`${label}: stock sin ubicación asignada — fue a CHIQUICOLLO`);
           }
           updated.push({ id: existing.id, itemCode, name, action: "actualizado" });
         } else {
@@ -1013,6 +1018,12 @@ if (!name) {
             allLocations.forEach((l) => { stockByLoc[l.id] = 0; });
             perLocationStock.forEach((p) => { stockByLoc[p.locationId] = p.stock; });
             for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: 1 } });
+          } else if (importType === "actualizar" && defaultLocationId && rowStock > 0) {
+            const stockByLoc: Record<number, number> = {};
+            allLocations.forEach((l) => { stockByLoc[l.id] = 0; });
+            stockByLoc[defaultLocationId] = rowStock;
+            for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: 1 } });
+            warnings.push(`${label}: stock sin ubicación asignada — fue a CHIQUICOLLO`);
           } else {
             locations = rowLocationId
               ? allLocations.filter((l) => l.id === rowLocationId)
