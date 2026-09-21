@@ -1557,7 +1557,7 @@ const handleImportExcel = async () => {
                     {manufacturers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                   <div className="mt-3">
-                    <p className="text-gray-400 text-xs">Todos los fabricantes usan la misma plantilla. Para importar, el archivo debe tener las columnas del modelo (no importa el orden, se reconocen por el nombre). El COSTO BS, el COSTO TIENDAS, los PRECIOS y la escalera 20%..80% se toman tal cual del archivo, sin fórmulas.</p>
+                    <p className="text-gray-400 text-xs">Todos los fabricantes usan la misma plantilla. Para importar, el archivo debe tener las columnas del modelo (no importa el orden, se reconocen por el nombre).</p>
                     <button onClick={downloadImportTemplate} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 hover:text-primary-200 border border-primary-600/30 rounded-lg text-xs font-medium transition-all">
                       <Download size={14} /> Descargar plantilla (con nombres y orden de columnas)
                     </button>
