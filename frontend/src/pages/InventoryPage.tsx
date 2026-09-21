@@ -486,7 +486,7 @@ export default function InventoryPage() {
   const formatCurrency = (v: string) => `Bs. ${Number(v).toLocaleString("es-BO", { minimumFractionDigits: 2 })}`;
 
   const downloadImportTemplate = () => {
-    const headers = ["CODIGO OEM", "CODIGO FABRICA", "Description", "CANTIDAD", "COSTO UNITARIO", "COSTO BS", "COSTO TIENDAS", "PRECIO 1", "PRECIO 2", "XMAYOR"];
+    const headers = ["CODIGO OEM", "CODIGO FABRICA", "Description", "CANTIDAD", "COSTO UNITARIO", "COSTO BS", "COSTO TIENDAS", "PRECIO 1", "PRECIO 2", "XMAYOR", "PROVEEDOR", "IMAGEN"];
     const example: Record<string, unknown> = {
       "CODIGO OEM": "100000-100000",
       "CODIGO FABRICA": "11-11920005B3",
@@ -498,6 +498,8 @@ export default function InventoryPage() {
       "PRECIO 1": 110.21,
       "PRECIO 2": 124,
       XMAYOR: "",
+      PROVEEDOR: "SARA GARCIA",
+      IMAGEN: "",
     };
     const ws = XLSX.utils.json_to_sheet([example], { header: headers });
     ws["!cols"] = headers.map((h) => ({ wch: Math.max(h.length, String(example[h] ?? "").length) + 2 }));
@@ -1557,7 +1559,7 @@ const handleImportExcel = async () => {
                     {manufacturers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                   <div className="mt-3">
-                    <p className="text-gray-400 text-xs">Todos los fabricantes usan la misma plantilla. Para importar, el archivo debe tener las columnas del modelo (no importa el orden, se reconocen por el nombre).</p>
+                    <p className="text-gray-400 text-xs">Todos los fabricantes usan la misma plantilla. Para importar, el archivo debe tener las columnas del modelo (no importa el orden, se reconocen por el nombre). El COSTO BS, el COSTO TIENDAS, los PRECIOS y el XMAYOR se toman tal cual del archivo. La marca, el modelo, el año y los detalles se calculan automáticamente desde la descripción. Opcionalmente puede incluir PROVEEDOR (asocia el costo al proveedor) e IMAGEN (URL o hipervínculo).</p>
                     <button onClick={downloadImportTemplate} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 hover:text-primary-200 border border-primary-600/30 rounded-lg text-xs font-medium transition-all">
                       <Download size={14} /> Descargar plantilla (con nombres y orden de columnas)
                     </button>

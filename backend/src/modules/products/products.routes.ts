@@ -800,6 +800,8 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         "COSTO TIENDAS": ["COSTO TIENDAS", "Costo Tiendas", "COSTO TIENDAS.", "Hermanas", "HERMANAS"],
         "PRECIO 1": ["PRECIO 1", "Precio 1", "Precio Minorista"],
         "PRECIO 2": ["PRECIO 2", "Precio 2", "Precio Mayoreo"],
+        PROVEEDOR: ["PROVEEDOR", "Proveedor"],
+        IMAGEN: ["IMAGEN", "Imagen", "Image", "URL Imagen"],
       };
       const hasDepoCol = (name: string): boolean => {
         const aliases = depoAliases[name] || [name];
@@ -808,6 +810,8 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
           return Object.keys(row).some((k) => k.trim().toLowerCase() === a.toLowerCase());
         });
       };
+      let proveedor = "";
+      let imagenUrls: string[] = [];
       if (importType === "depo") {
         const depoCell = (name: string): any => {
           const aliases = depoAliases[name] || [name];
@@ -837,10 +841,13 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         wholesalePrice = cellNum(depoCell("XMAYOR"));
         rowStock = parseInt(String(depoCell("Quantity") ?? "0"), 10) || 0;
         calidad = "";
-      }
 
-      let proveedor = "";
-      let imagenUrls: string[] = [];
+        // Columnas adicionales opcionales: proveedor e imagen se leen si el
+        // archivo las trae. Marca/Modelo/Año/Detalles se calculan después con
+        // classifyProductName a partir de la descripción (lógica original).
+        proveedor = String(depoCell("PROVEEDOR") ?? "").toString().trim();
+        imagenUrls = String(depoCell("IMAGEN") ?? "").split(",").map((u) => u.trim()).filter(Boolean);
+      }
 
       // Carga directa de inventario: el archivo trae las columnas mostradas
       // en Pantalla (PROVEEDOR..IMAGEN) más una columna por cada ubicación
@@ -983,7 +990,7 @@ if (!name) {
             }
           }
           if (supplierId !== null && cost > 0) await recordSupplierCost(existing.id, supplierId, cost, null);
-          if (importType === "actualizar" && proveedor) {
+          if ((importType === "actualizar" || importType === "depo") && proveedor) {
             const costForSupplier = cost > 0 ? cost : unitPrice;
             const supId = supplierByName[normalize(proveedor)];
             if (supId) {
@@ -1042,7 +1049,7 @@ if (!name) {
             }
           }
           if (supplierId !== null && cost > 0) await recordSupplierCost(product.id, supplierId, cost, null);
-          if (importType === "actualizar" && proveedor) {
+          if ((importType === "actualizar" || importType === "depo") && proveedor) {
             const costForSupplier = cost > 0 ? cost : unitPrice;
             const supId = supplierByName[normalize(proveedor)];
             if (supId) {
