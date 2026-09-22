@@ -914,7 +914,7 @@ if (!name) {
             await prisma.inventory.upsert({ where: { productId_locationId: { productId: existing.id, locationId: defaultLocationId } }, update: { stock: { increment: rowStock } }, create: { productId: existing.id, locationId: defaultLocationId, stock: rowStock, minStock: minStockFor(defaultLocationId) } });
             warnings.push(`${label}: stock sin ubicación asignada — fue a CHIQUICOLLO`);
           }
-          updated.push({ id: existing.id, itemCode, name, action: "actualizado" });
+          updated.push({ id: existing.id, itemCode, name, action: "actualizado", row: label });
         } else {
           const product = await prisma.product.create({
             data: {
@@ -983,7 +983,7 @@ if (!name) {
             for (const loc of locations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: rowLocationId ? rowStock : 0, minStock: minStockFor(loc.id) } });
           }
 
-          imported.push({ id: product.id, itemCode, name, action: "creado" });
+          imported.push({ id: product.id, itemCode, name, action: "creado", row: label });
         }
       } catch (err: any) {
         errors.push(`Fila ${i + 2}: ${err.message}`);
