@@ -112,26 +112,46 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
     const hasYearFilter = year && typeof year === "string";
     const filterLocationId = queryLocationId && typeof queryLocationId === "string" ? Number(queryLocationId) : null;
 
-    let allProducts = await prisma.product.findMany({
-      where,
-      include: {
-        category: true,
-        inventories: { include: { location: true } },
-        costs: {
-          take: 1,
-          orderBy: { date: "desc" },
-          include: { supplier: { select: { name: true } } },
-        },
+    const includeDetail = {
+      category: true,
+      inventories: { include: { location: true } },
+      costs: {
+        take: 1,
+        orderBy: { date: "desc" },
+        include: { supplier: { select: { name: true } } },
       },
-      orderBy: { name: "asc" },
-    });
+    } as const;
+
+    let products;
+    let total: number;
 
     if (hasYearFilter) {
-      allProducts = allProducts.filter((p) => yearRangesOverlap(year as string, p.year));
+      // El filtro de año soporta rangos ("13-15", "13-15/20-22"), por lo que se
+      // evalúa en memoria. Para no traer todos los datos pesados, primero se
+      // leen solo id+year y luego la página exacta que coincide.
+      const idYear = await prisma.product.findMany({
+        where,
+        select: { id: true, year: true },
+        orderBy: { name: "asc" },
+      });
+      const filteredIds = idYear.filter((p) => yearRangesOverlap(year as string, p.year));
+      total = filteredIds.length;
+      const pageIds = filteredIds.slice(skip, skip + take).map((p) => p.id);
+      products = await prisma.product.findMany({
+        where: { id: { in: pageIds } },
+        include: includeDetail,
+        orderBy: { name: "asc" },
+      });
+    } else {
+      total = await prisma.product.count({ where });
+      products = await prisma.product.findMany({
+        where,
+        skip,
+        take,
+        include: includeDetail,
+        orderBy: { name: "asc" },
+      });
     }
-
-    const total = allProducts.length;
-    const products = allProducts.slice(skip, skip + take);
 
     const isAuth = !!req.user;
 

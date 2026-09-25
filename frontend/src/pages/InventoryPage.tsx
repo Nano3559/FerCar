@@ -5,6 +5,7 @@ import {
   Package, RefreshCw, X, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Download, Scissors,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import axios from "axios";
 import api from "../services/api";
 import ProductImage from "../components/public/ProductImage";
 import ImagePreview from "../components/ui/ImagePreview";
@@ -224,6 +225,43 @@ export default function InventoryPage() {
     }
   }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, locationId, page]);
 
+  // Buscar apenas el usuario deja de escribir: debounce de 300ms que cancela
+  // la petición anterior en vuelo para no acumular consultas ni resultados
+  // fuera de orden.
+  useEffect(() => {
+    const controller = new AbortController();
+    const t = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      if (nameFilter) params.set("name", nameFilter);
+      if (itemCodeFilter) params.set("itemCode", itemCodeFilter);
+      if (brand) params.set("brand", brand);
+      if (manufacturer) params.set("manufacturer", manufacturer);
+      if (model) params.set("model", model);
+      if (year) params.set("year", year);
+      if (categoryId) params.set("categoryId", categoryId);
+      if (oemCode) params.set("oemCode", oemCode);
+      if (factoryCode) params.set("factoryCode", factoryCode);
+      if (detailFilter) params.set("detail", detailFilter);
+      if (supplierId) params.set("supplierId", supplierId);
+      if (locationId) params.set("locationId", locationId);
+      params.set("page", String(page));
+      params.set("limit", "15");
+      api.get(`/products?${params.toString()}`, { signal: controller.signal })
+        .then((res) => {
+          setProducts(res.data.products);
+          setTotal(res.data.pagination.total);
+          setPages(res.data.pagination.pages);
+        })
+        .catch((err) => { if (err.code !== "ERR_CANCELED" && !axios.isCancel(err)) toast.error("Error al cargar productos"); })
+        .finally(() => setLoading(false));
+    }, 300);
+    setLoading(true);
+    return () => { controller.abort(); clearTimeout(t); };
+  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, locationId, page]);
+
+  useEffect(() => { setPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, locationId]);
+
   const fetchFilters = useCallback(async () => {
     try {
       const res = await api.get("/products/filters");
@@ -231,11 +269,8 @@ export default function InventoryPage() {
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { fetchProducts(); }, [fetchProducts]);
   useEffect(() => { fetchFilters(); }, [fetchFilters]);
   useEffect(() => { api.get("/locations").then((res) => setLocations(res.data.locations || res.data)).catch(() => {}); }, []);
-
-  useEffect(() => { setPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter]);
 
   const fetchManufacturers = useCallback(async () => {
     try {
