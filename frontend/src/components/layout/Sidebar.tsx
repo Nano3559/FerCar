@@ -11,7 +11,7 @@ import { useEffect } from "react";
 const allLinks = [
   { to: "/panel", label: "Dashboard", icon: LayoutDashboard, module: "" },
   { to: "/panel/inventario", label: "Inventario", icon: Package, module: "inventario" },
-  { to: "/panel/ventas", label: "Ventas", icon: ShoppingCart, module: "ventas" },
+  { to: "/panel/ventas", label: "Ventas Locales", icon: ShoppingCart, module: "ventas" },
   { to: "/panel/ventas-mayor", label: "Ventas por Mayor", icon: TrendingUp, module: "ventas-mayor" },
   { to: "/panel/devoluciones", label: "Devoluciones", icon: RotateCcw, module: "devoluciones" },
   { to: "/panel/solicitudes", label: "Solicitudes", icon: Send, module: "solicitudes" },

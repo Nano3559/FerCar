@@ -526,7 +526,7 @@ export default function SalesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Ventas</h1>
+          <h1 className="text-2xl font-bold text-foreground">Ventas Locales</h1>
           <p className="text-gray-400 text-sm mt-1">
             {showHistory ? `${histTotal} ventas registradas` : `${cart.length} producto(s) en carrito`}
           </p>
