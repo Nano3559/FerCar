@@ -291,11 +291,6 @@ export default function SalesPage() {
         quantity: qty, availableStock: p.stock,
       }];
     });
-    setSearch("");
-    clearSearchFilters();
-    setSearchPage(1);
-    setSearchResults([]);
-    searchInputRef.current?.focus();
   };
 
   // ACCIONES: abrir modal para elegir cantidad y precio (1 o 2)
