@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
   FileText, RefreshCw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  Check, Clock, MapPin, User, Filter,
+  Check, Clock, MapPin, User, Filter, Printer,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import axios from "axios";
@@ -189,8 +189,17 @@ export default function SalesPage() {
   const [customerData, setCustomerData] = useState<CustomerData>({ name: "", nit: "", phone: "" });
   const [processing, setProcessing] = useState(false);
 
-  // --- History ---
-  const [showHistory, setShowHistory] = useState(false);
+  const [activeTab, setActiveTab] = useState<"venta" | "carrito" | "historial">("venta");
+
+  // --- Add-to-cart modal ---
+  const [showAddCart, setShowAddCart] = useState(false);
+  const [addTarget, setAddTarget] = useState<Product | null>(null);
+  const [addQty, setAddQty] = useState(1);
+  const [addTier, setAddTier] = useState<1 | 2>(2);
+  const addCartPanelRef = useDialogBehavior(showAddCart, () => { setShowAddCart(false); setAddTarget(null); });
+
+  // --- Quotation ---
+  const [showQuote, setShowQuote] = useState(false);
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [histLoading, setHistLoading] = useState(false);
   const [histPage, setHistPage] = useState(1);
@@ -263,23 +272,23 @@ export default function SalesPage() {
   };
 
   // ==================== CART ====================
-  const addToCart = (p: Product, tier: 1 | 2 = 2) => {
+  const addToCart = (p: Product, tier: 1 | 2 = 2, qty: number = 1) => {
     const price = tier === 2 && Number(p.price2) > 0 ? Number(p.price2) : Number(p.price1);
     setCart((prev) => {
       const existing = prev.find((c) => c.productId === p.id);
       if (existing) {
-        if (existing.quantity >= p.stock) {
+        if (existing.quantity + qty > p.stock) {
           toast.error(`Stock insuficiente (disponible: ${p.stock})`);
           return prev;
         }
         return prev.map((c) =>
-          c.productId === p.id ? { ...c, quantity: c.quantity + 1 } : c
+          c.productId === p.id ? { ...c, quantity: c.quantity + qty, priceTier: tier, unitPrice: price } : c
         );
       }
       return [...prev, {
         productId: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
         unitPrice: price, priceTier: tier, price1: Number(p.price1), price2: Number(p.price2),
-        quantity: 1, availableStock: p.stock,
+        quantity: qty, availableStock: p.stock,
       }];
     });
     setSearch("");
@@ -288,6 +297,48 @@ export default function SalesPage() {
     setSearchResults([]);
     searchInputRef.current?.focus();
   };
+
+  // ACCIONES: abrir modal para elegir cantidad y precio (1 o 2)
+  const openAddToCart = (p: Product) => {
+    if (p.stock <= 0) { toast.error("Sin stock en esta tienda"); return; }
+    const hasTwoPrices = Number(p.price2) > 0 && Number(p.price2) !== Number(p.price1);
+    setAddTarget(p);
+    setAddQty(1);
+    setAddTier(hasTwoPrices ? 2 : 1);
+    setShowAddCart(true);
+  };
+
+  const confirmAddToCart = () => {
+    if (!addTarget) return;
+    addToCart(addTarget, addTier, addQty);
+    setShowAddCart(false);
+    setAddTarget(null);
+  };
+
+  // Cotización imprimible desde el carrito
+  const downloadQuotePDF = async () => {
+    if (cart.length === 0) return;
+    const el = document.getElementById("sale-quote-doc");
+    if (!el) return;
+    toast.loading("Generando cotización...", { id: "quote" });
+    try {
+      const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#1d232e" });
+      const img = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const imgHeight = (canvas.height * pageWidth) / canvas.width;
+      pdf.addImage(img, "PNG", 0, 0, pageWidth, imgHeight);
+      pdf.save(`cotizacion-${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.success("Cotización descargada", { id: "quote" });
+    } catch {
+      toast.error("Error al generar cotización", { id: "quote" });
+    } finally {
+      setShowQuote(false);
+    }
+  };
+
+  const quoteStoreName = locations.find((l) => l.id === selectedLocationId)?.name || "";
+  const quoteSeller = isTienda ? user?.name || "" : selectedSeller;
 
   // ACCIONES: ver ubicaciones donde está el producto
   const openLocations = async (p: Product) => {
@@ -323,25 +374,15 @@ export default function SalesPage() {
     );
     if (column === "Acciones") return (
       <td key={column} className="px-3 py-2">
-        <div className="flex items-center justify-center gap-1">
+        <div className="flex items-center justify-center gap-1.5">
           <button
-            onClick={() => addToCart(p, 1)}
+            onClick={() => openAddToCart(p)}
             disabled={p.stock <= 0}
-            title={p.stock > 0 ? "Agregar Mayorista" : "Sin stock en esta tienda"}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all disabled:opacity-30"
+            title={p.stock > 0 ? "Agregar al carrito" : "Sin stock en esta tienda"}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary-600/10 border border-primary-600/25 text-primary-400 hover:bg-primary-600 hover:text-white transition-all text-xs font-medium disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            <Plus size={16} />
+            <ShoppingCart size={14} /> Agregar
           </button>
-          {Number(p.price2) > 0 && Number(p.price2) !== Number(p.price1) && (
-            <button
-              onClick={() => addToCart(p, 2)}
-              disabled={p.stock <= 0}
-              title={p.stock > 0 ? "Agregar Minorista" : "Sin stock en esta tienda"}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all disabled:opacity-30"
-            >
-              <Plus size={16} className="text-blue-400" />
-            </button>
-          )}
           <button
             onClick={() => openLocations(p)}
             title="Ver ubicaciones"
@@ -466,6 +507,7 @@ export default function SalesPage() {
       setShowConfirmed(true);
       setCart([]);
       setSelectedSeller("");
+      setActiveTab("venta");
       toast.success("¡Venta registrada exitosamente!");
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Error al registrar la venta");
@@ -514,10 +556,10 @@ export default function SalesPage() {
   }, [histPage, histDateFrom, histDateTo, histSeller, isTienda, user?.locationId]);
 
   useEffect(() => {
-    if (showHistory) fetchHistory();
-  }, [showHistory, fetchHistory]);
+    if (activeTab === "historial") fetchHistory();
+  }, [activeTab, fetchHistory]);
 
-  useEffect(() => { if (showHistory) setHistPage(1); }, [histDateFrom, histDateTo, histSeller, showHistory]);
+  useEffect(() => { if (activeTab === "historial") setHistPage(1); }, [histDateFrom, histDateTo, histSeller, activeTab]);
 
   // ==================== RENDER ====================
   const pmLabel: Record<string, string> = { EFECTIVO: "Efectivo", QR: "QR", TRANSFERENCIA: "Transferencia", CREDITO: "Crédito" };
@@ -528,23 +570,41 @@ export default function SalesPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Ventas Locales</h1>
           <p className="text-gray-400 text-sm mt-1">
-            {showHistory ? `${histTotal} ventas registradas` : `${cart.length} producto(s) en carrito`}
+            {activeTab === "historial"
+              ? `${histTotal} ventas registradas`
+              : activeTab === "carrito"
+                ? `${cartItemCount} unidad(es) en carrito`
+                : `${searchTotal > 0 ? searchTotal + " productos encontrados" : "Busca productos y agrégalos al carrito"}`}
           </p>
         </div>
-        <button
-          onClick={() => setShowHistory(!showHistory)}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${
-            showHistory
-              ? "bg-primary-600/10 border-primary-600/20 text-primary-400"
-              : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-foreground"
-          }`}
-        >
-          {showHistory ? <><ShoppingCart size={16} /> Nueva Venta</> : <><Clock size={16} /> Historial</>}
-        </button>
+        <div className="flex items-center gap-1 p-1 bg-dark-800/50 border border-dark-700/50 rounded-xl">
+          <button onClick={() => setActiveTab("venta")}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all ${
+              activeTab === "venta" ? "bg-primary-600/15 text-primary-400" : "text-gray-400 hover:text-foreground"
+            }`}>
+            <Search size={15} /> Productos
+          </button>
+          <button onClick={() => setActiveTab("carrito")}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all ${
+              activeTab === "carrito" ? "bg-primary-600/15 text-primary-400" : "text-gray-400 hover:text-foreground"
+            }`}>
+            <ShoppingCart size={15} />
+            Carrito
+            {cartItemCount > 0 && (
+              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-primary-600 text-white">{cartItemCount}</span>
+            )}
+          </button>
+          <button onClick={() => setActiveTab("historial")}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all ${
+              activeTab === "historial" ? "bg-primary-600/15 text-primary-400" : "text-gray-400 hover:text-foreground"
+            }`}>
+            <Clock size={15} /> Historial
+          </button>
+        </div>
       </div>
 
-      {/* ============ NEW SALE ============ */}
-      {!showHistory && (
+      {/* ============ PRODUCTOS (búsqueda) ============ */}
+      {activeTab === "venta" && (
         <>
           {/* Location + Seller selector */}
           <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -706,18 +766,11 @@ export default function SalesPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 ml-2 shrink-0">
-                        <button onClick={() => addToCart(p, 1)} disabled={p.stock <= 0}
-                          title={p.stock > 0 ? "Agregar Mayorista" : "Sin stock en esta tienda"}
+                        <button onClick={() => openAddToCart(p)} disabled={p.stock <= 0}
+                          title={p.stock > 0 ? "Agregar al carrito" : "Sin stock en esta tienda"}
                           className="p-2 rounded-lg bg-primary-600/10 border border-primary-600/20 text-primary-400 hover:bg-primary-600 hover:text-white transition-all disabled:opacity-30">
-                          <Plus size={14} />
+                          <ShoppingCart size={14} />
                         </button>
-                        {Number(p.price2) > 0 && Number(p.price2) !== Number(p.price1) && (
-                          <button onClick={() => addToCart(p, 2)} disabled={p.stock <= 0}
-                            title={p.stock > 0 ? "Agregar Minorista" : "Sin stock en esta tienda"}
-                            className="p-2 rounded-lg bg-blue-600/10 border border-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30">
-                            <Plus size={14} />
-                          </button>
-                        )}
                         <button onClick={() => openLocations(p)} title="Ver ubicaciones"
                           className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-amber-400 transition-all">
                           <MapPin size={14} />
@@ -748,102 +801,122 @@ export default function SalesPage() {
             )}
           </div>
 
-          {/* Cart */}
-          <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-dark-700/50">
-              <h2 className="text-sm font-medium text-gray-300 flex items-center gap-2">
-                <ShoppingCart size={16} className="text-primary-400" /> Carrito de Venta
-              </h2>
-              <div className="flex items-center gap-2">
-                <ColumnManager module="carrito" columns={CART_COLUMNS} onVisibleChange={setCartColumns} />
-                {cart.length > 0 && (
+          </>
+      )}
+
+      {/* ============ CARRITO (pestaña aparte) ============ */}
+      {activeTab === "carrito" && (
+        <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-dark-700/50 flex-wrap gap-2">
+            <h2 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+              <ShoppingCart size={16} className="text-primary-400" /> Carrito de Venta
+            </h2>
+            <div className="flex items-center gap-2">
+              <ColumnManager module="carrito" columns={CART_COLUMNS} onVisibleChange={setCartColumns} />
+              {cart.length > 0 && (
+                <>
+                  <button onClick={() => { setShowQuote(true); setTimeout(downloadQuotePDF, 100); }}
+                    title="Imprimir cotización de la venta"
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600/10 border border-blue-600/25 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all font-medium">
+                    <Printer size={14} /> Cotización
+                  </button>
                   <button onClick={clearCart} className="text-xs text-red-400 hover:text-red-300">Vaciar</button>
-                )}
-              </div>
+                </>
+              )}
             </div>
+          </div>
 
-            {cart.length === 0 ? (
-              <div className="p-10 text-center">
-                <ShoppingCart size={48} className="text-gray-600 mx-auto mb-3" />
-                <p className="text-gray-400 text-sm">Busca un producto arriba para agregarlo al carrito</p>
-              </div>
-            ) : (
-              <>
-                {/* Desktop table */}
-                <div className="hidden md:block overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-gray-500 border-b border-dark-700/50">
-                        {cartColumns.map((col) => {
-                          const align = ["Precio", "Subtotal"].includes(col) ? "text-right" : ["Cantidad", "Eliminar"].includes(col) ? "text-center" : "text-left";
-                          return <th key={col} className={`${align} px-4 py-2.5 font-medium`}>{col}</th>;
-                        })}
+          {cart.length === 0 ? (
+            <div className="p-10 text-center">
+              <ShoppingCart size={48} className="text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-400 text-sm">El carrito está vacío. Agrega productos desde la pestaña Productos.</p>
+              <button onClick={() => setActiveTab("venta")}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all">
+                <Search size={16} /> Buscar productos
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-500 border-b border-dark-700/50">
+                      {cartColumns.map((col) => {
+                        const align = ["Precio", "Subtotal"].includes(col) ? "text-right" : ["Cantidad", "Eliminar"].includes(col) ? "text-center" : "text-left";
+                        return <th key={col} className={`${align} px-4 py-2.5 font-medium`}>{col}</th>;
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cart.map((c) => (
+                      <tr key={c.productId} className="border-b border-dark-700/30 last:border-0 hover:bg-dark-900/30">
+                        {cartColumns.map((column) => renderCartCell(c, column))}
                       </tr>
-                    </thead>
-                    <tbody>
-                      {cart.map((c) => (
-                        <tr key={c.productId} className="border-b border-dark-700/30 last:border-0 hover:bg-dark-900/30">
-                          {cartColumns.map((column) => renderCartCell(c, column))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-                {/* Mobile cards */}
-                <div className="md:hidden divide-y divide-dark-700/30">
-                  {cart.map((c) => (
-                    <div key={c.productId} className="p-4 space-y-2">
-                      <div className="flex items-start justify-between">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-foreground font-medium text-sm truncate">{c.name}</p>
-                          <p className="text-xs text-gray-500">{c.brand} · {c.itemCode}</p>
-                        </div>
-                        <button onClick={() => removeItem(c.productId)}
-                          className="p-1.5 text-gray-500 hover:text-red-400 shrink-0">
-                          <Trash2 size={14} />
-                        </button>
+              {/* Mobile cards */}
+              <div className="md:hidden divide-y divide-dark-700/30">
+                {cart.map((c) => (
+                  <div key={c.productId} className="p-4 space-y-2">
+                    <div className="flex items-start justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-foreground font-medium text-sm truncate">{c.name}</p>
+                        <p className="text-xs text-gray-500">{c.brand} · {c.itemCode}</p>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <button onClick={() => updateQuantity(c.productId, c.quantity - 1)}
-                            className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 active:text-foreground transition-all">
-                            <Minus size={14} />
-                          </button>
-                          <span className="w-10 text-center text-foreground text-sm font-medium">{c.quantity}</span>
-                          <button onClick={() => updateQuantity(c.productId, c.quantity + 1)}
-                            className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 active:text-foreground transition-all">
-                            <Plus size={14} />
-                          </button>
-                          <span className="text-xs text-gray-600 ml-1">máx: {c.availableStock}</span>
-                        </div>
-                        <p className="text-green-400 font-medium text-sm">{formatBs(c.unitPrice * c.quantity)}</p>
-                      </div>
+                      <button onClick={() => removeItem(c.productId)}
+                        className="p-1.5 text-gray-500 hover:text-red-400 shrink-0">
+                        <Trash2 size={14} />
+                      </button>
                     </div>
-                  ))}
-                </div>
-
-                <div className="px-5 py-4 border-t border-dark-700/50 bg-dark-900/20">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-gray-400 text-sm">{cartItemCount} unidad(es)</span>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-500 uppercase tracking-wider">Total</p>
-                      <p className="text-xl font-bold text-green-400">{formatBs(cartTotal)}</p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => updateQuantity(c.productId, c.quantity - 1)}
+                          className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 active:text-foreground transition-all">
+                          <Minus size={14} />
+                        </button>
+                        <span className="w-10 text-center text-foreground text-sm font-medium">{c.quantity}</span>
+                        <button onClick={() => updateQuantity(c.productId, c.quantity + 1)}
+                          className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 active:text-foreground transition-all">
+                          <Plus size={14} />
+                        </button>
+                        <span className="text-xs text-gray-600 ml-1">máx: {c.availableStock}</span>
+                      </div>
+                      <p className="text-green-400 font-medium text-sm">{formatBs(c.unitPrice * c.quantity)}</p>
                     </div>
                   </div>
+                ))}
+              </div>
+
+              <div className="px-5 py-4 border-t border-dark-700/50 bg-dark-900/20">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-gray-400 text-sm">{cartItemCount} unidad(es)</span>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider">Total</p>
+                    <p className="text-xl font-bold text-green-400">{formatBs(cartTotal)}</p>
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button onClick={() => { setShowQuote(true); setTimeout(downloadQuotePDF, 100); }}
+                    className="flex-1 bg-blue-600/10 border border-blue-600/25 text-blue-400 hover:bg-blue-600 hover:text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
+                    <Printer size={16} /> Imprimir Cotización
+                  </button>
                   <button onClick={openPayment}
-                    className="w-full bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20">
+                    className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20">
                     <CreditCard size={18} /> Cobrar · {formatBs(cartTotal)}
                   </button>
                 </div>
-              </>
-            )}
-          </div>
-        </>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {/* ============ HISTORY ============ */}
-      {showHistory && (
+      {activeTab === "historial" && (
         <div className="space-y-4">
           <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4">
             <div className="flex flex-col sm:flex-row gap-3 items-end">
@@ -1304,6 +1377,134 @@ export default function SalesPage() {
                 className="px-5 py-2.5 bg-dark-700 hover:bg-dark-600 text-foreground rounded-xl text-sm font-medium transition-all">
                 Cerrar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+    {/* ============ ADD TO CART MODAL ============ */}
+      {showAddCart && addTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div ref={addCartPanelRef} role="dialog" aria-modal="true" aria-label="Agregar al carrito" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md overflow-hidden">
+            <div className="flex items-start justify-between px-5 py-4 border-b border-dark-700/50">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-foreground truncate">{addTarget.name}</h3>
+                <p className="text-xs text-gray-500 mt-0.5 truncate">
+                  {addTarget.manufacturer} · {addTarget.brand} · {addTarget.model} · {addTarget.itemCode}
+                </p>
+              </div>
+              <button onClick={() => { setShowAddCart(false); setAddTarget(null); }}
+                className="p-2 rounded-lg text-gray-400 hover:text-foreground hover:bg-dark-700 transition-all shrink-0 ml-3">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              <div>
+                <span className="block text-xs text-gray-500 mb-1.5">Selecciona el precio</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => setAddTier(1)} disabled={Number(addTarget.price1) <= 0}
+                    className={`rounded-xl border p-3 text-left transition-all disabled:opacity-30 ${addTier === 1 ? "bg-green-600/10 border-green-600/40" : "bg-dark-900/50 border-dark-600/50 hover:border-green-600/30"}`}>
+                    <span className="block text-xs font-medium text-gray-400">Precio 1</span>
+                    <span className="block text-base font-bold text-green-400 mt-0.5">{formatBs(Number(addTarget.price1))}</span>
+                  </button>
+                  <button onClick={() => setAddTier(2)} disabled={Number(addTarget.price2) <= 0}
+                    className={`rounded-xl border p-3 text-left transition-all disabled:opacity-30 ${addTier === 2 ? "bg-blue-600/10 border-blue-600/40" : "bg-dark-900/50 border-dark-600/50 hover:border-blue-600/30"}`}>
+                    <span className="block text-xs font-medium text-gray-400">Precio 2</span>
+                    {Number(addTarget.price2) > 0
+                      ? <span className="block text-base font-bold text-blue-400 mt-0.5">{formatBs(Number(addTarget.price2))}</span>
+                      : <span className="block text-sm text-gray-600 mt-0.5">No disponible</span>}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs text-gray-500">Cantidad</span>
+                  <span className="text-xs text-gray-500">Stock disponible: <b className="text-foreground">{addTarget.stock}</b></span>
+                </div>
+                <div className="flex items-center justify-center gap-1.5">
+                  <button onClick={() => setAddQty(Math.max(1, addQty - 1))} disabled={addQty <= 1}
+                    className="p-2.5 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground transition-all disabled:opacity-30">
+                    <Minus size={16} />
+                  </button>
+                  <span className="w-16 text-center text-foreground text-xl font-bold">{addQty}</span>
+                  <button onClick={() => setAddQty(Math.min(addTarget.stock, addQty + 1))} disabled={addQty >= addTarget.stock}
+                    className="p-2.5 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground transition-all disabled:opacity-30">
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-dark-900/50 border border-dark-700/30 rounded-xl p-3 flex items-center justify-between">
+                <span className="text-xs text-gray-500 uppercase tracking-wider">Subtotal</span>
+                <span className="text-lg font-bold text-green-400">
+                  {formatBs((addTier === 2 && Number(addTarget.price2) > 0 ? Number(addTarget.price2) : Number(addTarget.price1)) * addQty)}
+                </span>
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-dark-700/50 flex gap-3">
+              <button onClick={() => { setShowAddCart(false); setAddTarget(null); }}
+                className="flex-1 bg-dark-700 hover:bg-dark-600 text-foreground py-2.5 rounded-xl text-sm font-medium transition-all">
+                Cancelar
+              </button>
+              <button onClick={confirmAddToCart}
+                className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-2.5 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
+                <ShoppingCart size={16} /> Agregar al carrito
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ QUOTE DOCUMENT (hidden, capturado por html2canvas) ============ */}
+      {showQuote && (
+        <div id="sale-quote-doc" className="fixed" style={{ left: "-9999px", top: 0, width: "640px", background: "#1d232e", color: "#e5e7eb", padding: "28px", fontFamily: "Arial, sans-serif", fontSize: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #f59e0b", paddingBottom: "12px", marginBottom: "16px" }}>
+            <div>
+              <h1 style={{ fontSize: "22px", fontWeight: "bold", color: "#f59e0b", margin: 0 }}>COTIZACIÓN</h1>
+              <p style={{ margin: "4px 0 0", color: "#9ca3af" }}>Ventas Locales</p>
+            </div>
+            <div style={{ textAlign: "right", color: "#9ca3af" }}>
+              <p style={{ margin: 0 }}>{new Date().toLocaleDateString("es-BO")}</p>
+              {quoteStoreName && <p style={{ margin: "2px 0 0" }}>{quoteStoreName}</p>}
+              {quoteSeller && <p style={{ margin: "2px 0 0" }}>Vendedor: {quoteSeller}</p>}
+            </div>
+          </div>
+
+          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "16px" }}>
+            <thead>
+              <tr style={{ background: "#26303d", color: "#f59e0b", fontSize: "11px", textTransform: "uppercase" }}>
+                <th style={{ padding: "8px 10px", textAlign: "left", border: "1px solid #374151" }}>Código Fábrica</th>
+                <th style={{ padding: "8px 10px", textAlign: "left", border: "1px solid #374151" }}>Producto</th>
+                <th style={{ padding: "8px 10px", textAlign: "right", border: "1px solid #374151" }}>Precio 1 o 2</th>
+                <th style={{ padding: "8px 10px", textAlign: "center", border: "1px solid #374151" }}>Cantidad</th>
+                <th style={{ padding: "8px 10px", textAlign: "right", border: "1px solid #374151" }}>Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cart.map((c) => (
+                <tr key={c.productId} style={{ borderBottom: "1px solid #374151" }}>
+                  <td style={{ padding: "8px 10px", border: "1px solid #374151" }}>{c.itemCode}</td>
+                  <td style={{ padding: "8px 10px", border: "1px solid #374151" }}>{c.name} · {c.brand}</td>
+                  <td style={{ padding: "8px 10px", border: "1px solid #374151", textAlign: "right", whiteSpace: "nowrap" }}>
+                    {c.priceTier === 1 ? "P1" : "P2"} · {c.unitPrice.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td style={{ padding: "8px 10px", border: "1px solid #374151", textAlign: "center" }}>{c.quantity}</td>
+                  <td style={{ padding: "8px 10px", border: "1px solid #374151", textAlign: "right", whiteSpace: "nowrap" }}>
+                    Bs. {(c.unitPrice * c.quantity).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", borderTop: "2px solid #f59e0b", paddingTop: "12px" }}>
+            <div>
+              <p style={{ margin: 0, fontSize: "11px", color: "#9ca3af", textTransform: "uppercase" }}>TOTAL</p>
+              <p style={{ margin: "2px 0 0", fontSize: "22px", fontWeight: "bold", color: "#22c55e" }}>
+                Bs. {cartTotal.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
             </div>
           </div>
         </div>
