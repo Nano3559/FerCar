@@ -2,24 +2,37 @@ import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
   FileText, RefreshCw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  Check, Clock, MapPin, User,
+  Check, Clock, MapPin, User, Filter,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import axios from "axios";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
 import ColumnManager from "../components/ui/ColumnManager";
+import Autocomplete from "../components/ui/Autocomplete";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 
 const HISTORY_COLUMNS = ["#", "Fecha", "Cliente", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos"];
 const CART_COLUMNS = ["Producto", "Precio", "Cantidad", "Subtotal", "Eliminar"];
+const SEARCH_COLUMNS = [
+  "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
+  "Cód. OEM", "Cód. Fábrica", "Precio 1", "Precio 2", "Stock", "Acciones",
+];
 
 interface Product {
   id: number; itemCode: string; manufacturer: string; name: string;
   brand: string; model: string; year: string; price1: string; price2: string;
   wholesalePrice: string | null; stock: number; category: string | null;
-  image: string | null; oemCode: string | null;
+  image: string | null; oemCode: string | null; factoryCode: string | null;
+  detail: string | null; detalles: string | null;
+}
+
+interface ProductFilters {
+  brands: string[]; manufacturers: string[]; models: string[]; years: string[];
+  categories: { id: number; name: string }[]; names: string[]; itemCodes: string[];
+  oemCodes: string[]; factoryCodes: string[]; detalles: string[];
 }
 
 interface Location {
@@ -71,28 +84,100 @@ export default function SalesPage() {
   }, [isTienda, user?.locationId]);
 
   // --- Seller ---
-  const [selectedSeller, setSelectedSeller] = useState<string>("");
+  const [selectedSeller, setSelectedSeller] = useState<string>(isTienda ? user?.name || "" : "");
+  const [vendedores, setVendedores] = useState<{ id: number; name: string; locationId: number | null }[]>([]);
 
-  // --- Search ---
+  useEffect(() => {
+    if (!isTienda && isAdmin) {
+      api.get("/users").then((r) => {
+        const users = Array.isArray(r.data) ? r.data : r.data.users || [];
+        setVendedores(users.filter((u: any) => u.role === "TIENDA").map((u: any) => ({ id: u.id, name: u.name, locationId: u.locationId })));
+      }).catch(() => {});
+    }
+  }, [isAdmin, isTienda]);
+
+  // --- Search (igual que inventario) ---
   const [search, setSearch] = useState("");
-  const [oemSearch, setOemSearch] = useState("");
-  const [filterBrand, setFilterBrand] = useState("");
-  const [filterManufacturer, setFilterManufacturer] = useState("");
-  const [filterModel, setFilterModel] = useState("");
-  const [filterYear, setFilterYear] = useState("");
-  const [filterCategoryId, setFilterCategoryId] = useState("");
-  const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
+  const [nameFilter, setNameFilter] = useState("");
+  const [itemCodeFilter, setItemCodeFilter] = useState("");
+  const [manufacturer, setManufacturer] = useState("");
+  const [brand, setBrand] = useState("");
+  const [model, setModel] = useState("");
+  const [year, setYear] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [oemCode, setOemCode] = useState("");
+  const [factoryCode, setFactoryCode] = useState("");
+  const [detailFilter, setDetailFilter] = useState("");
+  const [showFilters, setShowFilters] = useState(true);
+  const [filters, setFilters] = useState<ProductFilters>({
+    brands: [], manufacturers: [], models: [], years: [], categories: [],
+    names: [], itemCodes: [], oemCodes: [], factoryCodes: [], detalles: [],
+  });
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [searching, setSearching] = useState(false);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchPages, setSearchPages] = useState(1);
+  const [searchTotal, setSearchTotal] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    api.get("/categories").then((r) => {
-      const list = Array.isArray(r.data) ? r.data : r.data.categories || [];
-      setCategories(list);
-    }).catch(() => {});
+    api.get("/products/filters").then((r) => setFilters(r.data)).catch(() => {});
   }, []);
+
+  // --- Locations modal (ACCIONES) ---
+  const [showLocations, setShowLocations] = useState(false);
+  const [locationsProduct, setLocationsProduct] = useState<Product | null>(null);
+  const [locationsData, setLocationsData] = useState<{ productId: number; stockTotal: number; locations: { locationId: number; locationName: string; locationType: string; stock: number }[] } | null>(null);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  const locationsPanelRef = useDialogBehavior(showLocations, () => { setShowLocations(false); setLocationsData(null); setLocationsProduct(null); });
+
+  // Búsqueda con debounce de 300ms y cancelación de peticiones en vuelo
+  // (mismo patrón que inventario). Muestra todos los productos, tengan o no
+  // stock en la tienda seleccionada (includeZeroStock).
+  useEffect(() => {
+    const controller = new AbortController();
+    const t = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      if (nameFilter) params.set("name", nameFilter);
+      if (itemCodeFilter) params.set("itemCode", itemCodeFilter);
+      if (brand) params.set("brand", brand);
+      if (manufacturer) params.set("manufacturer", manufacturer);
+      if (model) params.set("model", model);
+      if (year) params.set("year", year);
+      if (categoryId) params.set("categoryId", categoryId);
+      if (oemCode) params.set("oemCode", oemCode);
+      if (factoryCode) params.set("factoryCode", factoryCode);
+      if (detailFilter) params.set("detail", detailFilter);
+      if (selectedLocationId) params.set("locationId", String(selectedLocationId));
+      params.set("includeZeroStock", "true");
+      params.set("page", String(searchPage));
+      params.set("limit", String(PAGE_SIZE));
+      api.get(`/products?${params.toString()}`, { signal: controller.signal })
+        .then((res) => {
+          setSearchResults((res.data.products || []).filter((p: Product) => !isVendedor || allowedCategories.length === 0 || allowedCategories.includes(p.category || "")));
+          setSearchTotal(res.data.pagination?.total || 0);
+          setSearchPages(res.data.pagination?.pages || 1);
+        })
+        .catch((err) => { if (err.code !== "ERR_CANCELED" && !axios.isCancel(err)) toast.error("Error al buscar productos"); })
+        .finally(() => setSearching(false));
+    }, 300);
+    setSearching(true);
+    return () => { controller.abort(); clearTimeout(t); };
+  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, selectedLocationId, searchPage, isVendedor, allowedCategories]);
+
+  useEffect(() => { setSearchPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, selectedLocationId]);
+
+  const clearSearchFilters = () => {
+    setNameFilter(""); setItemCodeFilter(""); setManufacturer(""); setBrand(""); setModel(""); setYear("");
+    setCategoryName(""); setCategoryId(""); setOemCode(""); setFactoryCode(""); setDetailFilter("");
+    setShowFilters(false);
+  };
+
+  const hasActiveSearchFilters = !!(nameFilter || itemCodeFilter || manufacturer || brand || model || year || categoryId || oemCode || factoryCode || detailFilter);
+
+  const vendedoresDisponibles = vendedores.filter((v) => !selectedLocationId || v.locationId === selectedLocationId);
 
   // --- Cart ---
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -177,51 +262,6 @@ export default function SalesPage() {
     return null;
   };
 
-  // ==================== SEARCH ====================
-  const doSearch = useCallback(async (q: string, oem?: string) => {
-    const query = (q || "").trim();
-    const oemQ = (oem || "").trim();
-    if (query.length < 2 && oemQ.length < 2 && !filterBrand && !filterManufacturer && !filterModel && !filterYear && !filterCategoryId) { setSearchResults([]); return; }
-    try {
-      setSearching(true);
-      const params = new URLSearchParams({ search: query, limit: "10" });
-      if (oemQ) params.set("oemCode", oemQ);
-      if (filterBrand) params.set("brand", filterBrand);
-      if (filterManufacturer) params.set("manufacturer", filterManufacturer);
-      if (filterModel) params.set("model", filterModel);
-      if (filterYear) params.set("year", filterYear);
-      if (filterCategoryId) params.set("categoryId", filterCategoryId);
-      if (selectedLocationId) params.set("locationId", String(selectedLocationId));
-      const res = await api.get(`/products?${params.toString()}`);
-      setSearchResults(res.data.products.filter((p: Product) => p.stock > 0 && (!isVendedor || allowedCategories.length === 0 || allowedCategories.includes(p.category || ""))));
-    } catch { toast.error("Error al buscar productos"); }
-    finally { setSearching(false); }
-  }, [selectedLocationId, isVendedor, allowedCategories, filterBrand, filterManufacturer, filterModel, filterYear, filterCategoryId]);
-
-  const applyFilters = () => {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    doSearch(search, oemSearch);
-  };
-
-  const clearAllFilters = () => {
-    setFilterBrand(""); setFilterManufacturer(""); setFilterModel(""); setFilterYear(""); setFilterCategoryId("");
-    setSearch(""); setOemSearch("");
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    setSearchResults([]);
-  };
-
-  const handleSearchChange = (v: string) => {
-    setSearch(v);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => doSearch(v, oemSearch), 300);
-  };
-
-  const handleOemChange = (v: string) => {
-    setOemSearch(v);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => doSearch(search, v), 300);
-  };
-
   // ==================== CART ====================
   const addToCart = (p: Product, tier: 1 | 2 = 2) => {
     const price = tier === 2 && Number(p.price2) > 0 ? Number(p.price2) : Number(p.price1);
@@ -243,9 +283,76 @@ export default function SalesPage() {
       }];
     });
     setSearch("");
-    setOemSearch("");
+    clearSearchFilters();
+    setSearchPage(1);
     setSearchResults([]);
     searchInputRef.current?.focus();
+  };
+
+  // ACCIONES: ver ubicaciones donde está el producto
+  const openLocations = async (p: Product) => {
+    setLocationsProduct(p);
+    setLocationsData(null);
+    setShowLocations(true);
+    setLocationsLoading(true);
+    try {
+      const res = await api.get(`/inventory/product/${p.id}`);
+      setLocationsData(res.data);
+    } catch {
+      toast.error("Error al cargar ubicaciones");
+    } finally {
+      setLocationsLoading(false);
+    }
+  };
+
+  const renderSearchCell = (p: Product, column: string) => {
+    if (column === "Fabricante") return <td key={column} className="px-3 py-2 text-gray-300">{p.manufacturer}</td>;
+    if (column === "Producto") return <td key={column} className="px-3 py-2 text-foreground font-medium max-w-[200px] truncate">{p.name}</td>;
+    if (column === "Marca") return <td key={column} className="px-3 py-2 text-gray-300">{p.brand}</td>;
+    if (column === "Modelo") return <td key={column} className="px-3 py-2 text-gray-300">{p.model}</td>;
+    if (column === "Año") return <td key={column} className="px-3 py-2 text-gray-400">{p.year}</td>;
+    if (column === "Detalles") return <td key={column} className="px-3 py-2 text-gray-400 text-xs">{p.detalles || p.detail || "—"}</td>;
+    if (column === "Cód. OEM") return <td key={column} className="px-3 py-2 text-gray-400 text-xs">{p.oemCode || "—"}</td>;
+    if (column === "Cód. Fábrica") return <td key={column} className="px-3 py-2 text-gray-400 text-xs">{p.factoryCode || "—"}</td>;
+    if (column === "Precio 1") return <td key={column} className="px-3 py-2 text-right text-green-400 font-medium whitespace-nowrap">{formatBs(Number(p.price1))}</td>;
+    if (column === "Precio 2") return <td key={column} className="px-3 py-2 text-right text-blue-400 whitespace-nowrap">{Number(p.price2) > 0 ? formatBs(Number(p.price2)) : "—"}</td>;
+    if (column === "Stock") return (
+      <td key={column} className="px-3 py-2 text-center">
+        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span>
+      </td>
+    );
+    if (column === "Acciones") return (
+      <td key={column} className="px-3 py-2">
+        <div className="flex items-center justify-center gap-1">
+          <button
+            onClick={() => addToCart(p, 1)}
+            disabled={p.stock <= 0}
+            title={p.stock > 0 ? "Agregar Mayorista" : "Sin stock en esta tienda"}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-green-400 hover:bg-green-500/10 transition-all disabled:opacity-30"
+          >
+            <Plus size={16} />
+          </button>
+          {Number(p.price2) > 0 && Number(p.price2) !== Number(p.price1) && (
+            <button
+              onClick={() => addToCart(p, 2)}
+              disabled={p.stock <= 0}
+              title={p.stock > 0 ? "Agregar Minorista" : "Sin stock en esta tienda"}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all disabled:opacity-30"
+            >
+              <Plus size={16} className="text-blue-400" />
+            </button>
+          )}
+          <button
+            onClick={() => openLocations(p)}
+            title="Ver ubicaciones"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
+          >
+            <MapPin size={16} />
+          </button>
+        </div>
+      </td>
+    );
+    return null;
   };
 
   const updateQuantity = (productId: number, newQty: number) => {
@@ -439,163 +546,205 @@ export default function SalesPage() {
       {/* ============ NEW SALE ============ */}
       {!showHistory && (
         <>
-          {/* Location selector */}
-          <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-              <MapPin size={16} className="text-primary-400" />
-              <span>Tienda:</span>
-            </div>
-            {isAdmin ? (
-              <div className="relative flex-1 sm:max-w-xs">
-                <select value={selectedLocationId} onChange={(e) => setSelectedLocationId(Number(e.target.value) || "")}
-                  className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
-                  <option value="">Seleccionar tienda</option>
-                  {locations.filter((l) => l.type === "TIENDA").map((l) => (
-                    <option key={l.id} value={l.id}>{l.name}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          {/* Location + Seller selector */}
+          <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-sm text-gray-400 shrink-0">
+                <MapPin size={16} className="text-primary-400" />
+                <span>Tienda:</span>
               </div>
-            ) : (
-              <span className="text-foreground text-sm font-medium">
-                {locations.find((l) => l.id === selectedLocationId)?.name || "Cargando..."}
-              </span>
-            )}
-          </div>
-
-          {/* Seller selector */}
-          <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-              <User size={16} className="text-primary-400" />
-              <span>Vendedor:</span>
+              {isAdmin ? (
+                <div className="relative flex-1">
+                  <select value={selectedLocationId} onChange={(e) => setSelectedLocationId(Number(e.target.value) || "")}
+                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                    <option value="">Seleccionar tienda</option>
+                    {locations.filter((l) => l.type === "TIENDA").map((l) => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                </div>
+              ) : (
+                <span className="text-foreground text-sm font-medium">
+                  {locations.find((l) => l.id === selectedLocationId)?.name || "Cargando..."}
+                </span>
+              )}
             </div>
-            <div className="relative flex-1 sm:max-w-xs">
-              <select value={selectedSeller} onChange={(e) => setSelectedSeller(e.target.value)}
-                className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
-                <option value="">Seleccionar vendedor</option>
-                <option value="Vendedor 1">Vendedor 1</option>
-                <option value="Vendedor 2">Vendedor 2</option>
-                <option value="Vendedor 3">Vendedor 3</option>
-              </select>
-              <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-sm text-gray-400 shrink-0">
+                <User size={16} className="text-primary-400" />
+                <span>Vendedor:</span>
+              </div>
+              {isAdmin ? (
+                <div className="relative flex-1">
+                  <select value={selectedSeller} onChange={(e) => setSelectedSeller(e.target.value)}
+                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                    <option value="">Seleccionar vendedor</option>
+                    {vendedoresDisponibles.map((v) => (
+                      <option key={v.id} value={v.name}>{v.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                </div>
+              ) : (
+                <span className="text-foreground text-sm font-medium">{user?.name || "Cargando..."}</span>
+              )}
             </div>
           </div>
 
           {/* Search */}
-          <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="relative">
+          <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4">
+            <div className="flex flex-col md:flex-row gap-3">
+              <div className="relative flex-1">
                 <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
                 <input
                   ref={searchInputRef}
-                  type="text" value={search} onChange={(e) => handleSearchChange(e.target.value)}
-                  placeholder="Buscar producto por código, nombre, marca, modelo..."
+                  type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar producto por código, nombre, marca, modelo, OEM..."
                   aria-label="Buscar producto"
                   className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
                 />
                 {search && (
-                  <button onClick={() => { setSearch(""); handleSearchChange(""); }}
+                  <button onClick={() => setSearch("")}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-foreground">
                     <X size={16} />
                   </button>
                 )}
               </div>
-              <div className="relative">
-                <FileText size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input
-                  type="text" value={oemSearch} onChange={(e) => handleOemChange(e.target.value)}
-                  placeholder="Buscar por código OEM"
-                  aria-label="Buscar por código OEM"
-                  className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-                />
-                {oemSearch && (
-                  <button onClick={() => { setOemSearch(""); handleOemChange(""); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-foreground">
-                    <X size={16} />
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowFilters(!showFilters)}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${
+                    showFilters && hasActiveSearchFilters
+                      ? "bg-primary-600/10 border-primary-600/30 text-primary-400"
+                      : "bg-dark-900/50 border-dark-600/50 text-gray-400 hover:text-foreground"
+                  }`}>
+                  <Filter size={16} /> Filtros
+                  {hasActiveSearchFilters && <span className="w-2 h-2 rounded-full bg-primary-400" />}
+                </button>
+                {hasActiveSearchFilters && (
+                  <button onClick={clearSearchFilters}
+                    className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl border border-dark-600/50 transition-all">
+                    Limpiar
                   </button>
                 )}
               </div>
             </div>
 
-            {(filterBrand || filterManufacturer || filterModel || filterYear || filterCategoryId) && (
-              <div className="pt-3 border-t border-dark-700/30">
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <span className="text-xs text-gray-500 uppercase tracking-wider">Filtros:</span>
-                  <button onClick={applyFilters}
-                    className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-medium transition-all">
-                    Aplicar filtros
-                  </button>
-                  <button onClick={clearAllFilters}
-                    className="px-3 py-1.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-xs hover:bg-red-500/20 transition-all">
-                    Limpiar
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                  <input value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)} placeholder="Marca" aria-label="Filtrar por marca"
-                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                  <input value={filterManufacturer} onChange={(e) => setFilterManufacturer(e.target.value)} placeholder="Fabricante" aria-label="Filtrar por fabricante"
-                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                  <input value={filterModel} onChange={(e) => setFilterModel(e.target.value)} placeholder="Modelo" aria-label="Filtrar por modelo"
-                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                  <input value={filterYear} onChange={(e) => setFilterYear(e.target.value)} placeholder="Año / rango" aria-label="Filtrar por año o rango"
-                    className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-600 text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                  <select value={filterCategoryId} onChange={(e) => setFilterCategoryId(e.target.value)}
-                    className="w-full appearance-none px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
-                    <option value="">Categoría</option>
-                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
+            {showFilters && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-4 pt-4 border-t border-dark-700/50">
+                <Autocomplete value={itemCodeFilter} onChange={setItemCodeFilter} suggestions={filters.itemCodes || []}
+                  placeholder="Escribe el código..." label="Código (Item)" />
+                <Autocomplete value={nameFilter} onChange={setNameFilter} suggestions={filters.names || []}
+                  placeholder="Escribe el nombre..." label="Producto (nombre)" />
+                <Autocomplete value={manufacturer} onChange={setManufacturer} suggestions={filters.manufacturers}
+                  placeholder="Todos los fabricantes" label="Fabricante" />
+                <Autocomplete value={categoryName} onChange={(v) => { setCategoryName(v); const found = filters.categories.find((c) => c.name === v); setCategoryId(found ? String(found.id) : ""); }}
+                  suggestions={filters.categories.map((c) => c.name)} placeholder="Todas las categorías" label="Categoría" />
+                <Autocomplete value={brand} onChange={setBrand} suggestions={filters.brands}
+                  placeholder="Todas las marcas" label="Marca" />
+                <Autocomplete value={model} onChange={setModel} suggestions={filters.models || []}
+                  placeholder="Todos los modelos" label="Modelo" />
+                <Autocomplete value={year} onChange={setYear} suggestions={filters.years || []}
+                  placeholder="Todos los años (ej. 92)" label="Año / rango" />
+                <Autocomplete value={detailFilter} onChange={setDetailFilter} suggestions={filters.detalles || []}
+                  placeholder="Detalle, versión, uso..." label="Detalles" />
+                <Autocomplete value={oemCode} onChange={setOemCode} suggestions={filters.oemCodes || []}
+                  placeholder="Todos los OEM" label="Cód. OEM" />
+                <Autocomplete value={factoryCode} onChange={setFactoryCode} suggestions={filters.factoryCodes || []}
+                  placeholder="Todos los códigos de fábrica" label="Cód. Fábrica" />
               </div>
             )}
 
-            {searchResults.length > 0 && (
-              <div className="mt-3 space-y-1.5 max-h-72 overflow-y-auto">
-                {searchResults.map((p) => {
-                  const hasPrice2 = Number(p.price2) > 0 && Number(p.price2) !== Number(p.price1);
-                  return (
-                    <div
-                      key={p.id}
-                      className="w-full flex items-center justify-between px-4 py-3 bg-dark-900/50 border border-dark-700/30 rounded-xl hover:border-primary-500/30 hover:bg-dark-800/50 transition-all"
-                    >
+            {/* Results */}
+            {searching ? (
+              <div className="flex items-center justify-center py-14">
+                <RefreshCw size={28} className="text-primary-400 animate-spin" />
+              </div>
+            ) : searchResults.length === 0 ? (
+              <div className="py-10 text-center">
+                <Search size={40} className="text-gray-600 mx-auto mb-3" />
+                <p className="text-gray-400 text-sm">Busca un producto o activa los filtros para ver resultados</p>
+              </div>
+            ) : (
+              <>
+                {/* Desktop table */}
+                <div className="hidden md:block overflow-x-auto mt-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-500 border-b border-dark-700/50">
+                        {SEARCH_COLUMNS.map((col) => {
+                          const align = ["Precio 1", "Precio 2"].includes(col) ? "text-right" : ["Stock", "Acciones"].includes(col) ? "text-center" : "text-left";
+                          return <th key={col} className={`${align} px-3 py-2.5 font-medium whitespace-nowrap`}>{col}</th>;
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {searchResults.map((p) => (
+                        <tr key={p.id} className="border-b border-dark-700/30 last:border-0 hover:bg-dark-900/30">
+                          {SEARCH_COLUMNS.map((col) => renderSearchCell(p, col))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile cards */}
+                <div className="md:hidden mt-4 space-y-1.5">
+                  {searchResults.map((p) => (
+                    <div key={p.id} className="w-full flex items-center justify-between px-4 py-3 bg-dark-900/50 border border-dark-700/30 rounded-xl">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-foreground font-medium truncate">{p.name}</p>
-                        <p className="text-xs text-gray-500 truncate">{p.brand} · {p.model} · {p.itemCode}</p>
-                        <p className={`text-xs font-medium mt-0.5 ${p.stock <= 3 ? "text-yellow-400" : "text-gray-500"}`}>
-                          Stock: {p.stock}
-                        </p>
+                        <p className="text-xs text-gray-500 truncate">{p.manufacturer} · {p.brand} · {p.model} · {p.itemCode}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">OEM: {p.oemCode || "—"} · Fábrica: {p.factoryCode || "—"}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs font-medium">{formatBs(Number(p.price1))}</span>
+                          {Number(p.price2) > 0 && Number(p.price2) !== Number(p.price1) && (
+                            <span className="text-xs text-blue-400">· {formatBs(Number(p.price2))}</span>
+                          )}
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>Stock: {p.stock}</span>
+                        </div>
                       </div>
-                      <div className="text-right ml-4 shrink-0 space-y-1">
-                        {hasPrice2 ? (
-                          <div className="flex flex-col items-end gap-1">
-                            <button
-                              onClick={() => addToCart(p, 1)}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium transition-all"
-                            >
-                              <Plus size={12} /> Mayorista: {formatBs(Number(p.price1))}
-                            </button>
-                            <button
-                              onClick={() => addToCart(p, 2)}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-all"
-                            >
-                              <Plus size={12} /> Minorista: {formatBs(Number(p.price2))}
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => addToCart(p, 1)}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium transition-all"
-                          >
-                            <Plus size={12} /> {formatBs(Number(p.price1))}
+                      <div className="flex items-center gap-1 ml-2 shrink-0">
+                        <button onClick={() => addToCart(p, 1)} disabled={p.stock <= 0}
+                          title={p.stock > 0 ? "Agregar Mayorista" : "Sin stock en esta tienda"}
+                          className="p-2 rounded-lg bg-primary-600/10 border border-primary-600/20 text-primary-400 hover:bg-primary-600 hover:text-white transition-all disabled:opacity-30">
+                          <Plus size={14} />
+                        </button>
+                        {Number(p.price2) > 0 && Number(p.price2) !== Number(p.price1) && (
+                          <button onClick={() => addToCart(p, 2)} disabled={p.stock <= 0}
+                            title={p.stock > 0 ? "Agregar Minorista" : "Sin stock en esta tienda"}
+                            className="p-2 rounded-lg bg-blue-600/10 border border-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30">
+                            <Plus size={14} />
                           </button>
                         )}
+                        <button onClick={() => openLocations(p)} title="Ver ubicaciones"
+                          className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-amber-400 transition-all">
+                          <MapPin size={14} />
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-            {(search.length >= 2 || oemSearch.length >= 2 || filterBrand || filterManufacturer || filterModel || filterYear || filterCategoryId) && searchResults.length === 0 && !searching && (
-              <p className="text-center text-gray-500 text-sm py-4">No se encontraron productos con stock</p>
+                  ))}
+                </div>
+
+                {/* Pagination */}
+                {searchPages > 1 && (
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-dark-700/50">
+                    <p className="text-xs text-gray-500">Página {searchPage} de {searchPages} · {searchTotal} productos</p>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setSearchPage((p) => Math.max(1, p - 1))} disabled={searchPage <= 1}
+                        className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30">
+                        <ChevronLeft size={16} />
+                      </button>
+                      <span className="text-sm text-gray-400">{searchPage} / {searchPages}</span>
+                      <button onClick={() => setSearchPage((p) => Math.min(searchPages, p + 1))} disabled={searchPage >= searchPages}
+                        className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30">
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -709,18 +858,18 @@ export default function SalesPage() {
                   className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
               </div>
               <div className="flex-1">
-                <label className="block text-xs text-gray-500 mb-1">Vendedor</label>
-                <div className="relative">
-                  <select value={histSeller} onChange={(e) => setHistSeller(e.target.value)}
-                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
-                    <option value="">Todos</option>
-                    <option value="Vendedor 1">Vendedor 1</option>
-                    <option value="Vendedor 2">Vendedor 2</option>
-                    <option value="Vendedor 3">Vendedor 3</option>
-                  </select>
-                  <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  <label className="block text-xs text-gray-500 mb-1">Vendedor</label>
+                  <div className="relative">
+                    <select value={histSeller} onChange={(e) => setHistSeller(e.target.value)}
+                      className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                      <option value="">Todos</option>
+                      {isTienda
+                        ? (user?.name ? <option value={user.name}>{user.name}</option> : null)
+                        : vendedores.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  </div>
                 </div>
-              </div>
               {(histDateFrom || histDateTo || histSeller) && (
                 <button onClick={() => { setHistDateFrom(""); setHistDateTo(""); setHistSeller(""); }}
                   className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl border border-dark-600/50 transition-all">
@@ -1090,6 +1239,70 @@ export default function SalesPage() {
               <button onClick={downloadSalePDF}
                 className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
                 <FileText size={16} /> Descargar PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ LOCATIONS MODAL (ACCIONES) ============ */}
+      {showLocations && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div ref={locationsPanelRef} role="dialog" aria-modal="true" aria-label="Ubicaciones del producto" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-dark-700/50">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-medium text-foreground truncate">{locationsProduct?.name}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {locationsProduct?.manufacturer} · {locationsProduct?.brand} · {locationsProduct?.model} · {locationsProduct?.itemCode}
+                </p>
+              </div>
+              <button onClick={() => { setShowLocations(false); setLocationsData(null); setLocationsProduct(null); }}
+                className="p-2 rounded-lg text-gray-400 hover:text-foreground hover:bg-dark-700 transition-all shrink-0 ml-3">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs text-gray-500 uppercase tracking-wider">Stock por ubicación</span>
+                {locationsData && (
+                  <span className="text-xs font-medium text-green-400">Total: {locationsData.stockTotal}</span>
+                )}
+              </div>
+
+              {locationsLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <RefreshCw size={28} className="text-primary-400 animate-spin" />
+                </div>
+              ) : locationsData && locationsData.locations.length > 0 ? (
+                <div className="space-y-2">
+                  {locationsData.locations.map((loc) => (
+                    <div key={loc.locationId} className="flex items-center justify-between px-4 py-3 bg-dark-900/50 border border-dark-700/30 rounded-xl">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <MapPin size={16} className="text-primary-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-foreground font-medium truncate">{loc.locationName}</p>
+                          <p className="text-xs text-gray-500 uppercase">{loc.locationType}</p>
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${loc.stock === 0 ? "bg-red-500/10 text-red-400" : loc.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>
+                        {loc.stock}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : locationsData ? (
+                <div className="py-10 text-center">
+                  <MapPin size={40} className="text-gray-600 mx-auto mb-3" />
+                  <p className="text-gray-400 text-sm">El producto no tiene inventario registrado en ninguna ubicación</p>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="px-5 py-4 border-t border-dark-700/50 flex justify-end">
+              <button onClick={() => { setShowLocations(false); setLocationsData(null); setLocationsProduct(null); }}
+                className="px-5 py-2.5 bg-dark-700 hover:bg-dark-600 text-foreground rounded-xl text-sm font-medium transition-all">
+                Cerrar
               </button>
             </div>
           </div>

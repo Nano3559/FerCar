@@ -263,10 +263,6 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "Debe registrar al menos un pago" });
     }
 
-    if (seller && typeof seller === "string" && !["Vendedor 1", "Vendedor 2", "Vendedor 3"].includes(seller)) {
-      return res.status(400).json({ message: "Vendedor inválido. Use: Vendedor 1, Vendedor 2 o Vendedor 3" });
-    }
-
     // Validar y deduplicar ítems (evita sobreventa con productos repetidos)
     const validItems = validateAndMergeItems(items);
 
@@ -292,13 +288,22 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // Vendedor:
+    // - TIENDA: la venta siempre se registra a nombre de la cuenta que la realiza.
+    // - ADMIN: puede elegir cualquier vendedor de la tienda (o libre).
+    let finalSeller = seller && typeof seller === "string" ? seller : null;
+
+    if (user.role === "TIENDA") {
+      const tiendaUser = await prisma.user.findUnique({ where: { id: user.userId }, select: { name: true } });
+      finalSeller = tiendaUser?.name || finalSeller;
+    }
+
     // C2: validar que el vendedor pertenezca a la tienda, solo si es un usuario registrado.
-    // Los vendedores genéricos ("Vendedor 1/2/3") o libres se aceptan como texto.
-    if (seller && typeof seller === "string") {
-      const sellerUser = await prisma.user.findFirst({ where: { name: seller } });
+    if (finalSeller) {
+      const sellerUser = await prisma.user.findFirst({ where: { name: finalSeller } });
       if (sellerUser) {
         if (sellerUser.locationId !== userLocationId) {
-          return res.status(400).json({ message: `El vendedor "${seller}" no pertenece a esta tienda` });
+          return res.status(400).json({ message: `El vendedor "${finalSeller}" no pertenece a esta tienda` });
         }
       }
     }
@@ -373,7 +378,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
           userId: user.userId,
           locationId: userLocationId,
           customerId: finalCustomerId,
-          seller: seller || null,
+          seller: finalSeller,
           items: { create: saleItemsData },
           payments: {
             create: payments.map((p: any) => ({

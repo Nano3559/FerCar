@@ -96,7 +96,8 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
       });
     }
 
-    if (queryLocationId && typeof queryLocationId === "string") {
+    const includeZeroStock = req.query.includeZeroStock === "true";
+    if (queryLocationId && typeof queryLocationId === "string" && !includeZeroStock) {
       AND.push({ inventories: { some: { locationId: Number(queryLocationId), stock: { gt: 0 } } } });
     }
 
