@@ -355,7 +355,7 @@ return [...prev, {
     if (!el) return;
     toast.loading("Generando cotización...", { id: "quote" });
     try {
-      const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#1d232e" });
+      const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
       const img = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -1740,54 +1740,66 @@ return [...prev, {
 
       {/* ============ QUOTE DOCUMENT (hidden, capturado por html2canvas) ============ */}
       {showQuote && (
-        <div id="sale-quote-doc" className="fixed" style={{ left: "-9999px", top: 0, width: "640px", background: "#1d232e", color: "#e5e7eb", padding: "28px", fontFamily: "Arial, sans-serif", fontSize: "12px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #f59e0b", paddingBottom: "12px", marginBottom: "16px" }}>
-            <div>
-              <h1 style={{ fontSize: "22px", fontWeight: "bold", color: "#f59e0b", margin: 0 }}>COTIZACIÓN</h1>
-              <p style={{ margin: "4px 0 0", color: "#9ca3af" }}>{title}</p>
+        <div id="sale-quote-doc" className="fixed" style={{ left: "-9999px", top: 0, width: "640px", background: "#ffffff", color: "#111827", fontFamily: "'Segoe UI', Arial, sans-serif", fontSize: "12px" }}>
+          {/* Barra superior decorativa */}
+          <div style={{ height: "6px", backgroundColor: "#f59e0b" }} />
+          <div style={{ margin: "0 32px", padding: "0 0 28px" }}>
+            {/* Encabezado */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #f59e0b", padding: "20px 0 14px", marginBottom: "18px" }}>
+              <div>
+                <h1 style={{ fontSize: "26px", fontWeight: "bold", color: "#f59e0b", margin: 0, letterSpacing: "2px" }}>COTIZACIÓN</h1>
+                <p style={{ margin: "6px 0 0", fontSize: "13px", color: "#111827", fontWeight: 700 }}>SHIBUMI · AUTOPARTES</p>
+                <p style={{ margin: "2px 0 0", color: "#9ca3af", fontSize: "11px" }}>{title}</p>
+              </div>
+              <div style={{ textAlign: "right", fontSize: "12px", color: "#374151", lineHeight: "1.7" }}>
+                <p style={{ margin: 0 }}><strong>Fecha:</strong> {new Date().toLocaleDateString("es-BO")}</p>
+                {quoteClient && <p style={{ margin: 0 }}><strong>Cliente:</strong> {quoteClient}</p>}
+                {quoteStoreName && <p style={{ margin: 0 }}><strong>Tienda:</strong> {quoteStoreName}</p>}
+                {quoteSeller && <p style={{ margin: 0 }}><strong>Vendedor:</strong> {quoteSeller}</p>}
+              </div>
             </div>
-            <div style={{ textAlign: "right", color: "#9ca3af" }}>
-              <p style={{ margin: 0 }}>{new Date().toLocaleDateString("es-BO")}</p>
-              {quoteClient && <p style={{ margin: "2px 0 0" }}>Cliente: {quoteClient}</p>}
-              {quoteStoreName && <p style={{ margin: "2px 0 0" }}>{quoteStoreName}</p>}
-              {quoteSeller && <p style={{ margin: "2px 0 0" }}>Vendedor: {quoteSeller}</p>}
-            </div>
-          </div>
 
-          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "16px" }}>
-            <thead>
-              <tr style={{ background: "#26303d", color: "#f59e0b", fontSize: "11px", textTransform: "uppercase" }}>
-                <th style={{ padding: "8px 10px", textAlign: "left", border: "1px solid #374151" }}>Código Fábrica</th>
-                <th style={{ padding: "8px 10px", textAlign: "left", border: "1px solid #374151" }}>Producto</th>
-                <th style={{ padding: "8px 10px", textAlign: "right", border: "1px solid #374151" }}>Precio 1 o 2</th>
-                <th style={{ padding: "8px 10px", textAlign: "center", border: "1px solid #374151" }}>Cantidad</th>
-                <th style={{ padding: "8px 10px", textAlign: "right", border: "1px solid #374151" }}>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cart.map((c) => (
-                <tr key={c.productId} style={{ borderBottom: "1px solid #374151" }}>
-                  <td style={{ padding: "8px 10px", border: "1px solid #374151" }}>{c.itemCode}</td>
-                  <td style={{ padding: "8px 10px", border: "1px solid #374151" }}>{c.name} · {c.brand}</td>
-                  <td style={{ padding: "8px 10px", border: "1px solid #374151", textAlign: "right", whiteSpace: "nowrap" }}>
-                    {c.priceTier === 1 ? "P1" : "P2"} · {c.unitPrice.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                  <td style={{ padding: "8px 10px", border: "1px solid #374151", textAlign: "center" }}>{c.quantity}</td>
-                  <td style={{ padding: "8px 10px", border: "1px solid #374151", textAlign: "right", whiteSpace: "nowrap" }}>
-                    Bs. {(c.unitPrice * c.quantity).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
+            {/* Tabla de productos */}
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ backgroundColor: "#f59e0b", color: "#ffffff", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  <th style={{ padding: "9px 10px", textAlign: "left", border: "1px solid #d97706" }}>Código</th>
+                  <th style={{ padding: "9px 10px", textAlign: "left", border: "1px solid #d97706" }}>Producto</th>
+                  <th style={{ padding: "9px 10px", textAlign: "right", border: "1px solid #d97706" }}>Precio</th>
+                  <th style={{ padding: "9px 10px", textAlign: "center", border: "1px solid #d97706" }}>Cantidad</th>
+                  <th style={{ padding: "9px 10px", textAlign: "right", border: "1px solid #d97706" }}>Subtotal</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {cart.map((c, idx) => (
+                  <tr key={c.productId} style={{ backgroundColor: idx % 2 === 0 ? "#ffffff" : "#fef3c7" }}>
+                    <td style={{ padding: "8px 10px", border: "1px solid #e5e7eb", color: "#374151", fontSize: "11px" }}>{c.itemCode}</td>
+                    <td style={{ padding: "8px 10px", border: "1px solid #e5e7eb", color: "#111827", fontWeight: 500 }}>
+                      {c.name} <span style={{ color: "#6b7280", fontWeight: 400 }}>· {c.brand}</span>
+                    </td>
+                    <td style={{ padding: "8px 10px", border: "1px solid #e5e7eb", textAlign: "right", whiteSpace: "nowrap", color: "#374151" }}>
+                      Bs. {c.unitPrice.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td style={{ padding: "8px 10px", border: "1px solid #e5e7eb", textAlign: "center", color: "#374151" }}>{c.quantity}</td>
+                    <td style={{ padding: "8px 10px", border: "1px solid #e5e7eb", textAlign: "right", whiteSpace: "nowrap", color: "#b45309", fontWeight: "bold" }}>
+                      Bs. {(c.unitPrice * c.quantity).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", borderTop: "2px solid #f59e0b", paddingTop: "12px" }}>
-            <div>
-              <p style={{ margin: 0, fontSize: "11px", color: "#9ca3af", textTransform: "uppercase" }}>TOTAL</p>
-              <p style={{ margin: "2px 0 0", fontSize: "22px", fontWeight: "bold", color: "#22c55e" }}>
-                Bs. {cartTotal.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
+            {/* Total */}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "16px", paddingTop: "12px", borderTop: "2px solid #f59e0b" }}>
+              <div style={{ backgroundColor: "#fef3c7", border: "1px solid #f59e0b", borderRadius: "8px", padding: "10px 22px", textAlign: "right" }}>
+                <p style={{ margin: 0, fontSize: "11px", color: "#b45309", textTransform: "uppercase", letterSpacing: "1px" }}>TOTAL</p>
+                <p style={{ margin: "2px 0 0", fontSize: "22px", fontWeight: "bold", color: "#b45309" }}>
+                  Bs. {cartTotal.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
             </div>
+
+            <p style={{ margin: "26px 0 0", fontSize: "10px", color: "#9ca3af", textAlign: "center" }}>¡Gracias por su compra! · Shibumi Autopartes</p>
           </div>
         </div>
       )}
