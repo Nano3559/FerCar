@@ -96,13 +96,22 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Los ids llegan de la URL. Number("abc") es NaN y Prisma responde 500,
+    // asi que un valor que no sea un entero positivo se ignora.
+    const asId = (v: unknown): number | null => {
+      const n = Number(v);
+      return typeof v === "string" && v.trim() !== "" && Number.isInteger(n) && n > 0 ? n : null;
+    };
+
     const includeZeroStock = req.query.includeZeroStock === "true";
     if (queryLocationId && typeof queryLocationId === "string" && !includeZeroStock) {
-      AND.push({ inventories: { some: { locationId: Number(queryLocationId), stock: { gt: 0 } } } });
+      const loc = asId(queryLocationId);
+      if (loc) AND.push({ inventories: { some: { locationId: loc, stock: { gt: 0 } } } });
     }
 
     if (supplierId && typeof supplierId === "string") {
-      AND.push({ costs: { some: { supplierId: Number(supplierId) } } });
+      const sup = asId(supplierId);
+      if (sup) AND.push({ costs: { some: { supplierId: sup } } });
     }
 
     if (AND.length > 0) where.AND = AND;
@@ -111,7 +120,7 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
     const take = Number(limit);
 
     const hasYearFilter = year && typeof year === "string";
-    const filterLocationId = queryLocationId && typeof queryLocationId === "string" ? Number(queryLocationId) : null;
+    const filterLocationId = asId(queryLocationId);
 
     const includeDetail = {
       category: true,
