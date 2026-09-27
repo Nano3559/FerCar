@@ -135,6 +135,8 @@ model Sale {
   formaPago     String?
   origen        String?
   note          String?
+  nitName       String?
+  status        SaleStatus @default(PENDIENTE)
   envioExterior Boolean    @default(false)
   quienRecoge   String?
   telefono      String?
@@ -380,6 +382,11 @@ enum Role {
 enum LocationType {
   ALMACEN
   TIENDA
+}
+
+enum SaleStatus {
+  PENDIENTE
+  PAGADO
 }
 
 enum SaleType {

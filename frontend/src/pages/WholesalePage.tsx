@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   TrendingUp, Plus, Minus, Trash2, X, Search, FileText,
   Check, Upload, RefreshCw, FileSpreadsheet, ShoppingCart,
-  Filter, ChevronLeft, ChevronRight,
+  Filter, ChevronLeft, ChevronRight, Wallet,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -21,12 +21,21 @@ interface WholesaleItem {
 interface WholesaleSale {
   id: number; saleDate: string; total: number; type: string;
   paraQuien?: string | null; lugarEntrega?: string | null; datosFactura?: string | null; formaPago?: string | null;
+  nitName?: string | null; status?: string | null;
   customer: { name: string; nit: string | null } | null;
   location: { name: string } | null;
   user: { name: string } | null;
   payments: { method: string; amount: number }[];
   items: { productId: number; quantity: number; unitPrice: number; subtotal: number; product: { id: number; name: string; itemCode: string; brand: string; model: string } }[];
 }
+
+const PAGO_METHODS = [
+  { value: "EFECTIVO", label: "Efectivo" },
+  { value: "QR", label: "QR" },
+  { value: "CREDITO", label: "Crédito" },
+];
+
+const pagoLabel = (m: string) => PAGO_METHODS.find((x) => x.value === m)?.label || m;
 
 interface ProductResult {
   id: number; itemCode: string; manufacturer: string; name: string;
@@ -73,7 +82,7 @@ export default function WholesalePage() {
   const [showHistory, setShowHistory] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
-  const [lastWholesaleSale, setLastWholesaleSale] = useState<{ id: number; saleDate: string; total: number; items: WholesaleItem[]; clientName: string; pedido: string; deliveryPlace: string; paymentMethod: string; facturaNIT: string; origen: string; quienRecoge: string; telefono: string; envioExterior: boolean } | null>(null);
+  const [lastWholesaleSale, setLastWholesaleSale] = useState<{ id: number; saleDate: string; total: number; items: WholesaleItem[]; clientName: string; paraDonde: string; nit: string; nitName: string; payments: { method: string; amount: number }[]; status: string } | null>(null);
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -109,24 +118,31 @@ export default function WholesalePage() {
   const [searchTotal, setSearchTotal] = useState(0);
 
   const [clientName, setClientName] = useState("");
-  const [pedido, setPedido] = useState("");
-  const [deliveryPlace, setDeliveryPlace] = useState("Cochabamba");
-  const [customDeliveryPlace, setCustomDeliveryPlace] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("TRANSFERENCIA");
-  const [facturaNIT, setFacturaNIT] = useState("");
-  const [origen, setOrigen] = useState("");
-  const [quienRecoge, setQuienRecoge] = useState("");
-  const [telefono, setTelefono] = useState("");
-  const [envioExterior, setEnvioExterior] = useState(false);
+  const [paraDonde, setParaDonde] = useState("");
+  const [nit, setNit] = useState("");
+  const [nitName, setNitName] = useState("");
+  const [payments, setPayments] = useState<{ method: string; amount: number }[]>([{ method: "EFECTIVO", amount: 0 }]);
+
+  const [payModalSale, setPayModalSale] = useState<WholesaleSale | null>(null);
+  const [payMethod, setPayMethod] = useState("EFECTIVO");
+  const [payAmount, setPayAmount] = useState<number>(0);
+  const [paying, setPaying] = useState(false);
+  const payModalRef = useDialogBehavior(payModalSale !== null, () => { setPayModalSale(null); setPayAmount(0); });
 
   const formatBs = (v: number) =>
     `Bs. ${v.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-  const finalDeliveryPlace = deliveryPlace === "Otra"
-    ? (customDeliveryPlace.trim() || "Otra ubicación")
-    : deliveryPlace;
-
   const total = items.reduce((sum, i) => sum + i.subtotal, 0);
+
+  const validPayments = payments.filter((p) => Number(p.amount) > 0);
+  const paidAmount = validPayments.filter((p) => p.method !== "CREDITO").reduce((s, p) => s + Number(p.amount), 0);
+  const balance = Math.max(total - paidAmount, 0);
+  const resultingStatus = validPayments.some((p) => p.method === "CREDITO") || paidAmount < total ? "PENDIENTE" : "PAGADO";
+
+  const payModalPaid = payModalSale
+    ? payModalSale.payments.filter((p) => p.method !== "CREDITO").reduce((s, p) => s + Number(p.amount), 0)
+    : 0;
+  const payModalBalance = payModalSale ? Math.max(Number(payModalSale.total) - payModalPaid, 0) : 0;
 
   const fetchSales = useCallback(async () => {
     try {
@@ -220,30 +236,39 @@ export default function WholesalePage() {
 
   const openConfirm = () => {
     if (!items.length) { toast.error("Agrega al menos un producto"); return; }
-    if (!clientName.trim()) { toast.error("Ingresa el nombre del cliente"); return; }
+    if (!clientName.trim()) { toast.error("Ingresa a quién se realiza la venta (A QUIEN)"); return; }
+    if (validPayments.length === 0) { toast.error("Registra al menos un pago (QR, Efectivo o Crédito)"); return; }
     setShowConfirm(true);
   };
 
+  const updatePayment = (index: number, patch: Partial<{ method: string; amount: number }>) => {
+    setPayments((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)));
+  };
+  const addPaymentRow = () => setPayments((prev) => [...prev, { method: "EFECTIVO", amount: 0 }]);
+  const removePaymentRow = (index: number) => setPayments((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+
   const confirmSale = async () => {
     try {
+      if (validPayments.reduce((s, p) => s + Number(p.amount), 0) - total > 0.01) {
+        toast.error("Los pagos superan el total de la venta");
+        return;
+      }
       const payload: any = {
-        customerData: { name: clientName, nit: facturaNIT || null },
-        paraQuien: pedido,
-        lugarEntrega: finalDeliveryPlace,
-        origen: origen || undefined,
-        envioExterior,
-        quienRecoge: quienRecoge || undefined,
-        telefono: telefono || undefined,
+        customerData: { name: clientName, nit: nit || null },
+        paraQuien: clientName,
+        lugarEntrega: paraDonde || null,
+        datosFactura: nit || null,
+        nitName: nitName || null,
         items: items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
         })),
-        payments: [{ method: paymentMethod, amount: total }],
+        payments: validPayments.map((p) => ({ method: p.method, amount: Number(p.amount) })),
       };
       if (selectedStoreId) payload.locationId = selectedStoreId;
       const response = await api.post("/wholesale", payload);
-      setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, pedido, deliveryPlace: finalDeliveryPlace, paymentMethod, facturaNIT, origen, quienRecoge, telefono, envioExterior });
+      setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, paraDonde, nit, nitName, payments: [...validPayments], status: resultingStatus });
       toast.success("Venta por mayor registrada");
       setShowConfirm(false);
       setShowForm(false);
@@ -256,10 +281,25 @@ export default function WholesalePage() {
   };
 
   const resetForm = () => {
-    setItems([]); setClientName(""); setPedido(""); setDeliveryPlace("Cochabamba");
-    setCustomDeliveryPlace("");
-    setPaymentMethod("TRANSFERENCIA"); setFacturaNIT("");
-    setOrigen(""); setQuienRecoge(""); setTelefono(""); setEnvioExterior(false);
+    setItems([]); setClientName(""); setParaDonde(""); setNit(""); setNitName("");
+    setPayments([{ method: "EFECTIVO", amount: 0 }]);
+  };
+
+  const registerPayment = async () => {
+    if (!payModalSale) return;
+    if (!payAmount || payAmount <= 0) { toast.error("Indica el monto del pago"); return; }
+    try {
+      setPaying(true);
+      await api.post(`/wholesale/${payModalSale.id}/payments`, { method: payMethod, amount: payAmount });
+      toast.success("Pago registrado");
+      setPayModalSale(null);
+      setPayAmount(0);
+      fetchSales();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al registrar el pago");
+    } finally {
+      setPaying(false);
+    }
   };
 
   const useImportedItems = () => {
@@ -319,11 +359,11 @@ export default function WholesalePage() {
       <style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}th{background:#f0f0f0}h1{font-size:18px}.total{font-size:16px;font-weight:bold;text-align:right;margin-top:10px}</style></head><body>
       <h1>Shibumi - Nota de Venta Mayorista</h1>
       <p><b>Fecha:</b> ${new Date(sale.saleDate).toLocaleDateString("es-BO")} | <b>ID:</b> #${sale.id}</p>
-       <p><b>Cliente:</b> ${sale.customer?.name || "N/A"} | <b>Lugar:</b> ${sale.lugarEntrega || sale.location?.name || "N/A"}</p>
-       ${sale.paraQuien ? `<p><b>Para quién:</b> ${sale.paraQuien}</p>` : ""}
-       ${sale.datosFactura ? `<p><b>Factura/NIT:</b> ${sale.datosFactura}</p>` : ""}
-       ${sale.formaPago ? `<p><b>Forma de pago:</b> ${sale.formaPago}</p>` : ""}
-      <p><b>Vendedor:</b> ${sale.user?.name || "N/A"}</p>
+       <p><b>Cliente:</b> ${sale.customer?.name || sale.paraQuien || "N/A"} | <b>Lugar:</b> ${sale.lugarEntrega || sale.location?.name || "N/A"}</p>
+       ${sale.paraQuien ? `<p><b>A quién:</b> ${sale.paraQuien}</p>` : ""}
+       ${sale.nitName ? `<p><b>Nombre del NIT:</b> ${sale.nitName}</p>` : ""}
+       ${sale.datosFactura ? `<p><b>NIT:</b> ${sale.datosFactura}</p>` : ""}
+       <p><b>Estado:</b> ${sale.status || "PENDIENTE"} | <b>Vendedor:</b> ${sale.user?.name || "N/A"}</p>
       <table><thead><tr><th>Código</th><th>Producto</th><th>Marca</th><th>Modelo</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr></thead><tbody>
       ${sale.items.map((i) => `<tr><td>${i.product.itemCode}</td><td>${i.product.name}</td><td>${i.product.brand}</td><td>${i.product.model}</td><td>${i.quantity}</td><td>${formatBs(Number(i.unitPrice))}</td><td>${formatBs(Number(i.subtotal))}</td></tr>`).join("")}
       </tbody></table>
@@ -332,6 +372,9 @@ export default function WholesalePage() {
       </body></html>`);
     win.document.close(); win.print();
   };
+
+  const salePaid = (s: WholesaleSale) =>
+    s.payments.filter((p) => p.method !== "CREDITO").reduce((a, p) => a + Number(p.amount), 0);
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString("es-BO", { day: "2-digit", month: "short", year: "numeric" });
 
@@ -414,7 +457,7 @@ export default function WholesalePage() {
       {showHistory && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-            <h3 className="text-foreground font-medium">Historial de Ventas Mayoristas</h3>
+            <h3 className="text-foreground font-medium">Historial de Ventas Mayoristas <span className="text-xs text-gray-500 font-normal">(últimos 15 días)</span></h3>
             <button onClick={fetchSales} className="p-1.5 text-gray-400 hover:text-foreground rounded-lg transition-all">
               <RefreshCw size={14} />
             </button>
@@ -429,30 +472,51 @@ export default function WholesalePage() {
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">ID</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Fecha</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Cliente</th>
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Lugar</th>
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Pago</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Para dónde</th>
+                    <th className="text-center px-4 py-3 text-gray-400 font-medium">Estado</th>
+                    <th className="text-right px-4 py-3 text-gray-400 font-medium">Pagado</th>
                     <th className="text-right px-4 py-3 text-gray-400 font-medium">Total</th>
-                    <th className="text-center px-4 py-3 text-gray-400 font-medium">Nota</th>
+                    <th className="text-center px-4 py-3 text-gray-400 font-medium">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sales.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No hay ventas mayoristas registradas</td></tr>
-                  ) : sales.map((s) => (
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No hay ventas mayoristas en los últimos 15 días</td></tr>
+                  ) : sales.map((s) => {
+                    const paid = salePaid(s);
+                    return (
                     <tr key={s.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
                       <td className="px-4 py-3 text-gray-300 font-mono text-xs">#{s.id}</td>
                       <td className="px-4 py-3 text-gray-300">{formatDate(s.saleDate)}</td>
-                      <td className="px-4 py-3 text-foreground font-medium">{s.customer?.name || "N/A"}</td>
-                      <td className="px-4 py-3 text-gray-300">{s.location?.name || "N/A"}</td>
-                      <td className="px-4 py-3 text-gray-300">{s.payments.map((p) => p.method).join(", ")}</td>
+                      <td className="px-4 py-3 text-foreground font-medium">{s.customer?.name || s.paraQuien || "N/A"}</td>
+                      <td className="px-4 py-3 text-gray-300">{s.lugarEntrega || s.location?.name || "N/A"}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${s.status === "PAGADO" ? "bg-emerald-500/10 text-emerald-400" : "bg-yellow-500/10 text-yellow-400"}`}>
+                          {s.status || "PENDIENTE"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-300 text-right">
+                        {formatBs(paid)}
+                        {s.status !== "PAGADO" && (
+                          <span className="block text-xs text-yellow-400">Saldo {formatBs(Math.max(Number(s.total) - paid, 0))}</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-emerald-400 font-medium text-right">{formatBs(Number(s.total))}</td>
                       <td className="px-4 py-3 text-center">
-                        <button onClick={() => printNota(s)} className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all" title="Imprimir nota">
-                          <FileText size={14} />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          {s.status !== "PAGADO" && (
+                            <button onClick={() => { setPayModalSale(s); setPayAmount(Math.max(Number(s.total) - paid, 0)); setPayMethod("EFECTIVO"); }}
+                              className="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all" title="Registrar pago">
+                              <Wallet size={14} />
+                            </button>
+                          )}
+                          <button onClick={() => printNota(s)} className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all" title="Imprimir nota">
+                            <FileText size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             </div>
@@ -649,79 +713,64 @@ export default function WholesalePage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Nombre del cliente *</label>
-                <input value={clientName} onChange={(e) => setClientName(e.target.value)}
+                <label className="block text-xs text-gray-400 mb-1">A QUIEN *</label>
+                <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nombre del cliente"
                   className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Para quién es el pedido</label>
-                <input value={pedido} onChange={(e) => setPedido(e.target.value)}
+                <label className="block text-xs text-gray-400 mb-1">PARA DONDE</label>
+                <input value={paraDonde} onChange={(e) => setParaDonde(e.target.value)} placeholder="Ciudad o dirección de entrega"
                   className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Lugar de entrega *</label>
-                <select value={deliveryPlace} onChange={(e) => { setDeliveryPlace(e.target.value); if (e.target.value !== "Otra") setCustomDeliveryPlace(""); }}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
-                  <option value="Cochabamba">Cochabamba</option>
-                  <option value="Santa Cruz">Santa Cruz</option>
-                  <option value="La Paz">La Paz</option>
-                  <option value="Otra">Otra ubicación</option>
-                </select>
-                {deliveryPlace === "Otra" && (
-                  <input
-                    value={customDeliveryPlace}
-                    onChange={(e) => setCustomDeliveryPlace(e.target.value)}
-                    placeholder="Escribe la ubicación a la que se envía o vende..."
-                    aria-label="Otra ubicación de entrega"
-                    className="mt-2 w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500"
-                  />
-                )}
+                <label htmlFor="wholesale-nit" className="block text-xs text-gray-400 mb-1">NIT</label>
+                <input id="wholesale-nit" value={nit} onChange={(e) => setNit(e.target.value)} placeholder="Número de NIT"
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Forma de pago *</label>
-                <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
-                  <option value="EFECTIVO">Efectivo</option>
-                  <option value="TRANSFERENCIA">Transferencia</option>
-                  <option value="QR">QR</option>
-                  <option value="CREDITO">Crédito</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="wholesale-nit" className="block text-xs text-gray-400 mb-1">Datos factura (NIT)</label>
-                <input id="wholesale-nit" value={facturaNIT} onChange={(e) => setFacturaNIT(e.target.value)} placeholder="NIT"
+                <label htmlFor="wholesale-nitname" className="block text-xs text-gray-400 mb-1">NOMBRE DEL NIT</label>
+                <input id="wholesale-nitname" value={nitName} onChange={(e) => setNitName(e.target.value)} placeholder="Razón social del NIT"
                   className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="wholesale-origen" className="block text-xs text-gray-400 mb-1">Origen</label>
-                <input id="wholesale-origen" value={origen} onChange={(e) => setOrigen(e.target.value)} placeholder="Ej: Cochabamba, Argentina..."
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+            {items.length > 0 && (
+              <div className="border-t border-dark-700/50 pt-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+                  <span className="text-sm font-medium text-foreground">Pagos</span>
+                  <span className="text-xs text-gray-500">QR · Efectivo · Crédito · puede ser más de un pago</span>
+                </div>
+                <div className="space-y-2">
+                  {payments.map((p, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <select value={p.method} onChange={(e) => updatePayment(i, { method: e.target.value })}
+                        aria-label={`Método de pago ${i + 1}`}
+                        className="w-36 px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
+                        {PAGO_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                      <input type="number" min={0} value={p.amount === 0 ? "" : p.amount} onChange={(e) => updatePayment(i, { amount: Number(e.target.value) || 0 })}
+                        placeholder="Monto"
+                        aria-label={`Monto del pago ${i + 1}`}
+                        className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                      {payments.length > 1 && (
+                        <button onClick={() => removePaymentRow(i)} className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all" aria-label="Quitar pago">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={addPaymentRow} className="mt-2 text-sm text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-colors">
+                  <Plus size={14} /> Agregar otro pago
+                </button>
+                <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                  <span className="text-gray-400">Total: <strong className="text-foreground">{formatBs(total)}</strong></span>
+                  <span className="text-gray-400">Pagado: <strong className={paidAmount >= total ? "text-emerald-400" : "text-gray-300"}>{formatBs(balance === 0 ? total : paidAmount)}</strong></span>
+                  <span className="text-gray-400">Saldo: <strong className={balance > 0 ? "text-yellow-400" : "text-emerald-400"}>{formatBs(balance)}</strong></span>
+                  <span className="text-xs self-center text-gray-500">{resultingStatus === "PENDIENTE" ? "La venta quedará PENDIENTE" : "La venta quedará PAGADA"}</span>
+                </div>
               </div>
-              <div>
-                <label htmlFor="wholesale-telefono" className="block text-xs text-gray-400 mb-1">N° de celular</label>
-                <input id="wholesale-telefono" type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="75612345"
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-              </div>
-              <div className="flex items-end pb-2">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={envioExterior} onChange={(e) => setEnvioExterior(e.target.checked)}
-                    className="w-4 h-4 accent-primary-600" />
-                  <span className="text-sm text-foreground">¿Envío fuera de Bolivia?</span>
-                </label>
-              </div>
-            </div>
-
-<div>
-              <label htmlFor="wholesale-quien-recoge" className="block text-xs text-gray-400 mb-1">Quién recoge el pedido</label>
-              <input id="wholesale-quien-recoge" value={quienRecoge} onChange={(e) => setQuienRecoge(e.target.value)} placeholder="Nombre de la persona que recoge"
-                className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-            </div>
+            )}
 
 {items.length > 0 && (
               <div className="overflow-x-auto">
@@ -800,16 +849,29 @@ export default function WholesalePage() {
               </button>
             </div>
               <div className="p-6 space-y-3">
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Cliente:</span><span className="text-foreground">{clientName}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Para quién:</span><span className="text-foreground">{pedido || "No especificado"}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Entrega:</span><span className="text-foreground">{finalDeliveryPlace}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Origen:</span><span className="text-foreground">{origen || "No especificado"}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Quién recoge:</span><span className="text-foreground">{quienRecoge || "No especificado"}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Celular:</span><span className="text-foreground">{telefono || "No especificado"}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Envío fuera de Bolivia:</span><span className="text-foreground">{envioExterior ? "Sí" : "No"}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Factura/NIT:</span><span className="text-foreground">{facturaNIT || "No especificado"}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Pago:</span><span className="text-foreground">{paymentMethod}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">A quién:</span><span className="text-foreground">{clientName}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Para dónde:</span><span className="text-foreground">{paraDonde || "No especificado"}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">NIT:</span><span className="text-foreground">{nit || "No especificado"}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-400">Nombre del NIT:</span><span className="text-foreground">{nitName || "No especificado"}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-400">Productos:</span><span className="text-foreground">{items.length}</span></div>
+                <div className="border-t border-dark-700/50 pt-3">
+                  <p className="text-xs text-gray-400 font-medium mb-1.5">Pagos</p>
+                  {validPayments.length === 0 && <p className="text-xs text-red-400">Registra al menos un pago</p>}
+                  <div className="space-y-1">
+                    {validPayments.map((p, i) => (
+                      <div key={i} className="flex justify-between text-xs">
+                        <span className="text-gray-300">{pagoLabel(p.method)}</span>
+                        <span className="text-gray-400">{formatBs(Number(p.amount))}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between pt-2 mt-1 border-t border-dark-700/40">
+                    <span className="text-sm text-gray-400">Estado de la venta:</span>
+                    <span className={`text-sm font-semibold ${resultingStatus === "PAGADO" ? "text-emerald-400" : "text-yellow-400"}`}>
+                      {resultingStatus === "PAGADO" ? "PAGADO" : "PENDIENTE"}
+                    </span>
+                  </div>
+                </div>
                 <div className="border-t border-dark-700/50 pt-3 space-y-1">
                   {items.map((item) => (
                     <div key={item.productId} className="flex justify-between gap-3 text-xs">
@@ -852,20 +914,24 @@ export default function WholesalePage() {
               <div className="grid grid-cols-2 gap-2 text-gray-300">
                 <span>Cliente: <strong className="text-foreground">{lastWholesaleSale.clientName || "Registrado"}</strong></span>
                 <span>Fecha: <strong className="text-foreground">{formatDate(lastWholesaleSale.saleDate)}</strong></span>
-                <span>Para quién: <strong className="text-foreground">{lastWholesaleSale.pedido || "No especificado"}</strong></span>
-                <span>Entrega: <strong className="text-foreground">{lastWholesaleSale.deliveryPlace}</strong></span>
-                <span>Origen: <strong className="text-foreground">{lastWholesaleSale.origen || "No especificado"}</strong></span>
-                <span>Quién recoge: <strong className="text-foreground">{lastWholesaleSale.quienRecoge || "No especificado"}</strong></span>
-                <span>Celular: <strong className="text-foreground">{lastWholesaleSale.telefono || "No especificado"}</strong></span>
-                <span>Envío fuera de Bolivia: <strong className="text-foreground">{lastWholesaleSale.envioExterior ? "Sí" : "No"}</strong></span>
-                <span>Factura/NIT: <strong className="text-foreground">{lastWholesaleSale.facturaNIT || "No especificado"}</strong></span>
-                <span>Pago: <strong className="text-foreground">{lastWholesaleSale.paymentMethod}</strong></span>
+                <span>Para dónde: <strong className="text-foreground">{lastWholesaleSale.paraDonde || "No especificado"}</strong></span>
+                <span>NIT: <strong className="text-foreground">{lastWholesaleSale.nit || "No especificado"}</strong></span>
+                <span>Nombre del NIT: <strong className="text-foreground">{lastWholesaleSale.nitName || "No especificado"}</strong></span>
+                <span>Estado: <strong className={`${lastWholesaleSale.status === "PAGADO" ? "text-emerald-400" : "text-yellow-400"}`}>{lastWholesaleSale.status || "PENDIENTE"}</strong></span>
               </div>
               <div className="border-t border-dark-700/50 pt-3 space-y-2">
                 {lastWholesaleSale.items.map((item) => (
                   <div key={item.productId} className="flex justify-between gap-3">
                     <span className="text-gray-300">{item.name} x{item.quantity}</span>
                     <span className="text-emerald-400">{formatBs(item.subtotal)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-dark-700/50 pt-3 space-y-1">
+                {lastWholesaleSale.payments.map((p, i) => (
+                  <div key={i} className="flex justify-between gap-3 text-xs">
+                    <span className="text-gray-300">{pagoLabel(p.method)}</span>
+                    <span className="text-gray-400">{formatBs(Number(p.amount))}</span>
                   </div>
                 ))}
               </div>
@@ -966,6 +1032,53 @@ export default function WholesalePage() {
                   <Check size={16} /> Usar en la venta
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Registrar pago a venta pendiente */}
+      {payModalSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div ref={payModalRef} role="dialog" aria-modal="true" aria-label="Registrar pago" className="bg-dark-900 border border-dark-700/50 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
+              <h3 className="text-lg font-bold text-foreground">Registrar pago</h3>
+              <button onClick={() => { setPayModalSale(null); setPayAmount(0); }} aria-label="Cerrar" className="p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex justify-between text-sm"><span className="text-gray-400">Venta:</span><span className="text-foreground">#{payModalSale.id}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-400">Cliente:</span><span className="text-foreground">{payModalSale.customer?.name || payModalSale.paraQuien || "N/A"}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-400">Fecha:</span><span className="text-foreground">{formatDate(payModalSale.saleDate)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-400">Total:</span><span className="text-emerald-400 font-medium">{formatBs(Number(payModalSale.total))}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-400">Pagado:</span><span className="text-gray-300">{formatBs(payModalPaid)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-400">Saldo pendiente:</span><span className="text-yellow-400 font-medium">{formatBs(payModalBalance)}</span></div>
+              <div className="pt-2 border-t border-dark-700/50 space-y-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Método de pago</label>
+                  <select value={payMethod} onChange={(e) => { setPayMethod(e.target.value); setPayAmount(payModalBalance); }}
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
+                    {PAGO_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Monto</label>
+                  <input type="number" min={0} value={payAmount === 0 ? "" : payAmount} onChange={(e) => setPayAmount(Number(e.target.value) || 0)}
+                    placeholder="Monto del pago"
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                </div>
+                {payMethod === "CREDITO" && (
+                  <p className="text-xs text-yellow-400/80">El crédito deja la venta en estado PENDIENTE hasta cobrar el saldo.</p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 px-6 py-4 border-t border-dark-700/50">
+              <button onClick={() => { setPayModalSale(null); setPayAmount(0); }} className="flex-1 px-4 py-2.5 text-gray-300 bg-dark-700 hover:bg-dark-600 rounded-xl text-sm">Cancelar</button>
+              <button onClick={registerPayment} disabled={paying}
+                className="flex-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-50">
+                {paying ? "Registrando..." : "Registrar pago"}
+              </button>
             </div>
           </div>
         </div>

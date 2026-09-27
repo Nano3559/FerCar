@@ -18,7 +18,7 @@ router.use(authorize("ADMIN", "TIENDA"));
 // POST — Crear venta mayorista
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { items, payments, customerId, customerData, locationId, clienteName, paraQuien, lugarEntrega, datosFactura, formaPago, origen, envioExterior, quienRecoge, telefono } = req.body;
+    const { items, payments, customerId, customerData, locationId, clienteName, paraQuien, lugarEntrega, datosFactura, formaPago, nitName, origen, envioExterior, quienRecoge, telefono } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
@@ -128,20 +128,29 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       });
 
       const totalPaid = payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
-      if (Math.abs(totalPaid - totalSale) > 0.01) {
-        throw new Error(`El total pagado (Bs. ${totalPaid}) no coincide con el total de la venta (Bs. ${totalSale})`);
+      if (totalPaid - totalSale > 0.01) {
+        throw new Error(`El total pagado (Bs. ${totalPaid}) supera el total de la venta (Bs. ${totalSale})`);
       }
+
+      // Estado automático: PENDIENTE si hay método CRÉDITO o queda saldo por pagar
+      const hasCredit = payments.some((p: any) => p.method === "CREDITO");
+      const paidNow = payments
+        .filter((p: any) => p.method !== "CREDITO")
+        .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+      const saleStatus = hasCredit || paidNow < totalSale ? "PENDIENTE" : "PAGADO";
 
       const sale = await tx.sale.create({
         data: {
           total: totalSale,
           type: "MAYOR",
+          status: saleStatus,
           userId: user.userId,
           locationId: userLocationId,
           customerId: finalCustomerId,
           paraQuien: entregaParaQuien,
           lugarEntrega: entregaLugar,
           datosFactura: entregaFactura,
+          nitName: nitName || null,
           formaPago: entregaFormaPago,
           origen: origen || null,
           envioExterior: Boolean(envioExterior),
@@ -210,6 +219,73 @@ router.post("/", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error("Error al crear venta mayorista:", error);
     res.status(400).json({ message: error.message || "Error interno del servidor" });
+  }
+});
+
+// POST /:id/payments — Registrar un pago a una venta mayorista mientras esté
+// PENDIENTE (ej. cobro posterior de un crédito). Se marca PAGADA cuando lo
+// cobrado (sin crédito) alcanza el total, y no se puede modificar después.
+router.post("/:id/payments", async (req: AuthRequest, res: Response) => {
+  try {
+    const saleId = Number(req.params.id);
+    const { method, amount } = req.body;
+
+    if (!method || !["EFECTIVO", "QR", "TRANSFERENCIA", "CREDITO"].includes(method)) {
+      return res.status(400).json({ message: "Método de pago inválido" });
+    }
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ message: "Debe indicar un monto mayor a 0" });
+    }
+
+    const sale = await prisma.sale.findUnique({
+      where: { id: saleId },
+      include: { payments: true },
+    });
+    if (!sale || sale.type !== "MAYOR") {
+      return res.status(404).json({ message: "Venta mayorista no encontrada" });
+    }
+    if (sale.status === "PAGADO") {
+      return res.status(400).json({ message: "La venta ya fue pagada completamente" });
+    }
+
+    const paidWithoutCredit = sale.payments
+      .filter((p) => p.method !== "CREDITO")
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+
+    const nextStatus = method === "CREDITO" || paidWithoutCredit + Number(amount) < Number(sale.total)
+      ? "PENDIENTE"
+      : "PAGADO";
+
+    await prisma.$transaction([
+      prisma.payment.create({
+        data: { saleId, method, amount: Number(amount) },
+      }),
+      prisma.sale.update({
+        where: { id: saleId },
+        data: { status: nextStatus },
+      }),
+    ]);
+
+    const result = await prisma.sale.findUnique({
+      where: { id: saleId },
+      include: {
+        user: { select: { id: true, name: true } },
+        location: { select: { id: true, name: true } },
+        customer: true,
+        items: { include: { product: { select: { id: true, name: true, itemCode: true } } } },
+        payments: true,
+      },
+    });
+
+    res.json({
+      ...result,
+      total: Number(result!.total),
+      items: result!.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
+      payments: result!.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
+    });
+  } catch (error: any) {
+    console.error("Error al registrar pago:", error);
+    res.status(500).json({ message: error.message || "Error al registrar el pago" });
   }
 });
 
@@ -426,6 +502,9 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         end.setHours(23, 59, 59, 999);
         where.saleDate.lte = end;
       }
+    } else {
+      // Registro de ventas por mayor: se conservan 15 días por defecto
+      where.saleDate = { gte: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) };
     }
 
     const pg = Math.max(1, Number(page) || 1);
