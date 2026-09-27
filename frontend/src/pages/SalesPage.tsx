@@ -234,12 +234,14 @@ export default function SalesPage() {
   const [addTier, setAddTier] = useState<1 | 2>(2);
   const addCartPanelRef = useDialogBehavior(showAddCart, () => { setShowAddCart(false); setAddTarget(null); });
 
-  // --- Solicitar producto a otra tienda/almacén ---
+  // --- Solicitar producto al almacén ---
   const [showRequest, setShowRequest] = useState(false);
   const [requestTarget, setRequestTarget] = useState<Product | null>(null);
   const [requestQty, setRequestQty] = useState(1);
   const [requestNote, setRequestNote] = useState("");
   const [requestSaving, setRequestSaving] = useState(false);
+  const [requestAlmacenes, setRequestAlmacenes] = useState<{ locationId: number; locationName: string; stock: number }[]>([]);
+  const [requestAlmacenesLoading, setRequestAlmacenesLoading] = useState(false);
   const requestPanelRef = useDialogBehavior(showRequest, () => { setShowRequest(false); setRequestTarget(null); });
 
   // --- Quotation ---
@@ -418,7 +420,7 @@ return [...prev, {
           {p.stock <= 0 ? (
             <button
               onClick={() => openRequestProduct(p)}
-              title="Solicitar a otra tienda o almacén"
+              title="Solicitar al almacén"
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-600/10 border border-amber-600/25 text-amber-400 hover:bg-amber-600 hover:text-white transition-all text-xs font-medium"
             >
               <Send size={14} /> Solicitar
@@ -610,12 +612,23 @@ return [...prev, {
     }
   };
 
-  // Solicitar producto a otra tienda o almacén
-  const openRequestProduct = (p: Product) => {
+  // Solicitar producto al almacén (solo almacén, no otra tienda)
+  const openRequestProduct = async (p: Product) => {
     setRequestTarget(p);
     setRequestQty(1);
     setRequestNote("");
+    setRequestAlmacenes([]);
     setShowRequest(true);
+    setRequestAlmacenesLoading(true);
+    try {
+      const res = await api.get(`/inventory/product/${p.id}`);
+      const data = res.data;
+      setRequestAlmacenes((data?.locations || []).filter((l: any) => l.locationType === "ALMACEN"));
+    } catch {
+      setRequestAlmacenes([]);
+    } finally {
+      setRequestAlmacenesLoading(false);
+    }
   };
 
   const submitRequest = async () => {
@@ -638,7 +651,7 @@ return [...prev, {
         locationId: requestedStoreId,
         note: requestNote.trim() || null,
       });
-      toast.success("Solicitud enviada a otra tienda/almacén");
+      toast.success("Solicitud enviada al almacén");
       setShowRequest(false);
       setRequestTarget(null);
     } catch (err: any) {
@@ -1653,7 +1666,7 @@ return [...prev, {
           <div ref={requestPanelRef} role="dialog" aria-modal="true" aria-label="Solicitar producto" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md overflow-hidden">
             <div className="flex items-start justify-between px-5 py-4 border-b border-dark-700/50">
               <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-semibold text-foreground truncate">Solicitar producto</h3>
+                <h3 className="text-sm font-semibold text-foreground truncate">Solicitar al almacén</h3>
                 <p className="text-xs text-gray-500 mt-2 truncate">{requestTarget.name}</p>
                 <p className="text-xs text-gray-500 truncate">
                   {requestTarget.manufacturer} · {requestTarget.brand} · {requestTarget.model} · {requestTarget.itemCode}
@@ -1674,8 +1687,34 @@ return [...prev, {
                     : locations.find((l) => l.id === (selectedLocationId ? Number(selectedLocationId) : ""))?.name || "Seleccionada"}
                 </span>
               </div>
-              <div className={`p-3 rounded-xl border text-sm ${requestTarget.stock === 0 ? "bg-red-500/10 border-red-500/30 text-red-400" : "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"}`}>
-                Sin stock en esta tienda. Se solicitará a otra tienda o al almacén.
+              <div className="p-3 rounded-xl border text-sm bg-red-500/10 border-red-500/30 text-red-400">
+                Sin stock en esta tienda. Se solicitará al almacén.
+              </div>
+
+              <div>
+                <span className="block text-xs text-gray-500 mb-1.5">Disponible en almacén</span>
+                {requestAlmacenesLoading ? (
+                  <div className="flex items-center gap-2 text-gray-400 text-sm">
+                    <RefreshCw size={14} className="animate-spin text-primary-400" /> Consultando...
+                  </div>
+                ) : requestAlmacenes.length === 0 ? (
+                  <div className="p-3 rounded-xl border border-dark-700/50 bg-dark-900/50 text-gray-400 text-sm">
+                    Sin stock en el almacén
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {requestAlmacenes.map((a) => (
+                      <div key={a.locationId} className="flex items-center justify-between p-2.5 rounded-xl bg-dark-900/50 border border-dark-700/50">
+                        <span className="text-sm text-foreground">{a.locationName}</span>
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                          a.stock === 0 ? "bg-red-500/10 text-red-400" : a.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"
+                        }`}>
+                          {a.stock} disp.
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <span className="block text-xs text-gray-500 mb-1.5">Cantidad</span>
