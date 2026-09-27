@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 import axios from "axios";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
-import ColumnManager, { migrateCols } from "../components/ui/ColumnManager";
+import ColumnManager, { migrateCols, withAddedCols } from "../components/ui/ColumnManager";
 import Autocomplete from "../components/ui/Autocomplete";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
@@ -17,7 +17,7 @@ import { saleCode } from "../utils/documentCodes";
 import { downloadElementAsPdf } from "../utils/quotePdf";
 import QuoteDocument from "../components/quotes/QuoteDocument";
 
-const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos"];
+const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Celular", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos", "Nota"];
 const CART_COLUMNS = ["Producto", "Precio", "Cantidad", "Subtotal", "Eliminar"];
 const SEARCH_COLUMNS = [
   "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
@@ -64,7 +64,7 @@ interface SaleRecord {
   id: number; saleDate: string; total: number; type: string;
   location: { id: number; name: string }; user: { id: number; name: string };
   seller: string | null;
-  customer: { id: number; name: string; nit: string | null } | null;
+  customer: { id: number; name: string; nit: string | null; phone: string | null } | null;
   note?: string | null;
   items: { id: number; quantity: number; unitPrice: number; subtotal: number;
     product: { id: number; name: string; itemCode: string; brand?: string } }[];
@@ -291,7 +291,9 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       const roleCols = useAuthStore.getState().columnConfig?.ventas;
       // migrateCols: un "#" guardado se traduce a "Código", si no la columna
       // del código no apareceria en los equipos que ya tenian columnas fijadas.
-      const base = migrateCols(stored?.length ? stored : roleCols?.length ? roleCols : HISTORY_COLUMNS);
+      // withAddedCols: las columnas nuevas entran solas, porque si faltan en lo
+      // guardado es que no existian cuando se guardo, no que esten ocultas.
+      const base = withAddedCols("ventas", migrateCols(stored?.length ? stored : roleCols?.length ? roleCols : HISTORY_COLUMNS), HISTORY_COLUMNS);
       const merged = HISTORY_COLUMNS.filter((c) => base.includes(c));
       return merged.length ? merged : HISTORY_COLUMNS;
     } catch {
@@ -813,6 +815,8 @@ return [...prev, {
             )}
           </td>
         );
+      case "Celular":
+        return <td className="px-4 py-3 text-gray-300 text-xs whitespace-nowrap">{s.customer?.phone || "—"}</td>;
       case "Usuario":
         return <td className="px-4 py-3 text-gray-300 text-xs">{s.user.name}</td>;
       case "Ubicación":
@@ -846,6 +850,12 @@ return [...prev, {
                 </span>
               ))}
             </div>
+          </td>
+        );
+      case "Nota":
+        return (
+          <td className="px-4 py-3 text-gray-400 text-xs max-w-[15rem]">
+            {s.note ? <span title={s.note} className="line-clamp-2">{s.note}</span> : <span className="text-gray-600">—</span>}
           </td>
         );
       default:

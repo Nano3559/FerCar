@@ -24,6 +24,19 @@ const RENAMED_COLUMNS: Record<string, string> = {
 export const migrateCols = (cols: string[]): string[] =>
   cols.map((c) => RENAMED_COLUMNS[c] || c);
 
+// Columnas incorporadas despues de que un equipo guardara su lista. Si no
+// estan en lo guardado es porque no existian todavia, no porque ese usuario
+// las haya ocultado a proposito: se agregan visibles. Las que ya estaban en
+// su lista y no aparecen, esas si se respetan.
+const ADDED_COLUMNS: Record<string, string[]> = {
+  ventas: ["Celular", "Nota"],
+};
+
+export const withAddedCols = (module: string, stored: string[], available: string[]): string[] => {
+  const missing = (ADDED_COLUMNS[module] || []).filter((c) => available.includes(c) && !stored.includes(c));
+  return missing.length ? [...stored, ...missing] : stored;
+};
+
 export default function ColumnManager({ module, columns, onVisibleChange }: ColumnManagerProps) {
   const { columnConfig } = useAuthStore();
   const [open, setOpen] = useState(false);
@@ -49,7 +62,7 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
       }
       if (cancelled) return;
       const storedAllowed = stored?.filter((c) => allowed.includes(c)) || [];
-      const next = storedAllowed.length ? storedAllowed : allowed;
+      const next = storedAllowed.length ? withAddedCols(module, storedAllowed, allowed) : allowed;
       setVisible(next);
       onVisibleChange(next);
     };
