@@ -404,8 +404,8 @@ export default function ReportsPage() {
                       <td className="px-4 py-3 text-gray-300 font-mono text-xs">#{s.id}</td>
                       <td className="px-4 py-3 text-gray-300">{formatDate(s.date)}</td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : "bg-emerald-500/10 text-emerald-400"}`}>
-                          {s.type === "MAYOR" ? "Mayor" : "Normal"}
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : s.type === "DEPARTAMENTAL" ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"}`}>
+                          {s.type === "MAYOR" ? "Mayor" : s.type === "DEPARTAMENTAL" ? "Departamental" : "Normal"}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-emerald-400 font-medium text-right">{formatBs(s.total)}</td>

@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Package, ShoppingCart, TrendingUp,
   ArrowLeftRight, DollarSign, BarChart3, Settings,
-  RotateCcw, Send, Tags, LogOut, X, ListChecks, ClipboardList,
+  RotateCcw, Send, Tags, LogOut, X, ListChecks, ClipboardList, Map,
 } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { useNavigate } from "react-router-dom";
@@ -13,6 +13,7 @@ const allLinks = [
   { to: "/panel/inventario", label: "Inventario", icon: Package, module: "inventario" },
   { to: "/panel/ventas", label: "Ventas Locales", icon: ShoppingCart, module: "ventas" },
   { to: "/panel/ventas-mayor", label: "Ventas por Mayor", icon: TrendingUp, module: "ventas-mayor" },
+  { to: "/panel/ventas-departamental", label: "Ventas Departamentales", icon: Map, module: "ventas" },
   { to: "/panel/devoluciones", label: "Devoluciones", icon: RotateCcw, module: "devoluciones" },
   { to: "/panel/solicitudes", label: "Solicitudes", icon: Send, module: "solicitudes" },
   { to: "/panel/movimientos", label: "Movimientos", icon: ArrowLeftRight, module: "movimientos" },

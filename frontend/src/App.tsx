@@ -88,6 +88,13 @@ export default function App() {
             </RoleRoute>
           } />
 
+          {/* Ventas Departamentales — ADMIN + TIENDA (misma lógica que ventas locales) */}
+          <Route path="ventas-departamental" element={
+            <RoleRoute allowedRoles={["ADMIN", "TIENDA"]} module="ventas">
+              <SalesPage saleType="DEPARTAMENTAL" title="Ventas Departamentales" />
+            </RoleRoute>
+          } />
+
           {/* Ventas por Mayor — ADMIN + TIENDA */}
           <Route path="ventas-mayor" element={
             <RoleRoute allowedRoles={["ADMIN", "TIENDA"]} module="ventas-mayor">

@@ -143,7 +143,7 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
     <div class="text-right">${new Date(sale.saleDate).toLocaleDateString("es-BO")} ${new Date(sale.saleDate).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}</div>
   </div>
   <div class="info">
-    <div>Tipo: <strong>${sale.type === "MAYOR" ? "VENTA POR MAYOR" : "VENTA NORMAL"}</strong></div>
+    <div>Tipo: <strong>${sale.type === "MAYOR" ? "VENTA POR MAYOR" : sale.type === "DEPARTAMENTAL" ? "VENTA DEPARTAMENTAL" : "VENTA NORMAL"}</strong></div>
     <div class="text-right">Atendido por: ${sale.user.name}${(sale as any).seller ? ` (${(sale as any).seller})` : ""}</div>
   </div>
 
@@ -271,7 +271,7 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
 // POST — Crear venta con items, pagos y facturación
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { items, payments, customerId, customerData, requiereFactura, locationId, seller, note } = req.body;
+    const { items, payments, customerId, customerData, requiereFactura, locationId, seller, note, type } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
@@ -280,6 +280,11 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     if (!payments || !Array.isArray(payments) || payments.length === 0) {
       return res.status(400).json({ message: "Debe registrar al menos un pago" });
     }
+
+    if (type && !["NORMAL", "DEPARTAMENTAL"].includes(type)) {
+      return res.status(400).json({ message: "Tipo de venta inválido" });
+    }
+    const saleType = type === "DEPARTAMENTAL" ? "DEPARTAMENTAL" : "NORMAL";
 
     // Validar y deduplicar ítems (evita sobreventa con productos repetidos)
     const validItems = validateAndMergeItems(items);
@@ -392,7 +397,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       const sale = await tx.sale.create({
         data: {
           total: totalSale,
-          type: "NORMAL",
+          type: saleType,
           userId: user.userId,
           locationId: userLocationId,
           customerId: finalCustomerId,

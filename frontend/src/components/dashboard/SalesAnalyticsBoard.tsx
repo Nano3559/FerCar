@@ -57,6 +57,7 @@ const PIE_COLORS = [
 const TYPE_LABEL: Record<string, string> = {
   NORMAL: "Minorista",
   MAYOR: "Mayorista",
+  DEPARTAMENTAL: "Departamental",
 };
 
 const PAY_LABEL: Record<string, string> = {

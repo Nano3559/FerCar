@@ -70,7 +70,12 @@ interface SaleRecord {
 
 const PAGE_SIZE = 15;
 
-export default function SalesPage() {
+interface SalesPageProps {
+  saleType?: "NORMAL" | "DEPARTAMENTAL";
+  title?: string;
+}
+
+export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales" }: SalesPageProps = {}) {
   const { user, allowedCategories } = useAuthStore();
   const isAdmin = user?.role === "ADMIN";
   const isTienda = user?.role === "TIENDA";
@@ -514,6 +519,7 @@ return [...prev, {
     try {
       setProcessing(true);
       const payload: any = {
+        type: saleType,
         items: cart.map((c) => ({
           productId: c.productId,
           quantity: c.quantity,
@@ -671,6 +677,7 @@ return [...prev, {
       if (histDateFrom) params.set("startDate", histDateFrom);
       if (histDateTo) params.set("endDate", histDateTo);
       if (histSeller) params.set("seller", histSeller);
+      if (saleType !== "NORMAL") params.set("type", saleType);
       if (isTienda && user?.locationId) params.set("locationId", String(user.locationId));
 
       const res = await api.get(`/sales?${params.toString()}`);
@@ -694,7 +701,7 @@ return [...prev, {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Ventas Locales</h1>
+          <h1 className="text-2xl font-bold text-foreground">{title}</h1>
           <p className="text-gray-400 text-sm mt-1">
             {activeTab === "historial"
               ? `${histTotal} ventas registradas`
@@ -1204,9 +1211,9 @@ return [...prev, {
                             {isHistCol("Tipo") && (
                               <td className="px-4 py-3 text-center">
                                 <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                                  s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : "bg-emerald-500/10 text-emerald-400"
+                                  s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : s.type === "DEPARTAMENTAL" ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"
                                 }`}>
-                                  {s.type === "MAYOR" ? "Mayor" : "Normal"}
+                                  {s.type === "MAYOR" ? "Mayor" : s.type === "DEPARTAMENTAL" ? "Departamental" : "Normal"}
                                 </span>
                               </td>
                             )}
@@ -1758,7 +1765,7 @@ return [...prev, {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #f59e0b", paddingBottom: "12px", marginBottom: "16px" }}>
             <div>
               <h1 style={{ fontSize: "22px", fontWeight: "bold", color: "#f59e0b", margin: 0 }}>COTIZACIÓN</h1>
-              <p style={{ margin: "4px 0 0", color: "#9ca3af" }}>Ventas Locales</p>
+              <p style={{ margin: "4px 0 0", color: "#9ca3af" }}>{title}</p>
             </div>
             <div style={{ textAlign: "right", color: "#9ca3af" }}>
               <p style={{ margin: 0 }}>{new Date().toLocaleDateString("es-BO")}</p>

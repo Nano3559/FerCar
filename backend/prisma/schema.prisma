@@ -392,6 +392,7 @@ enum SaleStatus {
 enum SaleType {
   NORMAL
   MAYOR
+  DEPARTAMENTAL
 }
 
 enum PaymentMethod {
