@@ -69,7 +69,7 @@ export default function WholesalePage() {
   }, [isAdmin, user?.locationId]);
   const [sales, setSales] = useState<WholesaleSale[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
@@ -471,100 +471,6 @@ export default function WholesalePage() {
           </div>
 
           <div className="p-4 space-y-4">
-            {isAdmin && (
-              <div>
-                <label htmlFor="wholesale-store" className="block text-xs text-gray-400 mb-1">Tienda *</label>
-                <select id="wholesale-store" value={selectedStoreId} onChange={(e) => setSelectedStoreId(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
-                  <option value="">Seleccionar tienda</option>
-                  {locations.filter((l) => l.type === "TIENDA").map((l) => (
-                    <option key={l.id} value={l.id}>{l.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {!isAdmin && isTienda && selectedStoreId && (
-              <div className="text-xs text-gray-400">
-                Tienda: <strong className="text-foreground">{locations.find((l) => l.id === selectedStoreId)?.name || "Mi tienda"}</strong>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Nombre del cliente *</label>
-                <input value={clientName} onChange={(e) => setClientName(e.target.value)}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Para quién es el pedido</label>
-                <input value={pedido} onChange={(e) => setPedido(e.target.value)}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Lugar de entrega *</label>
-                <select value={deliveryPlace} onChange={(e) => { setDeliveryPlace(e.target.value); if (e.target.value !== "Otra") setCustomDeliveryPlace(""); }}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
-                  <option value="Cochabamba">Cochabamba</option>
-                  <option value="Santa Cruz">Santa Cruz</option>
-                  <option value="La Paz">La Paz</option>
-                  <option value="Otra">Otra ubicación</option>
-                </select>
-                {deliveryPlace === "Otra" && (
-                  <input
-                    value={customDeliveryPlace}
-                    onChange={(e) => setCustomDeliveryPlace(e.target.value)}
-                    placeholder="Escribe la ubicación a la que se envía o vende..."
-                    aria-label="Otra ubicación de entrega"
-                    className="mt-2 w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500"
-                  />
-                )}
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Forma de pago *</label>
-                <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
-                  <option value="EFECTIVO">Efectivo</option>
-                  <option value="TRANSFERENCIA">Transferencia</option>
-                  <option value="QR">QR</option>
-                  <option value="CREDITO">Crédito</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="wholesale-nit" className="block text-xs text-gray-400 mb-1">Datos factura (NIT)</label>
-                <input id="wholesale-nit" value={facturaNIT} onChange={(e) => setFacturaNIT(e.target.value)} placeholder="NIT"
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="wholesale-origen" className="block text-xs text-gray-400 mb-1">Origen</label>
-                <input id="wholesale-origen" value={origen} onChange={(e) => setOrigen(e.target.value)} placeholder="Ej: Cochabamba, Argentina..."
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-              </div>
-              <div>
-                <label htmlFor="wholesale-telefono" className="block text-xs text-gray-400 mb-1">N° de celular</label>
-                <input id="wholesale-telefono" type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="75612345"
-                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-              </div>
-              <div className="flex items-end pb-2">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={envioExterior} onChange={(e) => setEnvioExterior(e.target.checked)}
-                    className="w-4 h-4 accent-primary-600" />
-                  <span className="text-sm text-foreground">¿Envío fuera de Bolivia?</span>
-                </label>
-              </div>
-            </div>
-
-<div>
-              <label htmlFor="wholesale-quien-recoge" className="block text-xs text-gray-400 mb-1">Quién recoge el pedido</label>
-              <input id="wholesale-quien-recoge" value={quienRecoge} onChange={(e) => setQuienRecoge(e.target.value)} placeholder="Nombre de la persona que recoge"
-                className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-            </div>
-
             {/* Búsqueda y filtros (igual que Ventas Locales) */}
             <div className="bg-dark-900/30 border border-dark-700/50 rounded-2xl p-4">
               <div className="flex flex-col md:flex-row gap-3">
@@ -723,7 +629,101 @@ export default function WholesalePage() {
               )}
             </div>
 
-            {items.length > 0 && (
+            {isAdmin && (
+              <div>
+                <label htmlFor="wholesale-store" className="block text-xs text-gray-400 mb-1">Tienda *</label>
+                <select id="wholesale-store" value={selectedStoreId} onChange={(e) => setSelectedStoreId(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
+                  <option value="">Seleccionar tienda</option>
+                  {locations.filter((l) => l.type === "TIENDA").map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {!isAdmin && isTienda && selectedStoreId && (
+              <div className="text-xs text-gray-400">
+                Tienda: <strong className="text-foreground">{locations.find((l) => l.id === selectedStoreId)?.name || "Mi tienda"}</strong>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Nombre del cliente *</label>
+                <input value={clientName} onChange={(e) => setClientName(e.target.value)}
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Para quién es el pedido</label>
+                <input value={pedido} onChange={(e) => setPedido(e.target.value)}
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Lugar de entrega *</label>
+                <select value={deliveryPlace} onChange={(e) => { setDeliveryPlace(e.target.value); if (e.target.value !== "Otra") setCustomDeliveryPlace(""); }}
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
+                  <option value="Cochabamba">Cochabamba</option>
+                  <option value="Santa Cruz">Santa Cruz</option>
+                  <option value="La Paz">La Paz</option>
+                  <option value="Otra">Otra ubicación</option>
+                </select>
+                {deliveryPlace === "Otra" && (
+                  <input
+                    value={customDeliveryPlace}
+                    onChange={(e) => setCustomDeliveryPlace(e.target.value)}
+                    placeholder="Escribe la ubicación a la que se envía o vende..."
+                    aria-label="Otra ubicación de entrega"
+                    className="mt-2 w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500"
+                  />
+                )}
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Forma de pago *</label>
+                <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
+                  <option value="EFECTIVO">Efectivo</option>
+                  <option value="TRANSFERENCIA">Transferencia</option>
+                  <option value="QR">QR</option>
+                  <option value="CREDITO">Crédito</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="wholesale-nit" className="block text-xs text-gray-400 mb-1">Datos factura (NIT)</label>
+                <input id="wholesale-nit" value={facturaNIT} onChange={(e) => setFacturaNIT(e.target.value)} placeholder="NIT"
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="wholesale-origen" className="block text-xs text-gray-400 mb-1">Origen</label>
+                <input id="wholesale-origen" value={origen} onChange={(e) => setOrigen(e.target.value)} placeholder="Ej: Cochabamba, Argentina..."
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+              <div>
+                <label htmlFor="wholesale-telefono" className="block text-xs text-gray-400 mb-1">N° de celular</label>
+                <input id="wholesale-telefono" type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="75612345"
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={envioExterior} onChange={(e) => setEnvioExterior(e.target.checked)}
+                    className="w-4 h-4 accent-primary-600" />
+                  <span className="text-sm text-foreground">¿Envío fuera de Bolivia?</span>
+                </label>
+              </div>
+            </div>
+
+<div>
+              <label htmlFor="wholesale-quien-recoge" className="block text-xs text-gray-400 mb-1">Quién recoge el pedido</label>
+              <input id="wholesale-quien-recoge" value={quienRecoge} onChange={(e) => setQuienRecoge(e.target.value)} placeholder="Nombre de la persona que recoge"
+                className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+            </div>
+
+{items.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
