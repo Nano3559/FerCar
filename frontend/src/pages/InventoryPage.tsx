@@ -138,7 +138,6 @@ export default function InventoryPage() {
 
   const [search, setSearch] = useState("");
   const [nameFilter, setNameFilter] = useState("");
-  const [itemCodeFilter, setItemCodeFilter] = useState("");
   const [brand, setBrand] = useState("");
   const [manufacturer, setManufacturer] = useState("");
   const [model, setModel] = useState("");
@@ -200,7 +199,6 @@ export default function InventoryPage() {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (nameFilter) params.set("name", nameFilter);
-      if (itemCodeFilter) params.set("itemCode", itemCodeFilter);
       if (brand) params.set("brand", brand);
       if (manufacturer) params.set("manufacturer", manufacturer);
       if (model) params.set("model", model);
@@ -223,7 +221,7 @@ export default function InventoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, locationId, page]);
+  }, [search, nameFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, locationId, page]);
 
   // Buscar apenas el usuario deja de escribir: debounce de 300ms que cancela
   // la petición anterior en vuelo para no acumular consultas ni resultados
@@ -234,7 +232,6 @@ export default function InventoryPage() {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (nameFilter) params.set("name", nameFilter);
-      if (itemCodeFilter) params.set("itemCode", itemCodeFilter);
       if (brand) params.set("brand", brand);
       if (manufacturer) params.set("manufacturer", manufacturer);
       if (model) params.set("model", model);
@@ -258,9 +255,9 @@ export default function InventoryPage() {
     }, 300);
     setLoading(true);
     return () => { controller.abort(); clearTimeout(t); };
-  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, locationId, page]);
+  }, [search, nameFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, locationId, page]);
 
-  useEffect(() => { setPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, locationId]);
+  useEffect(() => { setPage(1); }, [search, nameFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, locationId]);
 
   const fetchFilters = useCallback(async () => {
     try {
@@ -735,29 +732,11 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
               label="Proveedor"
             />
             <Autocomplete
-              value={itemCodeFilter}
-              onChange={setItemCodeFilter}
-              suggestions={filters.itemCodes || []}
-              placeholder="Escribe el código..."
-              label="Código (Item)"
-            />
-            <Autocomplete
               value={manufacturer}
               onChange={setManufacturer}
               suggestions={filters.manufacturers}
               placeholder="Todos los fabricantes"
               label="Fabricante"
-            />
-            <Autocomplete
-              value={categoryName}
-              onChange={(v) => {
-                setCategoryName(v);
-                const found = filters.categories.find((c) => c.name === v);
-                setCategoryId(found ? String(found.id) : "");
-              }}
-              suggestions={filters.categories.map((c) => c.name)}
-              placeholder="Todas las categorías"
-              label="Categoría"
             />
             <Autocomplete
               value={nameFilter}
@@ -807,11 +786,22 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
               placeholder="Todas las ubicaciones"
               label="Ubicación"
             />
-            {(nameFilter || itemCodeFilter || brand || manufacturer || model || year || categoryId || oemCode || factoryCode || detailFilter || supplierId || locationId) && (
+            <Autocomplete
+              value={categoryName}
+              onChange={(v) => {
+                setCategoryName(v);
+                const found = filters.categories.find((c) => c.name === v);
+                setCategoryId(found ? String(found.id) : "");
+              }}
+              suggestions={filters.categories.map((c) => c.name)}
+              placeholder="Todas las categorías"
+              label="Categoría"
+            />
+            {(nameFilter || brand || manufacturer || model || year || categoryId || oemCode || factoryCode || detailFilter || supplierId || locationId) && (
               <div className="flex items-end md:col-span-3">
                 <button
                   onClick={() => {
-                    setNameFilter(""); setItemCodeFilter(""); setBrand(""); setManufacturer("");
+                    setNameFilter(""); setBrand(""); setManufacturer("");
                     setModel(""); setYear(""); setCategoryName(""); setCategoryId("");
                     setOemCode(""); setFactoryCode(""); setDetailFilter("");
                     setSupplierName(""); setSupplierId(""); setLocationName(""); setLocationId("");
