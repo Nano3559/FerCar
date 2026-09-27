@@ -296,13 +296,60 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const formatBs = (v: number) =>
     `Bs. ${v.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+  /** Cambia el precio de la línea entre Precio 1 y Precio 2. */
+  const setCartTier = (productId: number, tier: 1 | 2) => {
+    updateActiveCart((prev) =>
+      prev.map((c) => {
+        if (c.productId !== productId) return c;
+        const precio = tier === 2 && Number(c.price2) > 0 ? Number(c.price2) : Number(c.price1);
+        if (precio <= 0) return c;
+        return { ...c, priceTier: tier, unitPrice: precio };
+      })
+    );
+  };
+
   const renderCartCell = (c: CartItem, column: string) => {
     if (column === "Producto") return <td key={column} className="px-5 py-3"><p className="text-foreground font-medium text-sm">{c.name}</p><p className="text-xs text-gray-500">{c.brand} · {c.itemCode}</p></td>;
-    if (column === "Precio") return (
-      <td key={column} className="px-4 py-3 text-right">
-        <span className="text-gray-300">{formatBs(c.unitPrice)}</span>
-      </td>
-    );
+    if (column === "Precio") {
+      const p1 = Number(c.price1);
+      const p2 = Number(c.price2);
+      const puedeElegir = p1 > 0 && p2 > 0 && p1 !== p2;
+      if (!puedeElegir) {
+        return (
+          <td key={column} className="px-4 py-3 text-right">
+            <span className="text-gray-300">{formatBs(c.unitPrice)}</span>
+            {!p2 || p2 <= 0 ? <p className="text-[10px] text-gray-600 mt-0.5">solo P1</p> : null}
+          </td>
+        );
+      }
+      return (
+        <td key={column} className="px-4 py-3 text-right">
+          <div className="inline-flex rounded-lg border border-dark-600/50 overflow-hidden" role="group" aria-label={`Precio de ${c.name}`}>
+            <button
+              onClick={() => setCartTier(c.productId, 1)}
+              aria-pressed={c.priceTier === 1}
+              title={`Precio 1: ${formatBs(p1)}`}
+              className={`px-2 py-1 text-[11px] font-semibold transition-all ${
+                c.priceTier === 1 ? "bg-green-600/20 text-green-400" : "text-gray-500 hover:text-green-400 hover:bg-dark-700/50"
+              }`}
+            >
+              P1
+            </button>
+            <button
+              onClick={() => setCartTier(c.productId, 2)}
+              aria-pressed={c.priceTier === 2}
+              title={`Precio 2: ${formatBs(p2)}`}
+              className={`px-2 py-1 text-[11px] font-semibold border-l border-dark-600/50 transition-all ${
+                c.priceTier === 2 ? "bg-blue-600/20 text-blue-400" : "text-gray-500 hover:text-blue-400 hover:bg-dark-700/50"
+              }`}
+            >
+              P2
+            </button>
+          </div>
+          <p className="text-xs text-gray-300 mt-1">{formatBs(c.unitPrice)}</p>
+        </td>
+      );
+    }
     if (column === "Cantidad") return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1.5"><button onClick={() => updateQuantity(c.productId, c.quantity - 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Minus size={14} /></button><span className="w-10 text-center text-foreground text-sm font-medium">{c.quantity}</span><button onClick={() => updateQuantity(c.productId, c.quantity + 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Plus size={14} /></button></div><p className="text-center text-xs text-gray-600 mt-0.5">disp: {c.availableStock}</p></td>;
     if (column === "Subtotal") return <td key={column} className="px-4 py-3 text-right text-green-400 font-medium">{formatBs(c.unitPrice * c.quantity)}</td>;
     if (column === "Eliminar") return <td key={column} className="px-5 py-3 text-center"><button onClick={() => removeItem(c.productId)} className="p-1.5 rounded-lg text-gray-500 hover:text-red-400"><Trash2 size={14} /></button></td>;
@@ -1056,6 +1103,25 @@ return [...prev, {
                       </div>
                       <p className="text-green-400 font-medium text-sm">{formatBs(c.unitPrice * c.quantity)}</p>
                     </div>
+                    {Number(c.price1) > 0 && Number(c.price2) > 0 && Number(c.price1) !== Number(c.price2) && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Precio:</span>
+                        <div className="inline-flex rounded-lg border border-dark-600/50 overflow-hidden" role="group" aria-label={`Precio de ${c.name}`}>
+                          <button onClick={() => setCartTier(c.productId, 1)} aria-pressed={c.priceTier === 1}
+                            className={`px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                              c.priceTier === 1 ? "bg-green-600/20 text-green-400" : "text-gray-500"
+                            }`}>
+                            P1 {formatBs(Number(c.price1))}
+                          </button>
+                          <button onClick={() => setCartTier(c.productId, 2)} aria-pressed={c.priceTier === 2}
+                            className={`px-2.5 py-1 text-[11px] font-semibold border-l border-dark-600/50 transition-all ${
+                              c.priceTier === 2 ? "bg-blue-600/20 text-blue-400" : "text-gray-500"
+                            }`}>
+                            P2 {formatBs(Number(c.price2))}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

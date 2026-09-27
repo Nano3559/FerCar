@@ -416,6 +416,8 @@ router.post("/import-order", authorize("ADMIN", "TIENDA"), upload.single("file")
           quantity: qty,
           unitPrice,
           subtotal: qty * unitPrice,
+          price1: Number(product.price1) || 0,
+          price2: Number(product.price2) || 0,
         });
       }
     }

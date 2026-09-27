@@ -16,6 +16,7 @@ interface WholesaleItem {
   productId: number; itemCode: string; name: string; brand: string;
   model: string; year: string; detail: string | null; quantity: number;
   unitPrice: number; subtotal: number; factoryCode: string | null;
+  price1: number; price2: number;
 }
 
 interface WholesaleSale {
@@ -42,6 +43,7 @@ interface ProductResult {
   brand: string; model: string; year: string; detail: string | null;
   detalles: string | null; oemCode: string | null; factoryCode: string | null;
   wholesalePrice: number | null; stock: number; category: string | null;
+  price1?: number; price2?: number;
 }
 
 interface ProductFilters {
@@ -219,6 +221,7 @@ export default function WholesalePage() {
       productId: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
       model: p.model, year: p.year, detail: p.detail,
       quantity: 1, unitPrice: price, subtotal: price, factoryCode: p.factoryCode,
+      price1: Number(p.price1) || 0, price2: Number(p.price2) || 0,
     }]);
   };
 
@@ -307,6 +310,7 @@ export default function WholesalePage() {
       model: it.model, year: it.year, detail: it.detail,
       quantity: it.quantity, unitPrice: Number(it.unitPrice), subtotal: Number(it.subtotal),
       factoryCode: it.factoryCode || null,
+      price1: Number(it.price1) || 0, price2: Number(it.price2) || 0,
     }));
     if (!importedItems.length) return;
     setItems((prev) => {
@@ -794,8 +798,26 @@ export default function WholesalePage() {
                             </div>
                           </td>
                           <td className="px-3 py-2 text-right">
-                            <input type="number" value={item.unitPrice} onChange={(e) => updatePrice(item.productId, Number(e.target.value))}
-                              className="w-20 px-2 py-1 bg-dark-800 border border-dark-700 rounded-lg text-foreground text-xs text-right focus:outline-none focus:border-primary-500" />
+                            <div className="flex flex-col items-end gap-1">
+                              <input type="number" value={item.unitPrice} onChange={(e) => updatePrice(item.productId, Number(e.target.value))}
+                                className="w-20 px-2 py-1 bg-dark-800 border border-dark-700 rounded-lg text-foreground text-xs text-right focus:outline-none focus:border-primary-500" />
+                              {item.price1 > 0 && item.price2 > 0 && item.price1 !== item.price2 && (
+                                <div className="inline-flex rounded-md border border-dark-700 overflow-hidden" role="group" aria-label={`Precio de ${item.name}`}>
+                                  <button onClick={() => updatePrice(item.productId, item.price1)} title={`Precio 1: ${formatBs(item.price1)}`}
+                                    className={`px-1.5 py-0.5 text-[10px] font-semibold transition-all ${
+                                      item.unitPrice === item.price1 ? "bg-green-600/20 text-green-400" : "text-gray-500 hover:text-green-400"
+                                    }`}>
+                                    P1
+                                  </button>
+                                  <button onClick={() => updatePrice(item.productId, item.price2)} title={`Precio 2: ${formatBs(item.price2)}`}
+                                    className={`px-1.5 py-0.5 text-[10px] font-semibold border-l border-dark-700 transition-all ${
+                                      item.unitPrice === item.price2 ? "bg-blue-600/20 text-blue-400" : "text-gray-500 hover:text-blue-400"
+                                    }`}>
+                                    P2
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2 text-emerald-400 font-medium text-right">{formatBs(item.subtotal)}</td>
                           <td className="px-3 py-2 text-center">
