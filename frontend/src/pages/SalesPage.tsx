@@ -1814,7 +1814,6 @@ return [...prev, {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #f59e0b", padding: "20px 0 14px", marginBottom: "18px" }}>
               <div>
                 <h1 style={{ fontSize: "26px", fontWeight: "bold", color: "#f59e0b", margin: 0, letterSpacing: "2px" }}>COTIZACIÓN</h1>
-                <p style={{ margin: "6px 0 0", fontSize: "13px", color: "#111827", fontWeight: 700 }}>SHIBUMI · AUTOPARTES</p>
                 <p style={{ margin: "2px 0 0", color: "#9ca3af", fontSize: "11px" }}>{title}</p>
               </div>
               <div style={{ textAlign: "right", fontSize: "12px", color: "#374151", lineHeight: "1.7" }}>
@@ -1865,7 +1864,7 @@ return [...prev, {
               </div>
             </div>
 
-            <p style={{ margin: "26px 0 0", fontSize: "10px", color: "#9ca3af", textAlign: "center" }}>¡Gracias por su compra! · Shibumi Autopartes</p>
+            <p style={{ margin: "26px 0 0", fontSize: "10px", color: "#9ca3af", textAlign: "center" }}>¡Gracias por su compra!</p>
           </div>
         </div>
       )}
