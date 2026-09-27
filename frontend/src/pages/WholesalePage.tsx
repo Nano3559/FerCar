@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   TrendingUp, Plus, Minus, Trash2, X, Search, FileText,
-  Check, Upload, RefreshCw, FileSpreadsheet,
+  Check, Upload, RefreshCw, FileSpreadsheet, ShoppingCart,
+  Filter, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
+import Autocomplete from "../components/ui/Autocomplete";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -27,14 +29,23 @@ interface WholesaleSale {
 }
 
 interface ProductResult {
-  id: number; itemCode: string; name: string; brand: string;
-  model: string; year: string; detail: string | null;
-  wholesalePrice: number | null; price1: number; factoryCode: string | null;
+  id: number; itemCode: string; manufacturer: string; name: string;
+  brand: string; model: string; year: string; detail: string | null;
+  detalles: string | null; oemCode: string | null; factoryCode: string | null;
+  wholesalePrice: number | null; stock: number; category: string | null;
+}
+
+interface ProductFilters {
+  brands: string[]; manufacturers: string[]; models: string[]; years: string[];
+  categories: { id: number; name: string }[]; names: string[]; itemCodes: string[];
+  oemCodes: string[]; factoryCodes: string[]; detalles: string[];
 }
 
 interface LocationLite {
   id: number; name: string; type: string;
 }
+
+const PAGE_SIZE = 10;
 
 export default function WholesalePage() {
   const { user } = useAuthStore();
@@ -74,10 +85,28 @@ export default function WholesalePage() {
   const importPanelRef = useDialogBehavior(showImportModal, () => { setShowImportModal(false); setImportResult(null); });
 
   const [items, setItems] = useState<WholesaleItem[]>([]);
-  const [searchProd, setSearchProd] = useState("");
+  const [search, setSearch] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [itemCodeFilter, setItemCodeFilter] = useState("");
+  const [manufacturer, setManufacturer] = useState("");
+  const [brand, setBrand] = useState("");
+  const [model, setModel] = useState("");
+  const [year, setYear] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [oemCode, setOemCode] = useState("");
+  const [factoryCode, setFactoryCode] = useState("");
+  const [detailFilter, setDetailFilter] = useState("");
+  const [showFilters, setShowFilters] = useState(true);
+  const [filters, setFilters] = useState<ProductFilters>({
+    brands: [], manufacturers: [], models: [], years: [], categories: [],
+    names: [], itemCodes: [], oemCodes: [], factoryCodes: [], detalles: [],
+  });
   const [searchResults, setSearchResults] = useState<ProductResult[]>([]);
-  const [searchingProducts, setSearchingProducts] = useState(false);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchPages, setSearchPages] = useState(1);
+  const [searchTotal, setSearchTotal] = useState(0);
 
   const [clientName, setClientName] = useState("");
   const [pedido, setPedido] = useState("");
@@ -113,42 +142,69 @@ export default function WholesalePage() {
 
   useEffect(() => { fetchSales(); }, [fetchSales]);
 
-  const handleSearch = (v: string) => {
-    setSearchProd(v);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(async () => {
-      if (!v || v.length < 2) { setSearchResults([]); return; }
-      try {
-        setSearchingProducts(true);
-        const params = new URLSearchParams();
-        params.set("search", v);
-        params.set("limit", "10");
-        params.set("includeZeroStock", "true");
-        if (selectedStoreId) params.set("locationId", String(selectedStoreId));
-        const res = await api.get(`/products?${params.toString()}`);
-        setSearchResults(res.data.products.map((p: any) => ({
-          id: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
-          model: p.model, year: p.year, detail: p.detail,
-          wholesalePrice: p.wholesalePrice ? Number(p.wholesalePrice) : null,
-          price1: Number(p.price1), factoryCode: p.factoryCode || null,
-        })));
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearchingProducts(false);
-      }
+  useEffect(() => {
+    api.get("/products/filters").then((r) => setFilters(r.data)).catch(() => {});
+  }, []);
+
+  // Búsqueda con debounce (mismo patrón que Ventas Locales): filtros por código,
+  // nombre, fabricante, categoría, marca, modelo, año, detalles, OEM y código de
+  // fábrica. Muestra todos los productos, tengan o no stock (includeZeroStock).
+  useEffect(() => {
+    const controller = new AbortController();
+    const t = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      if (nameFilter) params.set("name", nameFilter);
+      if (itemCodeFilter) params.set("itemCode", itemCodeFilter);
+      if (brand) params.set("brand", brand);
+      if (manufacturer) params.set("manufacturer", manufacturer);
+      if (model) params.set("model", model);
+      if (year) params.set("year", year);
+      if (categoryId) params.set("categoryId", categoryId);
+      if (oemCode) params.set("oemCode", oemCode);
+      if (factoryCode) params.set("factoryCode", factoryCode);
+      if (detailFilter) params.set("detail", detailFilter);
+      if (selectedStoreId) params.set("locationId", String(selectedStoreId));
+      params.set("includeZeroStock", "true");
+      params.set("page", String(searchPage));
+      params.set("limit", String(PAGE_SIZE));
+      api.get(`/products?${params.toString()}`, { signal: controller.signal })
+        .then((res) => {
+          setSearchResults((res.data.products || []).map((p: any) => ({
+            id: p.id, itemCode: p.itemCode, manufacturer: p.manufacturer, name: p.name,
+            brand: p.brand, model: p.model, year: p.year, detail: p.detail,
+            detalles: p.detalles, oemCode: p.oemCode || null, factoryCode: p.factoryCode || null,
+            wholesalePrice: p.wholesalePrice ? Number(p.wholesalePrice) : null,
+            stock: Number(p.stock) || 0, category: p.category || null,
+          })));
+          setSearchTotal(res.data.pagination?.total || 0);
+          setSearchPages(res.data.pagination?.pages || 1);
+        })
+        .catch((err) => { if (err.code !== "ERR_CANCELED") toast.error("Error al buscar productos"); })
+        .finally(() => setSearching(false));
     }, 300);
+    setSearching(true);
+    return () => { controller.abort(); clearTimeout(t); };
+  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, selectedStoreId, searchPage]);
+
+  useEffect(() => { setSearchPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, selectedStoreId]);
+
+  const clearSearchFilters = () => {
+    setNameFilter(""); setItemCodeFilter(""); setManufacturer(""); setBrand(""); setModel(""); setYear("");
+    setCategoryName(""); setCategoryId(""); setOemCode(""); setFactoryCode(""); setDetailFilter("");
+    setShowFilters(false);
   };
+
+  const hasActiveSearchFilters = !!(nameFilter || itemCodeFilter || manufacturer || brand || model || year || categoryId || oemCode || factoryCode || detailFilter);
 
   const addItem = (p: ProductResult) => {
     if (items.find((i) => i.productId === p.id)) { toast.error("Producto ya agregado"); return; }
-    const price = p.wholesalePrice || p.price1;
+    const price = p.wholesalePrice ?? 0;
     setItems((prev) => [...prev, {
       productId: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
       model: p.model, year: p.year, detail: p.detail,
       quantity: 1, unitPrice: price, subtotal: price, factoryCode: p.factoryCode,
     }]);
-    setSearchProd(""); setSearchResults([]);
   };
 
   const updateQuantity = (productId: number, qty: number) => {
@@ -503,36 +559,167 @@ export default function WholesalePage() {
               </div>
             </div>
 
-            <div>
+<div>
               <label htmlFor="wholesale-quien-recoge" className="block text-xs text-gray-400 mb-1">Quién recoge el pedido</label>
               <input id="wholesale-quien-recoge" value={quienRecoge} onChange={(e) => setQuienRecoge(e.target.value)} placeholder="Nombre de la persona que recoge"
                 className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
             </div>
 
-            <div className="relative">
-<Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input value={searchProd} onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Buscar producto por código, nombre o marca..."
-              aria-label="Buscar producto"
-                className="w-full pl-10 pr-4 py-2.5 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 transition-all" />
-              {searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-dark-900 border border-dark-700 rounded-xl shadow-xl z-10 max-h-48 overflow-y-auto">
-                  {searchResults.map((p) => (
-                    <button key={p.id} onClick={() => addItem(p)}
-                      className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-dark-800 transition-colors text-left">
-                      <div>
-                        <p className="text-foreground text-sm">{p.name}</p>
-                        <p className="text-gray-400 text-xs">{p.brand} | {p.itemCode} | {p.model}</p>
-                      </div>
-                      <span className="text-emerald-400 text-sm font-medium">{formatBs(p.wholesalePrice || p.price1)}</span>
+            {/* Búsqueda y filtros (igual que Ventas Locales) */}
+            <div className="bg-dark-900/30 border border-dark-700/50 rounded-2xl p-4">
+              <div className="flex flex-col md:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar producto por código, nombre, marca, modelo, OEM..."
+                    aria-label="Buscar producto"
+                    className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
+                  {search && (
+                    <button onClick={() => setSearch("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-foreground">
+                      <X size={16} />
                     </button>
-                  ))}
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setShowFilters(!showFilters)}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${
+                      showFilters && hasActiveSearchFilters
+                        ? "bg-primary-600/10 border-primary-600/30 text-primary-400"
+                        : "bg-dark-900/50 border-dark-600/50 text-gray-400 hover:text-foreground"
+                    }`}>
+                    <Filter size={16} /> Filtros
+                    {hasActiveSearchFilters && <span className="w-2 h-2 rounded-full bg-primary-400" />}
+                  </button>
+                  {hasActiveSearchFilters && (
+                    <button onClick={clearSearchFilters}
+                      className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl border border-dark-600/50 transition-all">
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {showFilters && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-4 pt-4 border-t border-dark-700/50">
+                  <Autocomplete value={itemCodeFilter} onChange={setItemCodeFilter} suggestions={filters.itemCodes || []}
+                    placeholder="Escribe el código..." label="Código (Item)" />
+                  <Autocomplete value={nameFilter} onChange={setNameFilter} suggestions={filters.names || []}
+                    placeholder="Escribe el nombre..." label="Producto (nombre)" />
+                  <Autocomplete value={manufacturer} onChange={setManufacturer} suggestions={filters.manufacturers}
+                    placeholder="Todos los fabricantes" label="Fabricante" />
+                  <Autocomplete value={categoryName} onChange={(v) => { setCategoryName(v); const found = filters.categories.find((c) => c.name === v); setCategoryId(found ? String(found.id) : ""); }}
+                    suggestions={filters.categories.map((c) => c.name)} placeholder="Todas las categorías" label="Categoría" />
+                  <Autocomplete value={brand} onChange={setBrand} suggestions={filters.brands}
+                    placeholder="Todas las marcas" label="Marca" />
+                  <Autocomplete value={model} onChange={setModel} suggestions={filters.models || []}
+                    placeholder="Todos los modelos" label="Modelo" />
+                  <Autocomplete value={year} onChange={setYear} suggestions={filters.years || []}
+                    placeholder="Todos los años (ej. 92)" label="Año / rango" />
+                  <Autocomplete value={detailFilter} onChange={setDetailFilter} suggestions={filters.detalles || []}
+                    placeholder="Detalle, versión, uso..." label="Detalles" />
+                  <Autocomplete value={oemCode} onChange={setOemCode} suggestions={filters.oemCodes || []}
+                    placeholder="Todos los OEM" label="Cód. OEM" />
+                  <Autocomplete value={factoryCode} onChange={setFactoryCode} suggestions={filters.factoryCodes || []}
+                    placeholder="Todos los códigos de fábrica" label="Cód. Fábrica" />
                 </div>
               )}
-              {searchingProducts && searchProd.length >= 2 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-dark-900 border border-dark-700 rounded-xl p-3 text-center">
-                  <RefreshCw size={16} className="text-gray-500 animate-spin mx-auto" />
+
+              {/* Resultados: muestra solo el Precio Mayor */}
+              {searching ? (
+                <div className="flex items-center justify-center py-14">
+                  <RefreshCw size={28} className="text-primary-400 animate-spin" />
                 </div>
+              ) : searchResults.length === 0 ? (
+                <div className="py-10 text-center">
+                  <Search size={40} className="text-gray-600 mx-auto mb-3" />
+                  <p className="text-gray-400 text-sm">
+                    {search || hasActiveSearchFilters ? "No se encontraron productos con esos criterios" : "Cargando productos..."}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="hidden md:block overflow-x-auto mt-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-gray-500 border-b border-dark-700/50">
+                          <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Fabricante</th>
+                          <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Producto</th>
+                          <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Marca</th>
+                          <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Modelo</th>
+                          <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Año</th>
+                          <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Detalles</th>
+                          <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Cód. OEM</th>
+                          <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Cód. Fábrica</th>
+                          <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Precio Mayor</th>
+                          <th className="text-center px-3 py-2.5 font-medium whitespace-nowrap">Stock</th>
+                          <th className="text-center px-3 py-2.5 font-medium whitespace-nowrap">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {searchResults.map((p) => (
+                          <tr key={p.id} className="border-b border-dark-700/30 last:border-0 hover:bg-dark-900/30">
+                            <td className="px-3 py-2 text-gray-300">{p.manufacturer}</td>
+                            <td className="px-3 py-2 text-foreground font-medium max-w-[200px] truncate">{p.name}</td>
+                            <td className="px-3 py-2 text-gray-300">{p.brand}</td>
+                            <td className="px-3 py-2 text-gray-300">{p.model}</td>
+                            <td className="px-3 py-2 text-gray-400">{p.year}</td>
+                            <td className="px-3 py-2 text-gray-400 text-xs">{p.detalles || p.detail || "—"}</td>
+                            <td className="px-3 py-2 text-gray-400 text-xs">{p.oemCode || "—"}</td>
+                            <td className="px-3 py-2 text-gray-400 text-xs">{p.factoryCode || "—"}</td>
+                            <td className="px-3 py-2 text-right text-emerald-400 font-medium whitespace-nowrap">{p.wholesalePrice ? formatBs(p.wholesalePrice) : "—"}</td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span>
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <button onClick={() => addItem(p)}
+                                title="Agregar al pedido"
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary-600/10 border border-primary-600/25 text-primary-400 hover:bg-primary-600 hover:text-white transition-all text-xs font-medium">
+                                <ShoppingCart size={14} /> Agregar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="md:hidden mt-4 space-y-1.5">
+                    {searchResults.map((p) => (
+                      <div key={p.id} className="w-full flex items-center justify-between px-4 py-3 bg-dark-900/50 border border-dark-700/30 rounded-xl">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-foreground font-medium truncate">{p.name}</p>
+                          <p className="text-xs text-gray-500 truncate">{p.manufacturer} · {p.brand} · {p.model} · {p.itemCode}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs font-medium text-emerald-400">{p.wholesalePrice ? formatBs(p.wholesalePrice) : "—"}</span>
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>Stock: {p.stock}</span>
+                          </div>
+                        </div>
+                        <button onClick={() => addItem(p)} title="Agregar al pedido"
+                          className="p-2 rounded-lg bg-primary-600/10 border border-primary-600/20 text-primary-400 hover:bg-primary-600 hover:text-white transition-all ml-2 shrink-0">
+                          <ShoppingCart size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {searchPages > 1 && (
+                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-dark-700/50">
+                      <p className="text-xs text-gray-500">Página {searchPage} de {searchPages} · {searchTotal} productos</p>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setSearchPage((p) => Math.max(1, p - 1))} disabled={searchPage <= 1}
+                          className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30">
+                          <ChevronLeft size={16} />
+                        </button>
+                        <span className="text-sm text-gray-400">{searchPage} / {searchPages}</span>
+                        <button onClick={() => setSearchPage((p) => Math.min(searchPages, p + 1))} disabled={searchPage >= searchPages}
+                          className="p-2 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground disabled:opacity-30">
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
