@@ -18,7 +18,7 @@ router.use(authorize("ADMIN", "TIENDA"));
 // POST — Crear venta mayorista
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { items, payments, customerId, customerData, locationId, clienteName, paraQuien, lugarEntrega, datosFactura, formaPago, origen, envioExterior, quienRecoge, telefono, crearSolicitud } = req.body;
+    const { items, payments, customerId, customerData, locationId, clienteName, paraQuien, lugarEntrega, datosFactura, formaPago, origen, envioExterior, quienRecoge, telefono } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
@@ -86,7 +86,12 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      // Venta mayorista: se registra aunque la mercadería no esté aún en la
+      // tienda. Se descuenta solo el stock disponible y se solicita al almacén
+      // (o a otra tienda) lo que falte. Si el producto está en la tienda de
+      // venta, no se crea solicitud.
       const stockUpdates: { productId: number; quantity: number }[] = [];
+      const supplyRequests: { productId: number; quantity: number }[] = [];
 
       for (const item of validItems) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
@@ -99,11 +104,14 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         });
 
         const currentStock = inventory?.stock || 0;
-        if (currentStock < item.quantity) {
-          throw new Error(`Stock insuficiente para "${product.name}". Disponible: ${currentStock}, solicitado: ${item.quantity}`);
+        const availableNow = Math.min(currentStock, item.quantity);
+        if (availableNow > 0) {
+          stockUpdates.push({ productId: item.productId, quantity: availableNow });
         }
-
-        stockUpdates.push({ productId: item.productId, quantity: item.quantity });
+        const shortfall = item.quantity - availableNow;
+        if (shortfall > 0) {
+          supplyRequests.push({ productId: item.productId, quantity: shortfall });
+        }
       }
 
       let totalSale = 0;
@@ -161,65 +169,32 @@ router.post("/", async (req: AuthRequest, res: Response) => {
             where: { id: inv.id },
             data: { stock: newStock },
           });
-
-          if (newStock === 0) {
-            const almacen = await tx.location.findFirst({ where: { type: "ALMACEN" } });
-            if (almacen) {
-              const existing = await tx.productRequest.findFirst({
-                where: {
-                  productId: update.productId,
-                  locationId: userLocationId,
-                  status: { in: ["PENDIENTE", "RECIBIDO_POR_INVENTARIO", "PREPARANDO"] },
-                },
-              });
-              if (!existing) {
-                const almacenInv = await tx.inventory.findUnique({
-                  where: { productId_locationId: { productId: update.productId, locationId: almacen.id } },
-                });
-                const requestQty = Math.max(update.quantity, 5);
-                if (almacenInv && almacenInv.stock >= requestQty) {
-                  await tx.productRequest.create({
-                    data: {
-                      productId: update.productId,
-                      quantity: requestQty,
-                      requestedById: user.userId,
-                      locationId: userLocationId,
-                      status: "PENDIENTE",
-                      expectedDate: nextDayAt8(),
-                    },
-                  });
-                }
-              }
-            }
-          }
         }
       }
 
-      if (crearSolicitud !== false) {
-        const almacen = await tx.location.findFirst({ where: { type: "ALMACEN" } });
-        if (almacen) {
-          for (const update of stockUpdates) {
-            const existing = await tx.productRequest.findFirst({
-              where: {
-                productId: update.productId,
-                locationId: userLocationId,
-                status: { in: ["PENDIENTE", "RECIBIDO_POR_INVENTARIO", "PREPARANDO"] },
-              },
-            });
-            if (!existing) {
-              await tx.productRequest.create({
-                data: {
-                  productId: update.productId,
-                  quantity: update.quantity,
-                  requestedById: user.userId,
-                  locationId: userLocationId,
-                  status: "PENDIENTE",
-                  expectedDate: nextDayAt8(),
-                  note: "Despacho venta mayorista",
-                },
-              });
-            }
-          }
+      // Solicitud automática al almacén (donde se encuentra la mercadería) por
+      // lo que falte en la tienda de venta. Si el producto está en la tienda,
+      // no se crea solicitud.
+      for (const req of supplyRequests) {
+        const existing = await tx.productRequest.findFirst({
+          where: {
+            productId: req.productId,
+            locationId: userLocationId,
+            status: { in: ["PENDIENTE", "RECIBIDO_POR_INVENTARIO", "PREPARANDO"] },
+          },
+        });
+        if (!existing) {
+          await tx.productRequest.create({
+            data: {
+              productId: req.productId,
+              quantity: req.quantity,
+              requestedById: user.userId,
+              locationId: userLocationId,
+              status: "PENDIENTE",
+              expectedDate: nextDayAt8(),
+              note: "Despacho venta mayorista",
+            },
+          });
         }
       }
 
@@ -368,6 +343,7 @@ router.post("/import-order", authorize("ADMIN", "TIENDA"), upload.single("file")
       } else {
         items.push({
           productId: product.id,
+          factoryCode: product.factoryCode || null,
           itemCode: product.itemCode,
           name: product.name,
           brand: product.brand,
@@ -386,6 +362,48 @@ router.post("/import-order", authorize("ADMIN", "TIENDA"), upload.single("file")
   } catch (error: any) {
     console.error("Error al importar pedido:", error);
     res.status(500).json({ message: error.message || "Error al procesar el archivo" });
+  }
+});
+
+// POST /export-excel — Exportar la lista del pedido a Excel (para enviar al cliente)
+// Columnas: CODIGO FABRICA, CODIGO ITEM, PRODUCTO, MARCA, CANTIDAD, PRECIO MAYOR, SUBTOTAL
+router.post("/export-excel", authorize("ADMIN", "TIENDA"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { items, clientName } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: "No hay productos para exportar" });
+    }
+
+    const header = ["CODIGO FABRICA", "CODIGO ITEM", "PRODUCTO", "MARCA", "CANTIDAD", "PRECIO MAYOR", "SUBTOTAL"];
+    const rows = items.map((it: any) => [
+      it.factoryCode || "",
+      it.itemCode || "",
+      it.name || "",
+      it.brand || "",
+      Number(it.quantity) || 0,
+      Number(it.unitPrice) || 0,
+      Number(it.subtotal) || 0,
+    ]);
+    const total = rows.reduce((s, r) => s + (Number(r[6]) || 0), 0);
+    rows.push(["", "", "", "", "", "TOTAL", +total.toFixed(2)]);
+
+    const worksheet = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    worksheet["!cols"] = header.map(() => ({ wch: 18 }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Pedido");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    const safeName = typeof clientName === "string" && clientName.trim()
+      ? clientName.trim().replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "_")
+      : "pedido";
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="pedido-mayorista-${safeName}.xlsx"`);
+    res.send(buffer);
+  } catch (error: any) {
+    console.error("Error al exportar Excel:", error);
+    res.status(500).json({ message: error.message || "Error al exportar el Excel" });
   }
 });
 

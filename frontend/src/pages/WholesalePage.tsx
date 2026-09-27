@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
+import { useAuthStore } from "../stores/authStore";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -12,7 +13,7 @@ import html2canvas from "html2canvas";
 interface WholesaleItem {
   productId: number; itemCode: string; name: string; brand: string;
   model: string; year: string; detail: string | null; quantity: number;
-  unitPrice: number; subtotal: number;
+  unitPrice: number; subtotal: number; factoryCode: string | null;
 }
 
 interface WholesaleSale {
@@ -28,10 +29,33 @@ interface WholesaleSale {
 interface ProductResult {
   id: number; itemCode: string; name: string; brand: string;
   model: string; year: string; detail: string | null;
-  wholesalePrice: number | null; price1: number;
+  wholesalePrice: number | null; price1: number; factoryCode: string | null;
+}
+
+interface LocationLite {
+  id: number; name: string; type: string;
 }
 
 export default function WholesalePage() {
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === "ADMIN";
+  const isTienda = user?.role === "TIENDA";
+
+  const [locations, setLocations] = useState<LocationLite[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<number | "">("");
+
+  useEffect(() => {
+    api.get("/locations").then((r) => {
+      const list = Array.isArray(r.data) ? r.data : r.data.locations || [];
+      setLocations(list);
+      if (isAdmin) {
+        const tumusla = list.find((l: LocationLite) => l.type === "TIENDA" && l.name.toUpperCase().includes("TUMUSLA"));
+        setSelectedStoreId(tumusla?.id ?? list.find((l: LocationLite) => l.type === "TIENDA")?.id ?? "");
+      } else {
+        setSelectedStoreId(user?.locationId ?? "");
+      }
+    }).catch(() => {});
+  }, [isAdmin, user?.locationId]);
   const [sales, setSales] = useState<WholesaleSale[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -96,12 +120,17 @@ export default function WholesalePage() {
       if (!v || v.length < 2) { setSearchResults([]); return; }
       try {
         setSearchingProducts(true);
-        const res = await api.get(`/products?search=${encodeURIComponent(v)}&limit=10`);
+        const params = new URLSearchParams();
+        params.set("search", v);
+        params.set("limit", "10");
+        params.set("includeZeroStock", "true");
+        if (selectedStoreId) params.set("locationId", String(selectedStoreId));
+        const res = await api.get(`/products?${params.toString()}`);
         setSearchResults(res.data.products.map((p: any) => ({
           id: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
           model: p.model, year: p.year, detail: p.detail,
           wholesalePrice: p.wholesalePrice ? Number(p.wholesalePrice) : null,
-          price1: Number(p.price1),
+          price1: Number(p.price1), factoryCode: p.factoryCode || null,
         })));
       } catch {
         setSearchResults([]);
@@ -117,7 +146,7 @@ export default function WholesalePage() {
     setItems((prev) => [...prev, {
       productId: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
       model: p.model, year: p.year, detail: p.detail,
-      quantity: 1, unitPrice: price, subtotal: price,
+      quantity: 1, unitPrice: price, subtotal: price, factoryCode: p.factoryCode,
     }]);
     setSearchProd(""); setSearchResults([]);
   };
@@ -141,7 +170,7 @@ export default function WholesalePage() {
 
   const confirmSale = async () => {
     try {
-      const payload = {
+      const payload: any = {
         customerData: { name: clientName, nit: facturaNIT || null },
         paraQuien: pedido,
         lugarEntrega: finalDeliveryPlace,
@@ -149,7 +178,6 @@ export default function WholesalePage() {
         envioExterior,
         quienRecoge: quienRecoge || undefined,
         telefono: telefono || undefined,
-        crearSolicitud: true,
         items: items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -157,6 +185,7 @@ export default function WholesalePage() {
         })),
         payments: [{ method: paymentMethod, amount: total }],
       };
+      if (selectedStoreId) payload.locationId = selectedStoreId;
       const response = await api.post("/wholesale", payload);
       setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, pedido, deliveryPlace: finalDeliveryPlace, paymentMethod, facturaNIT, origen, quienRecoge, telefono, envioExterior });
       toast.success("Venta por mayor registrada");
@@ -182,6 +211,7 @@ export default function WholesalePage() {
       productId: it.productId, itemCode: it.itemCode, name: it.name, brand: it.brand,
       model: it.model, year: it.year, detail: it.detail,
       quantity: it.quantity, unitPrice: Number(it.unitPrice), subtotal: Number(it.subtotal),
+      factoryCode: it.factoryCode || null,
     }));
     if (!importedItems.length) return;
     setItems((prev) => {
@@ -264,6 +294,39 @@ export default function WholesalePage() {
       toast.success("PDF descargado", { id: "wpdf" });
     } catch {
       toast.error("Error al generar PDF", { id: "wpdf" });
+    }
+  };
+
+  // Exportar la lista actual a Excel (para confirmación del cliente)
+  const exportExcel = async () => {
+    if (items.length === 0) { toast.error("Agrega productos para exportar"); return; }
+    toast.loading("Generando Excel...", { id: "wx" });
+    try {
+      const res = await api.post("/wholesale/export-excel",
+        {
+          clientName,
+          items: items.map((i) => ({
+            factoryCode: i.factoryCode || null,
+            itemCode: i.itemCode,
+            name: i.name,
+            brand: i.brand,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            subtotal: i.subtotal,
+          })),
+        },
+        { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pedido-mayorista-${clientName.trim() ? clientName.trim().replace(/\s+/g, "_") : "cliente"}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Excel descargado", { id: "wx" });
+    } catch {
+      toast.error("Error al exportar el Excel", { id: "wx" });
     }
   };
 
@@ -352,6 +415,24 @@ export default function WholesalePage() {
           </div>
 
           <div className="p-4 space-y-4">
+            {isAdmin && (
+              <div>
+                <label htmlFor="wholesale-store" className="block text-xs text-gray-400 mb-1">Tienda *</label>
+                <select id="wholesale-store" value={selectedStoreId} onChange={(e) => setSelectedStoreId(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
+                  <option value="">Seleccionar tienda</option>
+                  {locations.filter((l) => l.type === "TIENDA").map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {!isAdmin && isTienda && selectedStoreId && (
+              <div className="text-xs text-gray-400">
+                Tienda: <strong className="text-foreground">{locations.find((l) => l.id === selectedStoreId)?.name || "Mi tienda"}</strong>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Nombre del cliente *</label>
@@ -506,10 +587,16 @@ export default function WholesalePage() {
 
             <div className="flex items-center justify-between pt-3 border-t border-dark-700/50">
               <span className="text-lg font-bold text-foreground">Total: <span className="text-emerald-400">{formatBs(total)}</span></span>
-              <button onClick={openConfirm}
-                className="flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
-                <Check size={16} /> Confirmar Venta
-              </button>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <button onClick={exportExcel} disabled={items.length === 0}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-dark-700 hover:bg-dark-600 text-gray-200 rounded-xl text-sm font-medium transition-all border border-dark-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                  <FileSpreadsheet size={16} /> Exportar Excel
+                </button>
+                <button onClick={openConfirm}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
+                  <Check size={16} /> Confirmar Venta
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -631,7 +718,7 @@ export default function WholesalePage() {
             </div>
             <div className="p-5 space-y-4">
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
-                <p className="text-blue-400 text-xs font-medium mb-1">El Excel debe contener columnas: Codigo Item / Codigo OEM / Codigo Fabrica / QTY</p>
+                <p className="text-blue-400 text-xs font-medium mb-1">El Excel debe contener las columnas: CODIGO FABRICA y CANTIDAD</p>
                 <p className="text-gray-400 text-xs">Los productos se agregan al pedido con el Precio Mayor autocompletado.</p>
               </div>
               {!importResult ? (
