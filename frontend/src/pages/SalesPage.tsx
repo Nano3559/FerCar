@@ -66,6 +66,12 @@ interface SaleRecord {
   seller: string | null;
   customer: { id: number; name: string; nit: string | null; phone: string | null } | null;
   note?: string | null;
+  status?: string | null;
+  paraQuien?: string | null;
+  lugarEntrega?: string | null;
+  datosFactura?: string | null;
+  nitName?: string | null;
+  telefono?: string | null;
   items: { id: number; quantity: number; unitPrice: number; subtotal: number;
     product: { id: number; name: string; itemCode: string; brand?: string } }[];
   payments: { id: number; method: string; amount: number }[];
@@ -251,6 +257,14 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [requiereFactura, setRequiereFactura] = useState(false);
   const [customerData, setCustomerData] = useState<CustomerData>({ name: "", nit: "", phone: "" });
   const [saleNote, setSaleNote] = useState("");
+  // Departamental: la venta se arma durante el dia y se entrega a alguien. Son
+  // los mismos campos que usa Ventas por Mayor (lugarEntrega, paraQuien,
+  // datosFactura, nitName, telefono), que ya estaban en el modelo sin usarse.
+  const [paraDonde, setParaDonde] = useState("");
+  const [paraQuien, setParaQuien] = useState("");
+  const [nitFactura, setNitFactura] = useState("");
+  const [nombreFactura, setNombreFactura] = useState("");
+  const [telefonoEntrega, setTelefonoEntrega] = useState("");
   const [processing, setProcessing] = useState(false);
 
   // --- Add-to-cart modal ---
@@ -284,8 +298,113 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [histDateTo, setHistDateTo] = useState("");
   const [expandedSale, setExpandedSale] = useState<number | null>(null);
 
-  const [histColumns, setHistColumns] = useState<string[]>(() => {
+  // ==================== AMPLIAR VENTA DEPARTAMENTAL ====================
+  // La venta departamental se construye a lo largo del dia: el cliente llama
+  // por un par de cosas, mas tarde por otras, y al final del dia pasa a
+  // retirar y pagar. Este modal es para ampliar una venta ya creada y para
+  // registrarle pagos, sin tener que rehacer el pedido.
+  const [openSale, setOpenSale] = useState<SaleRecord | null>(null);
+  const [openSaleSearch, setOpenSaleSearch] = useState("");
+  const [openSaleResults, setOpenSaleResults] = useState<Product[]>([]);
+  const [openSaleSearching, setOpenSaleSearching] = useState(false);
+  const [openSalePending, setOpenSalePending] = useState<{ productId: number; quantity: number; unitPrice: number; priceTier: 1 | 2; name: string; itemCode: string }[]>([]);
+  const [openSalePayMethod, setOpenSalePayMethod] = useState("EFECTIVO");
+  const [openSalePayAmount, setOpenSalePayAmount] = useState("");
+  const [openSaleBusy, setOpenSaleBusy] = useState(false);
+  const openSaleRef = useDialogBehavior(openSale !== null, () => {
+    setOpenSale(null);
+    setOpenSaleSearch(""); setOpenSaleResults([]); setOpenSalePending([]);
+    setOpenSalePayAmount(""); setOpenSalePayMethod("EFECTIVO");
+  });
+
+  const openSalePaid = openSale
+    ? openSale.payments.filter((p) => p.method !== "CREDITO").reduce((s, p) => s + Number(p.amount), 0)
+    : 0;
+  const openSaleBalance = openSale ? Math.max(openSale.total - openSalePaid, 0) : 0;
+  const openSaleAdded = openSalePending.reduce((s, c) => s + c.quantity * c.unitPrice, 0);
+
+  // ==================== AMPLIAR VENTA DEPARTAMENTAL ====================
+  const searchForOpenSale = async (term: string) => {
+    if (!term.trim()) { setOpenSaleResults([]); return; }
+    const params = new URLSearchParams({ search: term.trim(), includeZeroStock: "true", page: "1", limit: "8" });
+    if (openSale) params.set("locationId", String(openSale.location.id));
     try {
+      setOpenSaleSearching(true);
+      const res = await api.get(`/products?${params.toString()}`);
+      setOpenSaleResults(res.data.products || []);
+    } catch {
+      setOpenSaleResults([]);
+    } finally {
+      setOpenSaleSearching(false);
+    }
+  };
+
+  const addToOpenSale = (p: Product, tier: 1 | 2) => {
+    const precio = Number(tier === 1 ? p.price1 : p.price2);
+    if (!precio || precio <= 0) {
+      toast.error(`"${p.name}" no tiene precio ${tier === 1 ? "1" : "2"}`);
+      return;
+    }
+    setOpenSalePending((prev) => {
+      const found = prev.find((c) => c.productId === p.id && c.priceTier === tier);
+      if (found) {
+        return prev.map((c) => (c === found ? { ...c, quantity: c.quantity + 1 } : c));
+      }
+      return [...prev, { productId: p.id, quantity: 1, unitPrice: precio, priceTier: tier, name: p.name, itemCode: p.itemCode }];
+    });
+    setOpenSaleSearch("");
+    setOpenSaleResults([]);
+  };
+
+  const bumpOpenSaleQty = (productId: number, tier: 1 | 2, delta: number) => {
+    setOpenSalePending((prev) => prev
+      .map((c) => (c.productId === productId && c.priceTier === tier ? { ...c, quantity: c.quantity + delta } : c))
+      .filter((c) => c.quantity > 0));
+  };
+
+  const submitOpenSaleItems = async () => {
+    if (!openSale || openSalePending.length === 0) return;
+    try {
+      setOpenSaleBusy(true);
+      const res = await api.post(`/sales/${openSale.id}/items`, {
+        items: openSalePending.map((c) => ({ productId: c.productId, quantity: c.quantity, unitPrice: c.unitPrice })),
+      });
+      toast.success(`Venta ${saleCode(openSale.id, openSale.saleDate)} ampliada`);
+      setOpenSale({ ...(res.data as SaleRecord), id: openSale.id, saleDate: openSale.saleDate });
+      setOpenSalePending([]);
+      setSales((prev) => prev.map((s) => (s.id === openSale.id ? { ...s, ...(res.data as SaleRecord) } : s)));
+      setHistTotal((t) => t);
+      fetchHistory();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || "No se pudieron agregar los productos");
+    } finally {
+      setOpenSaleBusy(false);
+    }
+  };
+
+  const submitOpenSalePayment = async () => {
+    if (!openSale) return;
+    const monto = parseFloat(openSalePayAmount);
+    if (!monto || monto <= 0) {
+      toast.error("Ingresa un monto mayor a 0");
+      return;
+    }
+    try {
+      setOpenSaleBusy(true);
+      const res = await api.post(`/sales/${openSale.id}/payments`, { method: openSalePayMethod, amount: monto });
+      setOpenSale({ ...(res.data as SaleRecord), id: openSale.id, saleDate: openSale.saleDate });
+      setOpenSalePayAmount("");
+      setSales((prev) => prev.map((s) => (s.id === openSale.id ? { ...s, ...(res.data as SaleRecord) } : s)));
+      fetchHistory();
+      toast.success("Pago registrado");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || "No se pudo registrar el pago");
+    } finally {
+      setOpenSaleBusy(false);
+    }
+  };
+
+  const [histColumns, setHistColumns] = useState<string[]>(() => {    try {
       const raw = localStorage.getItem("columns_ventas");
       const stored = raw ? JSON.parse(raw) : null;
       const roleCols = useAuthStore.getState().columnConfig?.ventas;
@@ -559,6 +678,7 @@ return [...prev, {
     setRequiereFactura(false);
     setCustomerData({ name: "", nit: "", phone: "" });
     setSaleNote("");
+    setParaDonde(""); setParaQuien(""); setNitFactura(""); setNombreFactura(""); setTelefonoEntrega("");
     setShowPayment(true);
   };
 
@@ -578,7 +698,15 @@ return [...prev, {
   const confirmSale = async () => {
     if (cart.length === 0) return;
 
-    if (Math.abs(totalPaid - cartTotal) > 0.01) {
+    // Departamental: el pedido se arma durante el dia y el cliente paga al
+    // final, asi que se admite deudar. Local se cobra en el momento y exige
+    // pago completo. El backend valida lo mismo.
+    if (saleType === "DEPARTAMENTAL") {
+      if (totalPaid - cartTotal > 0.01) {
+        toast.error(`El total pagado (${formatBs(totalPaid)}) supera el total (${formatBs(cartTotal)})`);
+        return;
+      }
+    } else if (Math.abs(totalPaid - cartTotal) > 0.01) {
       toast.error(`El total pagado (${formatBs(totalPaid)}) no coincide con el total (${formatBs(cartTotal)})`);
       return;
     }
@@ -619,6 +747,16 @@ return [...prev, {
           nit: customerData.nit.trim() || null,
           phone: customerData.phone.trim() || null,
         };
+      }
+
+      if (saleType === "DEPARTAMENTAL") {
+        payload.requiereFactura = requiereFactura;
+        payload.paraQuien = paraQuien.trim() || null;
+        payload.lugarEntrega = paraDonde.trim() || null;
+        payload.telefono = telefonoEntrega.trim() || null;
+        // El backend ignora el NIT y el nombre si no se pidio factura.
+        payload.datosFactura = nitFactura.trim() || null;
+        payload.nitName = nombreFactura.trim() || null;
       }
 
       if (selectedLocationId) {
@@ -1388,6 +1526,15 @@ return [...prev, {
                             {histColumns.map((col) => (
                               <Fragment key={col}>{renderHistCell(col, s)}</Fragment>
                             ))}
+                            {saleType === "DEPARTAMENTAL" && (
+                              <td className="px-2 py-3 whitespace-nowrap">
+                                <button onClick={() => setOpenSale(s)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-primary-400 hover:text-primary-300 hover:bg-primary-500/10 transition-all"
+                                  title="Agregar productos y registrar pagos a esta venta">
+                                  <Plus size={13} /> Ampliar
+                                </button>
+                              </td>
+                            )}
                           </tr>
                           {expandedSale === s.id && (
                             <tr className="bg-dark-900/40">
@@ -1581,6 +1728,52 @@ return [...prev, {
                   </div>
                 )}
               </div>
+
+              {/* Envio / factura (solo departamental) */}
+              {saleType === "DEPARTAMENTAL" && (
+                <div className="border-t border-dark-700/50 pt-5 space-y-3">
+                  <div>
+                    <label htmlFor="venta-paradone" className="block text-xs text-gray-500 mb-1">A dónde se envía</label>
+                    <input id="venta-paradone" type="text" value={paraDonde}
+                      onChange={(e) => setParaDonde(e.target.value)}
+                      placeholder="Dirección o lugar de entrega"
+                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                  </div>
+                  <div>
+                    <label htmlFor="venta-paraquien" className="block text-xs text-gray-500 mb-1">A qué nombre se envía</label>
+                    <input id="venta-paraquien" type="text" value={paraQuien}
+                      onChange={(e) => setParaQuien(e.target.value)}
+                      placeholder="Nombre de quien recibe"
+                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                  </div>
+                  <div>
+                    <label htmlFor="venta-telentrega" className="block text-xs text-gray-500 mb-1">Celular de contacto</label>
+                    <input id="venta-telentrega" type="tel" value={telefonoEntrega}
+                      onChange={(e) => setTelefonoEntrega(e.target.value)}
+                      placeholder="Celular"
+                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">NIT</label>
+                      <input id="venta-nitfact" type="text" value={nitFactura}
+                        onChange={(e) => setNitFactura(e.target.value)}
+                        placeholder="NIT (si requiere factura)"
+                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                    </div>
+                    <div>
+                      <label htmlFor="venta-nombrefact" className="block text-xs text-gray-500 mb-1">Nombre / Razón social</label>
+                      <input id="venta-nombrefact" type="text" value={nombreFactura}
+                        onChange={(e) => setNombreFactura(e.target.value)}
+                        placeholder="Nombre del NIT"
+                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    El NIT y el nombre se guardan solo si marcaste “Requiere factura” más abajo.
+                  </p>
+                </div>
+              )}
 
               {/* Nota / Recordatorio */}
               <div className="border-t border-dark-700/50 pt-5">
@@ -1933,6 +2126,152 @@ return [...prev, {
           }))}
           total={cartTotal}
         />
+      )}
+
+      {/* Ampliar venta departamental + registrar pagos */}
+      {openSale && (
+        <div ref={openSaleRef} role="dialog" aria-modal="true" aria-label={`Ampliar venta ${saleCode(openSale.id, openSale.saleDate)}`}
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-2xl bg-dark-900 border border-dark-700/50 rounded-2xl shadow-2xl my-auto">
+            <div className="flex items-start justify-between px-5 py-4 border-b border-dark-700/50">
+              <div>
+                <h3 className="text-base font-bold text-foreground">
+                  Venta {saleCode(openSale.id, openSale.saleDate)}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {openSale.customer?.name || openSale.paraQuien || "Consumidor final"}
+                  {openSale.lugarEntrega ? ` · Envia a: ${openSale.lugarEntrega}` : ""}
+                </p>
+              </div>
+              <button onClick={() => setOpenSale(null)} aria-label="Cerrar"
+                className="p-1 text-gray-400 hover:text-foreground rounded-lg hover:bg-dark-700 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 grid grid-cols-3 gap-3 border-b border-dark-700/50 text-center">
+              <div>
+                <p className="text-xs text-gray-500">Total</p>
+                <p className="text-lg font-semibold text-foreground">{formatBs(openSale.total)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Pagado</p>
+                <p className="text-lg font-semibold text-emerald-400">{formatBs(openSalePaid)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Saldo</p>
+                <p className={`text-lg font-semibold ${openSaleBalance > 0.01 ? "text-amber-400" : "text-emerald-400"}`}>
+                  {formatBs(openSaleBalance)}
+                </p>
+              </div>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              {/* Buscar productos a agregar */}
+              <div>
+                <label htmlFor="ampliar-buscar" className="block text-xs text-gray-500 mb-1.5">Agregar productos</label>
+                <input id="ampliar-buscar" type="text" value={openSaleSearch}
+                  onChange={(e) => { setOpenSaleSearch(e.target.value); searchForOpenSale(e.target.value); }}
+                  placeholder="Buscar por código, nombre, marca o modelo..."
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                {openSaleSearching && <p className="text-xs text-gray-500 mt-1.5">Buscando...</p>}
+                {!openSaleSearching && openSaleResults.length > 0 && (
+                  <div className="mt-2 border border-dark-700/50 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+                    {openSaleResults.map((p) => (
+                      <div key={p.id} className="flex items-center justify-between gap-2 px-3 py-2 border-b border-dark-700/30 last:border-0 hover:bg-dark-800/50">
+                        <div className="min-w-0">
+                          <p className="text-xs text-foreground truncate">{p.name}</p>
+                          <p className="text-xs text-gray-500">{p.itemCode} · stock {p.stock}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button onClick={() => addToOpenSale(p, 1)} className="px-2 py-1 rounded-lg text-xs bg-primary-600/15 text-primary-400 hover:bg-primary-600/25 transition-colors">
+                            P1 {formatBs(Number(p.price1))}
+                          </button>
+                          <button onClick={() => addToOpenSale(p, 2)} className="px-2 py-1 rounded-lg text-xs bg-dark-700/60 text-gray-300 hover:bg-dark-700 transition-colors">
+                            P2 {formatBs(Number(p.price2))}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Productos por agregar */}
+              {openSalePending.length > 0 && (
+                <div className="border border-dark-700/50 rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-dark-800/50 border-b border-dark-700/50">
+                    <span className="text-xs font-medium text-gray-300">Por agregar a la venta</span>
+                    <span className="text-xs text-gray-400">{formatBs(openSaleAdded)}</span>
+                  </div>
+                  {openSalePending.map((c) => (
+                    <div key={`${c.productId}-${c.priceTier}`} className="flex items-center justify-between gap-2 px-3 py-2 border-b border-dark-700/30 last:border-0">
+                      <div className="min-w-0">
+                        <p className="text-xs text-foreground truncate">{c.name}</p>
+                        <p className="text-xs text-gray-500">P{c.priceTier} · {formatBs(c.unitPrice)} c/u</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => bumpOpenSaleQty(c.productId, c.priceTier, -1)} aria-label="Quitar uno"
+                          className="p-1 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                          <Minus size={13} />
+                        </button>
+                        <span className="text-xs text-foreground w-6 text-center">{c.quantity}</span>
+                        <button onClick={() => bumpOpenSaleQty(c.productId, c.priceTier, 1)} aria-label="Agregar uno"
+                          className="p-1 rounded-lg text-gray-400 hover:text-primary-400 hover:bg-primary-600/10 transition-colors">
+                          <Plus size={13} />
+                        </button>
+                        <span className="text-xs text-gray-300 w-20 text-right">{formatBs(c.quantity * c.unitPrice)}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="px-3 py-2.5 bg-dark-800/30 flex justify-end">
+                    <button onClick={submitOpenSaleItems} disabled={openSaleBusy}
+                      className="px-4 py-2 rounded-xl text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white transition-all disabled:opacity-50">
+                      {openSaleBusy ? "Guardando..." : `Agregar ${formatBs(openSaleAdded)} a la venta`}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Registrar pago */}
+              <div className="border-t border-dark-700/50 pt-4">
+                <label htmlFor="ampliar-pago" className="block text-xs text-gray-500 mb-1.5">Registrar pago</label>
+                {openSaleBalance <= 0.01 ? (
+                  <p className="text-xs text-emerald-400">Esta venta esta pagada por completo.</p>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <select value={openSalePayMethod} onChange={(e) => setOpenSalePayMethod(e.target.value)}
+                        className="px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                        <option value="EFECTIVO">Efectivo</option>
+                        <option value="QR">QR</option>
+                        <option value="TRANSFERENCIA">Transferencia</option>
+                        <option value="CREDITO">Crédito</option>
+                      </select>
+                      <input id="ampliar-pago" type="number" min="0" step="0.01" value={openSalePayAmount}
+                        onChange={(e) => setOpenSalePayAmount(e.target.value)}
+                        placeholder={String(openSaleBalance.toFixed(2))}
+                        className="flex-1 px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                      <button onClick={submitOpenSalePayment} disabled={openSaleBusy}
+                        className="px-4 py-2.5 rounded-xl text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white transition-all disabled:opacity-50 shrink-0">
+                        Cobrar
+                      </button>
+                    </div>
+                    {openSale.payments.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {openSale.payments.map((p) => (
+                          <span key={p.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-dark-900/50 border border-dark-700/30 rounded-full text-xs text-gray-400">
+                            {pmLabel[p.method] || p.method} · {formatBs(p.amount)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

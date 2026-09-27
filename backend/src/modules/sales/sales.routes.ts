@@ -279,14 +279,21 @@ router.post("/", async (req: AuthRequest, res: Response) => {
   try {
     // El "seller" del body se acepta por compatibilidad con clientes viejos,
     // pero el vendedor real es siempre la cuenta autenticada (ver mas abajo).
-    const { items, payments, customerId, customerData, requiereFactura, locationId, note, type } = req.body;
+    const { items, payments, customerId, customerData, requiereFactura, locationId, note, type, paraQuien, lugarEntrega, datosFactura, nitName, telefono } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
     }
 
+    // La venta departamental se arma durante el dia y se cobra al final, asi que
+    // se puede abrir con un pago parcial o solo con credito. Las locales siguen
+    // exigiendo pago completo: ahi se cobra en el momento.
+    const esDepartamental = type === "DEPARTAMENTAL";
+
     if (!payments || !Array.isArray(payments) || payments.length === 0) {
-      return res.status(400).json({ message: "Debe registrar al menos un pago" });
+      if (!esDepartamental) {
+        return res.status(400).json({ message: "Debe registrar al menos un pago" });
+      }
     }
 
     if (type && !["NORMAL", "DEPARTAMENTAL"].includes(type)) {
@@ -349,7 +356,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     const validMethods = ["EFECTIVO", "QR", "TRANSFERENCIA", "CREDITO"];
-    for (const p of payments) {
+    for (const p of payments || []) {
       if (!validMethods.includes(p.method)) {
         return res.status(400).json({ message: `Método de pago inválido: ${p.method}` });
       }
@@ -406,10 +413,23 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         };
       });
 
-      const totalPaid = payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
-      if (Math.abs(totalPaid - totalSale) > 0.01) {
+      const totalPaid = (payments || []).reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+
+      if (!esDepartamental && Math.abs(totalPaid - totalSale) > 0.01) {
         throw new Error(`El total pagado (Bs. ${totalPaid}) no coincide con el total de la venta (Bs. ${totalSale})`);
       }
+
+      // En departamental el pago puede ir por debajo: la venta queda PENDIENTE
+      // y se completa con POST /sales/:id/payments cuando el cliente pague al
+      // final del dia. Nunca por encima del total.
+      if (esDepartamental && totalPaid - totalSale > 0.01) {
+        throw new Error(`El total pagado (Bs. ${totalPaid}) supera el total de la venta (Bs. ${totalSale})`);
+      }
+
+      const paidSinCredito = (payments || [])
+        .filter((p: any) => p.method !== "CREDITO")
+        .reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+      const status = esDepartamental && paidSinCredito < totalSale - 0.01 ? "PENDIENTE" : "PAGADO";
 
       const sale = await tx.sale.create({
         data: {
@@ -419,10 +439,18 @@ router.post("/", async (req: AuthRequest, res: Response) => {
           locationId: userLocationId,
           customerId: finalCustomerId,
           seller: finalSeller,
+          status,
           note: typeof note === "string" && note.trim() ? note.trim() : null,
+          // Destino de la entrega siempre; datos de facturacion solo si el
+          // vendedor marco que requiere factura, para no inventarlos.
+          paraQuien: paraQuien || null,
+          lugarEntrega: lugarEntrega || null,
+          datosFactura: requiereFactura ? (datosFactura || null) : null,
+          nitName: requiereFactura ? (nitName || null) : null,
+          telefono: telefono || null,
           items: { create: saleItemsData },
           payments: {
-            create: payments.map((p: any) => ({
+            create: (payments || []).map((p: any) => ({
               method: p.method,
               amount: Number(p.amount),
             })),
@@ -476,6 +504,217 @@ router.post("/", async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error("Error al crear venta:", error);
     res.status(400).json({ message: error.message || "Error interno del servidor" });
+  }
+});
+
+// Ampliar una venta departamental que ya se creo. La venta se arma durante el
+// dia: el cliente pide cosas en varias llamadas y el pedido crece hasta que
+// pasa a retirar y pagar. Por eso no se exige pago aqui: el total sube y la
+// venta queda PENDIENTE.
+router.post("/:id/items", async (req: AuthRequest, res: Response) => {
+  try {
+    const saleId = Number(req.params.id);
+    const { items } = req.body;
+
+    if (!Number.isInteger(saleId) || saleId <= 0) {
+      return res.status(400).json({ message: "Venta inválida" });
+    }
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: "Debe agregar al menos un producto" });
+    }
+
+    const user = req.user!;
+    const sale = await prisma.sale.findUnique({ where: { id: saleId } });
+    if (!sale) {
+      return res.status(404).json({ message: "Venta no encontrada" });
+    }
+    if (sale.type !== "DEPARTAMENTAL") {
+      return res.status(400).json({ message: "Solo las ventas departamentales se pueden ampliar" });
+    }
+    // Un vendedor de tienda solo toca ventas de su propia tienda.
+    if (user.role === "TIENDA" && sale.locationId !== user.locationId) {
+      return res.status(403).json({ message: "No puede modificar una venta de otra tienda" });
+    }
+
+    const validItems = validateAndMergeItems(items);
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Se vuelve a leer dentro de la transaccion para no trabajar con un
+      // total viejo si otra peticion amplió la misma venta al mismo tiempo.
+      const fresh = await tx.sale.findUnique({ where: { id: saleId }, include: { items: true } });
+      if (!fresh) throw new Error("Venta no encontrada");
+
+      const stockUpdates: { productId: number; quantity: number }[] = [];
+      for (const item of validItems) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        if (!product) throw new Error(`Producto con ID ${item.productId} no encontrado`);
+
+        const inventory = await tx.inventory.findUnique({
+          where: { productId_locationId: { productId: item.productId, locationId: sale.locationId } },
+        });
+        const currentStock = inventory?.stock || 0;
+        if (currentStock < item.quantity) {
+          throw new Error(`Stock insuficiente para "${product.name}". Disponible: ${currentStock}, solicitado: ${item.quantity}`);
+        }
+        stockUpdates.push({ productId: item.productId, quantity: item.quantity });
+      }
+
+      // Si el mismo producto ya estaba en la venta se acumula la cantidad en
+      // una sola linea, igual que al crear la venta.
+      const byProduct = new Map<number, { quantity: number; unitPrice: number }>();
+      for (const existing of fresh.items) {
+        byProduct.set(existing.productId, {
+          quantity: existing.quantity,
+          unitPrice: Number(existing.unitPrice),
+        });
+      }
+      let added = 0;
+      for (const item of validItems) {
+        const prev = byProduct.get(item.productId);
+        const quantity = (prev?.quantity || 0) + item.quantity;
+        const unitPrice = item.unitPrice;
+        byProduct.set(item.productId, { quantity, unitPrice });
+        added += item.quantity * unitPrice;
+      }
+
+      for (const [productId, data] of byProduct) {
+        const before = fresh.items.find((i) => i.productId === productId);
+        if (before) {
+          await tx.saleItem.update({
+            where: { id: before.id },
+            data: { quantity: data.quantity, unitPrice: data.unitPrice, subtotal: data.quantity * data.unitPrice },
+          });
+        } else {
+          await tx.saleItem.create({
+            data: {
+              saleId,
+              productId,
+              quantity: data.quantity,
+              unitPrice: data.unitPrice,
+              subtotal: data.quantity * data.unitPrice,
+            },
+          });
+        }
+      }
+
+      const newTotal = Number(fresh.total) + added;
+      await tx.sale.update({ where: { id: saleId }, data: { total: newTotal, status: "PENDIENTE" } });
+
+      for (const update of stockUpdates) {
+        const inv = await tx.inventory.findUnique({
+          where: { productId_locationId: { productId: update.productId, locationId: sale.locationId } },
+        });
+        if (inv) {
+          await tx.inventory.update({
+            where: { id: inv.id },
+            data: { stock: inv.stock - update.quantity },
+          });
+          await ensureRestockRequest(tx, {
+            productId: update.productId,
+            destinationId: sale.locationId,
+            requestedById: user.userId,
+            source: "VENTA",
+            note: "Reposición automática: la venta dejó el stock bajo el mínimo",
+          });
+        }
+      }
+
+      const updated = await tx.sale.findUnique({
+        where: { id: saleId },
+        include: {
+          user: { select: { id: true, name: true } },
+          location: { select: { id: true, name: true } },
+          customer: true,
+          items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true } } } },
+          payments: true,
+        },
+      });
+
+      return {
+        ...updated!,
+        total: Number(updated!.total),
+        items: updated!.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
+        payments: updated!.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
+      };
+    });
+
+    res.json(result);
+  } catch (error: any) {
+    console.error("Error al ampliar venta:", error);
+    res.status(400).json({ message: error.message || "Error interno del servidor" });
+  }
+});
+
+// Registrar un pago contra una venta departamental. Los pagos se acumulan:
+// mientras lo pagado (sin credito) no llegue al total, la venta queda PENDIENTE.
+router.post("/:id/payments", async (req: AuthRequest, res: Response) => {
+  try {
+    const saleId = Number(req.params.id);
+    const { method, amount } = req.body;
+
+    if (!Number.isInteger(saleId) || saleId <= 0) {
+      return res.status(400).json({ message: "Venta inválida" });
+    }
+    if (!method || !["EFECTIVO", "QR", "TRANSFERENCIA", "CREDITO"].includes(method)) {
+      return res.status(400).json({ message: "Método de pago inválido" });
+    }
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0) {
+      return res.status(400).json({ message: "Debe indicar un monto mayor a 0" });
+    }
+
+    const user = req.user!;
+    const sale = await prisma.sale.findUnique({ where: { id: saleId }, include: { payments: true } });
+    if (!sale) {
+      return res.status(404).json({ message: "Venta no encontrada" });
+    }
+    if (sale.type !== "DEPARTAMENTAL") {
+      return res.status(400).json({ message: "Solo las ventas departamentales admiten pagos posteriores" });
+    }
+    if (user.role === "TIENDA" && sale.locationId !== user.locationId) {
+      return res.status(403).json({ message: "No puede modificar una venta de otra tienda" });
+    }
+
+    const paidSinCredito = sale.payments
+      .filter((p) => p.method !== "CREDITO")
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+    const balance = Number(sale.total) - paidSinCredito;
+    if (balance <= 0.01) {
+      return res.status(400).json({ message: "Esta venta ya está pagada por completo" });
+    }
+    if (value > balance + 0.01) {
+      return res.status(400).json({ message: `El monto supera el saldo pendiente (Bs. ${balance.toFixed(2)})` });
+    }
+
+    const nextStatus = method === "CREDITO" || paidSinCredito + value < Number(sale.total) - 0.01
+      ? "PENDIENTE"
+      : "PAGADO";
+
+    await prisma.$transaction([
+      prisma.payment.create({ data: { saleId, method, amount: value } }),
+      prisma.sale.update({ where: { id: saleId }, data: { status: nextStatus } }),
+    ]);
+
+    const result = await prisma.sale.findUnique({
+      where: { id: saleId },
+      include: {
+        user: { select: { id: true, name: true } },
+        location: { select: { id: true, name: true } },
+        customer: true,
+        items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true } } } },
+        payments: true,
+      },
+    });
+
+    res.json({
+      ...result!,
+      total: Number(result!.total),
+      items: result!.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
+      payments: result!.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
+    });
+  } catch (error: any) {
+    console.error("Error al registrar pago:", error);
+    res.status(500).json({ message: error.message || "Error al registrar el pago" });
   }
 });
 
