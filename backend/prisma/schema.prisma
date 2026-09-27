@@ -191,6 +191,7 @@ model Movement {
   quantity       Int
   userId         Int
   requestId      Int?
+  requester      String?
   date           DateTime @default(now())
   observation    String?
   fromLocation   Location @relation("MovementFrom", fields: [fromLocationId], references: [id])

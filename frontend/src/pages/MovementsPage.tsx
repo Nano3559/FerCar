@@ -16,8 +16,8 @@ interface Location {
 }
 
 interface Movement {
-  id: number; quantity: number; date: string; observation: string | null;
-  product: { id: number; name: string; itemCode: string; brand: string };
+  id: number; quantity: number; date: string; observation: string | null; requester: string | null;
+  product: { id: number; name: string; itemCode: string; brand: string; factoryCode: string | null };
   fromLocation: { id: number; name: string; type: string };
   toLocation: { id: number; name: string; type: string };
   user: { id: number; name: string };
@@ -35,6 +35,7 @@ export default function MovementsPage() {
   const [toLocationId, setToLocationId] = useState("");
   const [quantity, setQuantity] = useState("");
   const [observation, setObservation] = useState("");
+  const [requester, setRequester] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [productStock, setProductStock] = useState<{ total: number; byLocation: { location: string; stock: number }[] } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,6 +52,7 @@ export default function MovementsPage() {
   const [filterTo, setFilterTo] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterSearch, setFilterSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
   // Observation modal
@@ -112,6 +114,7 @@ export default function MovementsPage() {
       if (filterTo) params.set("toLocationId", filterTo);
       if (filterDateFrom) params.set("startDate", filterDateFrom);
       if (filterDateTo) params.set("endDate", filterDateTo);
+      if (filterSearch.trim()) params.set("search", filterSearch.trim());
 
       const res = await api.get(`/movements?${params.toString()}`);
       setMovements(res.data.movements);
@@ -119,10 +122,10 @@ export default function MovementsPage() {
       setPages(res.data.pagination.pages);
     } catch { toast.error("Error al cargar movimientos"); }
     finally { setHistoryLoading(false); }
-  }, [page, filterFrom, filterTo, filterDateFrom, filterDateTo]);
+  }, [page, filterFrom, filterTo, filterDateFrom, filterDateTo, filterSearch]);
 
   useEffect(() => { fetchMovements(); }, [fetchMovements]);
-  useEffect(() => { setPage(1); }, [filterFrom, filterTo, filterDateFrom, filterDateTo]);
+  useEffect(() => { setPage(1); }, [filterFrom, filterTo, filterDateFrom, filterDateTo, filterSearch]);
 
   // ==================== SUBMIT ====================
   const handleSubmit = async () => {
@@ -140,6 +143,7 @@ export default function MovementsPage() {
         toLocationId: Number(toLocationId),
         quantity: Number(quantity),
         observation: observation.trim() || null,
+        requester: requester.trim() || null,
       });
       toast.success("Movimiento registrado exitosamente");
       setShowForm(false);
@@ -157,6 +161,7 @@ export default function MovementsPage() {
     setToLocationId("");
     setQuantity("");
     setObservation("");
+    setRequester("");
   };
 
   const fromLocations = locations.filter((l) => l.id !== Number(toLocationId));
@@ -184,13 +189,22 @@ export default function MovementsPage() {
 
       {/* Filters */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4">
-        <button onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+            <input type="text" value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)}
+              placeholder="Buscar por código fábrica..."
+              aria-label="Buscar por código fábrica"
+              className="w-full pl-9 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+          </div>
+          <button onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border transition-all ${
             showFilters ? "bg-primary-600/10 border-primary-600/20 text-primary-400" : "bg-dark-900/50 border-dark-600/50 text-gray-400 hover:text-foreground"
           }`}>
           <Calendar size={16} /> Filtros
           <ChevronDown size={14} className={`transition-transform ${showFilters ? "rotate-180" : ""}`} />
         </button>
+        </div>
 
         {showFilters && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4 pt-4 border-t border-dark-700/50">
@@ -222,9 +236,9 @@ export default function MovementsPage() {
               </select>
               <ChevronDown size={14} className="absolute right-2.5 top-[34px] text-gray-500 pointer-events-none" />
             </div>
-            {(filterDateFrom || filterDateTo || filterFrom || filterTo) && (
+            {(filterDateFrom || filterDateTo || filterFrom || filterTo || filterSearch) && (
               <div className="flex items-end">
-                <button onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); setFilterFrom(""); setFilterTo(""); }}
+                <button onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); setFilterFrom(""); setFilterTo(""); setFilterSearch(""); }}
                   className="px-3 py-2.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-sm hover:bg-red-500/20 transition-colors">
                   Limpiar
                 </button>
@@ -259,7 +273,8 @@ export default function MovementsPage() {
                     <th className="text-center px-4 py-3 font-medium"></th>
                     <th className="text-left px-4 py-3 font-medium">Destino</th>
                     <th className="text-center px-4 py-3 font-medium">Cantidad</th>
-                    <th className="text-left px-4 py-3 font-medium">Usuario</th>
+                    <th className="text-left px-4 py-3 font-medium">Solicitado por</th>
+                    <th className="text-left px-4 py-3 font-medium">Confirmado por</th>
                     <th className="text-left px-4 py-3 font-medium">Observación</th>
                   </tr>
                 </thead>
@@ -275,7 +290,7 @@ export default function MovementsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <p className="text-foreground text-sm font-medium">{m.product.name}</p>
-                        <p className="text-xs text-gray-500">{m.product.itemCode} · {m.product.brand}</p>
+                        <p className="text-xs text-gray-500">{m.product.itemCode}{m.product.factoryCode ? <> · <span className="text-primary-400">{m.product.factoryCode}</span></> : ""} · {m.product.brand}</p>
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1 text-xs text-gray-300">
@@ -299,6 +314,7 @@ export default function MovementsPage() {
                           {m.quantity}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-gray-300 text-xs">{m.requester || "—"}</td>
                       <td className="px-4 py-3 text-gray-300 text-xs">{m.user.name}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs">
                         {m.observation ? (
@@ -330,7 +346,7 @@ export default function MovementsPage() {
                   </div>
                   <div>
                     <p className="text-foreground text-sm font-medium">{m.product.name}</p>
-                    <p className="text-xs text-gray-500">{m.product.itemCode} · {m.product.brand}</p>
+                    <p className="text-xs text-gray-500">{m.product.itemCode}{m.product.factoryCode ? <> · <span className="text-primary-400">{m.product.factoryCode}</span></> : ""} · {m.product.brand}</p>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <div className="flex items-center gap-1 text-gray-300">
@@ -344,7 +360,10 @@ export default function MovementsPage() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>{m.user.name}</span>
+                    <span className="space-x-3">
+                      <span><span className="text-gray-600">Solicitó:</span> {m.requester || "—"}</span>
+                      <span><span className="text-gray-600">Confirmó:</span> {m.user.name}</span>
+                    </span>
                     {m.observation && (
                       <button onClick={() => setObsModal({ open: true, observation: m.observation || "", movementId: m.id })}
                         className="flex items-center gap-1 text-primary-400 hover:text-primary-300 truncate max-w-[200px]">
@@ -489,6 +508,14 @@ export default function MovementsPage() {
                 <label htmlFor="mov-cantidad" className="block text-xs text-gray-400 mb-1.5">Cantidad *</label>
                 <input id="mov-cantidad" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)}
                   placeholder="Cantidad a mover" min="1"
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+              </div>
+
+              {/* Solicitante */}
+              <div>
+                <label htmlFor="mov-solicitante" className="block text-xs text-gray-400 mb-1.5">Solicitado por</label>
+                <input id="mov-solicitante" type="text" value={requester} onChange={(e) => setRequester(e.target.value)}
+                  placeholder="Quién realizó la solicitud (ej. nombre del vendedor o tienda)"
                   className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
               </div>
 

@@ -78,6 +78,7 @@ export interface Movement {
   userId: number;
   date: string;
   observation?: string;
+  requester?: string | null;
   product?: Product;
   fromLocation?: Location;
   toLocation?: Location;

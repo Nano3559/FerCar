@@ -12,12 +12,23 @@ router.use(authenticate);
 // GET / — Historial de movimientos con filtros (requiere permiso del módulo "movimientos")
 router.get("/", authorizeModule("movimientos"), async (req: AuthRequest, res: Response) => {
   try {
-    const { productId, fromLocationId, toLocationId, startDate, endDate, page = "1", limit = "20" } = req.query;
+    const { productId, fromLocationId, toLocationId, search, startDate, endDate, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
     if (productId && typeof productId === "string") where.productId = Number(productId);
     if (fromLocationId && typeof fromLocationId === "string") where.fromLocationId = Number(fromLocationId);
     if (toLocationId && typeof toLocationId === "string") where.toLocationId = Number(toLocationId);
+    if (search && typeof search === "string" && search.trim()) {
+      const q = search.trim();
+      where.product = {
+        OR: [
+          { factoryCode: { contains: q, mode: "insensitive" } },
+          { itemCode: { contains: q, mode: "insensitive" } },
+          { oemCode: { contains: q, mode: "insensitive" } },
+          { name: { contains: q, mode: "insensitive" } },
+        ],
+      };
+    }
     if (startDate || endDate) {
       where.date = {};
       if (startDate && typeof startDate === "string") where.date.gte = new Date(startDate);
@@ -36,7 +47,7 @@ router.get("/", authorizeModule("movimientos"), async (req: AuthRequest, res: Re
       prisma.movement.findMany({
         where,
         include: {
-          product: { select: { id: true, name: true, itemCode: true, brand: true } },
+          product: { select: { id: true, name: true, itemCode: true, brand: true, factoryCode: true } },
           fromLocation: { select: { id: true, name: true, type: true } },
           toLocation: { select: { id: true, name: true, type: true } },
           user: { select: { id: true, name: true } },
@@ -67,6 +78,7 @@ router.post("/", authorizeModule("movimientos"), async (req: AuthRequest, res: R
     const toLocationId = parsePositiveInt(req.body.toLocationId, "Ubicación destino");
     const quantity = parsePositiveInt(req.body.quantity, "Cantidad");
     const observation = parseString(req.body.observation, "Observación", { max: 500 });
+    const requester = parseString(req.body.requester, "Solicitado por", { max: 200 });
     const requestId = req.body.requestId ? Number(req.body.requestId) : null;
 
     if (fromLocationId === toLocationId) {
@@ -90,6 +102,17 @@ router.post("/", authorizeModule("movimientos"), async (req: AuthRequest, res: R
     }
     if (toLocation.type !== "TIENDA") {
       return res.status(400).json({ message: "El destino del movimiento debe ser una tienda" });
+    }
+
+    // Si el movimiento está ligado a una solicitud, el solicitante sale de la misma
+    let requesterName = requester || null;
+    if (requestId && !requesterName) {
+      const linkedRequest = await prisma.productRequest.findUnique({
+        where: { id: requestId },
+        include: { requestedBy: { select: { name: true } } },
+      });
+      if (!linkedRequest) return res.status(404).json({ message: "Solicitud no encontrada" });
+      requesterName = linkedRequest.requestedBy?.name || null;
     }
 
     const inventoryOrigin = await prisma.inventory.findUnique({
@@ -133,9 +156,9 @@ router.post("/", authorizeModule("movimientos"), async (req: AuthRequest, res: R
       }
 
       return tx.movement.create({
-        data: { productId, fromLocationId, toLocationId, quantity, userId: user.userId, observation, requestId },
+        data: { productId, fromLocationId, toLocationId, quantity, userId: user.userId, observation, requestId, requester: requesterName },
         include: {
-          product: { select: { name: true, itemCode: true } },
+          product: { select: { name: true, itemCode: true, factoryCode: true } },
           fromLocation: { select: { name: true } },
           toLocation: { select: { name: true } },
           user: { select: { name: true } },
