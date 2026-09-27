@@ -1653,14 +1653,6 @@ return [...prev, {
             <div className="p-5 space-y-5">
               {/* Resumen */}
               <div className="bg-dark-900/50 border border-dark-700/30 rounded-xl p-4 space-y-2">
-                {saleType === "DEPARTAMENTAL" && (
-                  <div className="flex items-start justify-between gap-3 pb-2 mb-1 border-b border-dark-700/30">
-                    <span className="text-gray-400 text-sm shrink-0">Cliente</span>
-                    <span className="text-sm font-medium text-foreground text-right break-words">
-                      {customerData.name.trim() || "—"}
-                    </span>
-                  </div>
-                )}
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400 text-sm">Total a cobrar</span>
                   <span className="text-xl font-bold text-green-400">{formatBs(cartTotal)}</span>
