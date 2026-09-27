@@ -19,7 +19,9 @@ router.get("/", async (req: AuthRequest, res: Response) => {
     const { type, locationId, seller, startDate, endDate, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
-    if (type && typeof type === "string") where.type = type;
+    // El enum no acepta cualquier cadena: sin esto, un type inventado en la
+    // URL hace que Prisma rechace la consulta con un 500.
+    if (type === "NORMAL" || type === "MAYOR" || type === "DEPARTAMENTAL") where.type = type;
     if (seller && typeof seller === "string") where.seller = seller;
     if (startDate || endDate) {
       where.saleDate = {};

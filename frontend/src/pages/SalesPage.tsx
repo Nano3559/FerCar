@@ -759,7 +759,10 @@ return [...prev, {
       if (histDateFrom) params.set("startDate", histDateFrom);
       if (histDateTo) params.set("endDate", histDateTo);
       if (histSeller) params.set("seller", histSeller);
-      if (saleType !== "NORMAL") params.set("type", saleType);
+      // Cada pagina mira solo su propio tipo: Locales (NORMAL) y
+      // Departamentales (DEPARTAMENTAL) no deben mezclar historicos. Antes
+      // NORMAL no se enviaba y el backend devolvia los tres tipos.
+      params.set("type", saleType);
       // El backend ya fuerza la tienda del usuario TIENDA; enviar la suya
       // seria redundante y para ADMIN es justamente el filtro que se pide.
       if (isTienda && user?.locationId) params.set("locationId", String(user.locationId));
@@ -771,7 +774,7 @@ return [...prev, {
       setHistPages(res.data.pagination.pages);
     } catch { toast.error("Error al cargar historial"); }
     finally { setHistLoading(false); }
-  }, [histPage, histDateFrom, histDateTo, histSeller, histLocation, isTienda, user?.locationId]);
+  }, [histPage, histDateFrom, histDateTo, histSeller, histLocation, saleType, isTienda, user?.locationId]);
 
   useEffect(() => {
     if (activeTab === "historial") fetchHistory();
