@@ -45,6 +45,12 @@ interface CartItem {
   quantity: number; availableStock: number;
 }
 
+interface Cart {
+  id: string;
+  label: string;
+  items: CartItem[];
+}
+
 interface PaymentEntry {
   method: "EFECTIVO" | "QR" | "TRANSFERENCIA" | "CREDITO"; amount: string;
 }
@@ -183,8 +189,34 @@ export default function SalesPage() {
 
   const vendedoresDisponibles = vendedores.filter((v) => !selectedLocationId || v.locationId === selectedLocationId);
 
-  // --- Cart ---
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // --- Carts (uno por cliente) ---
+  const [carts, setCarts] = useState<Cart[]>(() => [{ id: "c1", label: "Carrito 1", items: [] }]);
+  const [activeCartId, setActiveCartId] = useState("c1");
+  const activeCart = carts.find((c) => c.id === activeCartId) ?? carts[0];
+  const cart = activeCart.items;
+
+  const updateActiveCart = (updater: (items: CartItem[]) => CartItem[]) =>
+    setCarts((prev) => prev.map((c) => (c.id === activeCartId ? { ...c, items: updater(c.items) } : c)));
+
+  const createNewCart = () => {
+    const id = `c${Date.now()}`;
+    setCarts((prev) => [...prev, { id, label: `Carrito ${prev.length + 1}`, items: [] }]);
+    setActiveCartId(id);
+  };
+
+  const switchActiveCart = (id: string) => setActiveCartId(id);
+
+  const renameActiveCart = (label: string) =>
+    setCarts((prev) => prev.map((c) => (c.id === activeCartId ? { ...c, label } : c)));
+
+  const removeCart = (id: string) => {
+    if (carts.length <= 1) { updateActiveCart(() => []); return; }
+    const remaining = carts.filter((c) => c.id !== id);
+    setCarts(remaining);
+    if (id === activeCartId) setActiveCartId(remaining[0].id);
+  };
+
+  const allCartItemCount = carts.reduce((sum, c) => sum + c.items.reduce((s, i) => s + i.quantity, 0), 0);
 
   // --- Payment modal ---
   const [showPayment, setShowPayment] = useState(false);
@@ -276,7 +308,7 @@ export default function SalesPage() {
   // ==================== CART ====================
   const addToCart = (p: Product, tier: 1 | 2 = 2, qty: number = 1) => {
     const price = tier === 2 && Number(p.price2) > 0 ? Number(p.price2) : Number(p.price1);
-    setCart((prev) => {
+    updateActiveCart((prev) => {
       const existing = prev.find((c) => c.productId === p.id);
       if (existing) {
         if (existing.quantity + qty > p.stock) {
@@ -287,7 +319,7 @@ export default function SalesPage() {
           c.productId === p.id ? { ...c, quantity: c.quantity + qty, priceTier: tier, unitPrice: price } : c
         );
       }
-      return [...prev, {
+return [...prev, {
         productId: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
         unitPrice: price, priceTier: tier, price1: Number(p.price1), price2: Number(p.price2),
         quantity: qty, availableStock: p.stock,
@@ -336,6 +368,7 @@ export default function SalesPage() {
 
   const quoteStoreName = locations.find((l) => l.id === selectedLocationId)?.name || "";
   const quoteSeller = isTienda ? user?.name || "" : selectedSeller;
+  const quoteClient = /^Carrito \d+$/.test(activeCart.label) ? "" : activeCart.label;
 
   // ACCIONES: ver ubicaciones donde está el producto
   const openLocations = async (p: Product) => {
@@ -395,7 +428,7 @@ export default function SalesPage() {
 
   const updateQuantity = (productId: number, newQty: number) => {
     if (newQty < 1) return;
-    setCart((prev) => prev.map((c) => {
+    updateActiveCart((prev) => prev.map((c) => {
       if (c.productId !== productId) return c;
       if (newQty > c.availableStock) {
         toast.error(`Stock máximo: ${c.availableStock}`);
@@ -406,7 +439,7 @@ export default function SalesPage() {
   };
 
   const changePriceTier = (productId: number, tier: 1 | 2, price1: string, price2: string) => {
-    setCart((prev) => prev.map((c) => {
+    updateActiveCart((prev) => prev.map((c) => {
       if (c.productId !== productId) return c;
       const price = tier === 2 && Number(price2) > 0 ? Number(price2) : Number(price1);
       return { ...c, priceTier: tier, unitPrice: price };
@@ -414,9 +447,9 @@ export default function SalesPage() {
   };
 
   const removeItem = (productId: number) =>
-    setCart((prev) => prev.filter((c) => c.productId !== productId));
+    updateActiveCart((prev) => prev.filter((c) => c.productId !== productId));
 
-  const clearCart = () => setCart([]);
+  const clearCart = () => updateActiveCart(() => []);
 
   const cartTotal = cart.reduce((sum, c) => sum + c.unitPrice * c.quantity, 0);
   const cartItemCount = cart.reduce((sum, c) => sum + c.quantity, 0);
@@ -502,7 +535,7 @@ export default function SalesPage() {
       });
       setShowPayment(false);
       setShowConfirmed(true);
-      setCart([]);
+      updateActiveCart(() => []);
       setSelectedSeller("");
       setActiveTab("venta");
       toast.success("¡Venta registrada exitosamente!");
@@ -587,8 +620,8 @@ export default function SalesPage() {
             }`}>
             <ShoppingCart size={15} />
             Carrito
-            {cartItemCount > 0 && (
-              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-primary-600 text-white">{cartItemCount}</span>
+            {allCartItemCount > 0 && (
+              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-primary-600 text-white">{allCartItemCount}</span>
             )}
           </button>
           <button onClick={() => setActiveTab("historial")}
@@ -647,6 +680,31 @@ export default function SalesPage() {
               ) : (
                 <span className="text-foreground text-sm font-medium">{user?.name || "Cargando..."}</span>
               )}
+            </div>
+
+            <div className="flex items-center gap-3 sm:col-span-2">
+              <div className="flex items-center gap-2 text-sm text-gray-400 shrink-0">
+                <ShoppingCart size={16} className="text-primary-400" />
+                <span>Carrito:</span>
+              </div>
+              <div className="flex items-center gap-2 flex-1">
+                <div className="relative flex-1">
+                  <select value={activeCartId} onChange={(e) => switchActiveCart(e.target.value)}
+                    aria-label="Carrito activo"
+                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                    {carts.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.label} ({c.items.reduce((s, i) => s + i.quantity, 0)})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                </div>
+                <button onClick={createNewCart} title="Nuevo carrito"
+                  className="flex items-center gap-1 px-3 py-2.5 rounded-xl text-xs font-medium bg-primary-600/10 border border-primary-600/25 text-primary-400 hover:bg-primary-600 hover:text-white transition-all shrink-0">
+                  <Plus size={14} /> Nuevo
+                </button>
+              </div>
             </div>
           </div>
 
@@ -806,9 +864,39 @@ export default function SalesPage() {
       {/* ============ CARRITO (pestaña aparte) ============ */}
       {activeTab === "carrito" && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
+          {/* Chips de carritos */}
+          <div className="flex items-center gap-2 px-5 py-3 border-b border-dark-700/50 flex-wrap">
+            {carts.map((c) => {
+              const count = c.items.reduce((s, i) => s + i.quantity, 0);
+              const isActive = c.id === activeCartId;
+              return (
+                <div key={c.id} className={`flex items-center gap-1 pl-3 pr-1.5 py-1.5 rounded-xl border text-sm transition-all ${isActive ? "bg-primary-600/15 border-primary-600/30 text-primary-400" : "bg-dark-900/50 border-dark-700/50 text-gray-400 hover:text-foreground"}`}>
+                  <button onClick={() => switchActiveCart(c.id)} className="flex items-center gap-1.5 font-medium">
+                    {c.label}
+                    {count > 0 && <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-primary-600 text-white">{count}</span>}
+                  </button>
+                  <button onClick={() => removeCart(c.id)} title="Eliminar carrito" className="p-0.5 rounded text-gray-500 hover:text-red-400">
+                    <X size={13} />
+                  </button>
+                </div>
+              );
+            })}
+            <button onClick={createNewCart}
+              className="flex items-center gap-1 px-3 py-2 rounded-xl border border-dashed border-dark-600/50 text-gray-500 hover:text-primary-400 hover:border-primary-600/40 text-sm transition-all">
+              <Plus size={14} /> Nuevo carrito
+            </button>
+          </div>
+
           <div className="flex items-center justify-between px-5 py-3 border-b border-dark-700/50 flex-wrap gap-2">
-            <h2 className="text-sm font-medium text-gray-300 flex items-center gap-2">
-              <ShoppingCart size={16} className="text-primary-400" /> Carrito de Venta
+            <h2 className="text-sm font-medium text-gray-300 flex items-center gap-2 min-w-0 flex-1">
+              <ShoppingCart size={16} className="text-primary-400 shrink-0" />
+              <input
+                value={activeCart.label}
+                onChange={(e) => renameActiveCart(e.target.value)}
+                placeholder="Nombre del cliente / carrito"
+                aria-label="Nombre del carrito"
+                className="w-full max-w-[240px] bg-transparent border border-transparent hover:border-dark-600 focus:border-primary-500 focus:bg-dark-900/50 rounded-lg px-2 py-1 text-foreground outline-none transition-all"
+              />
             </h2>
             <div className="flex items-center gap-2">
               <ColumnManager module="carrito" columns={CART_COLUMNS} onVisibleChange={setCartColumns} />
@@ -1466,6 +1554,7 @@ export default function SalesPage() {
             </div>
             <div style={{ textAlign: "right", color: "#9ca3af" }}>
               <p style={{ margin: 0 }}>{new Date().toLocaleDateString("es-BO")}</p>
+              {quoteClient && <p style={{ margin: "2px 0 0" }}>Cliente: {quoteClient}</p>}
               {quoteStoreName && <p style={{ margin: "2px 0 0" }}>{quoteStoreName}</p>}
               {quoteSeller && <p style={{ margin: "2px 0 0" }}>Vendedor: {quoteSeller}</p>}
             </div>
