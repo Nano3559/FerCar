@@ -279,13 +279,13 @@ router.post("/", async (req: AuthRequest, res: Response) => {
   try {
     // El "seller" del body se acepta por compatibilidad con clientes viejos,
     // pero el vendedor real es siempre la cuenta autenticada (ver mas abajo).
-    const { items, payments, customerId, customerData, requiereFactura, locationId, note, type, paraQuien, lugarEntrega, datosFactura, nitName, telefono } = req.body;
+    const { items, payments, customerId, customerData, requiereFactura, locationId, note, type, paraQuien, lugarEntrega, datosFactura, nitName, telefono, telefonoFactura } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
     }
 
-    // La venta departamental se arma durante el dia y se cobra al final, asi que
+    // Departamental: la venta se arma durante el dia y se cobra al final, asi que
     // se puede abrir con un pago parcial o solo con credito. Las locales siguen
     // exigiendo pago completo: ahi se cobra en el momento.
     const esDepartamental = type === "DEPARTAMENTAL";
@@ -441,13 +441,17 @@ router.post("/", async (req: AuthRequest, res: Response) => {
           seller: finalSeller,
           status,
           note: typeof note === "string" && note.trim() ? note.trim() : null,
-          // Destino de la entrega siempre; datos de facturacion solo si el
-          // vendedor marco que requiere factura, para no inventarlos.
+          // Las tres personas van separadas: cliente (customer), envio
+          // (paraQuien/lugarEntrega/telefono) y factura
+          // (datosFactura/nitName/telefonoFactura), que a veces es un tercero.
+          // Los datos de factura solo se guardan si se pidio factura: si el
+          // vendedor marco que no, no se inventan.
           paraQuien: paraQuien || null,
           lugarEntrega: lugarEntrega || null,
+          telefono: telefono || null,
           datosFactura: requiereFactura ? (datosFactura || null) : null,
           nitName: requiereFactura ? (nitName || null) : null,
-          telefono: telefono || null,
+          telefonoFactura: requiereFactura ? (telefonoFactura || null) : null,
           items: { create: saleItemsData },
           payments: {
             create: (payments || []).map((p: any) => ({

@@ -142,6 +142,7 @@ model Sale {
   origen        String?
   note          String?
   nitName       String?
+  telefonoFactura String?
   status        SaleStatus @default(PENDIENTE)
   envioExterior Boolean    @default(false)
   quienRecoge   String?

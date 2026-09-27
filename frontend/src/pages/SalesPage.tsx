@@ -257,14 +257,18 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [requiereFactura, setRequiereFactura] = useState(false);
   const [customerData, setCustomerData] = useState<CustomerData>({ name: "", nit: "", phone: "" });
   const [saleNote, setSaleNote] = useState("");
-  // Departamental: la venta se arma durante el dia y se entrega a alguien. Son
-  // los mismos campos que usa Ventas por Mayor (lugarEntrega, paraQuien,
-  // datosFactura, nitName, telefono), que ya estaban en el modelo sin usarse.
+  // Departamental: son tres personas distintas y a veces no coinciden.
+  //   cliente  = quien compra
+  //   envio    = quien recoge, normalmente otra persona
+  //   factura  = a quien se emite la factura, a veces un tercero
+  // Los campos son los que ya existian en el modelo sin usarse, igual que en
+  // Ventas por Mayor: lugarEntrega, paraQuien, datosFactura, nitName y telefono.
   const [paraDonde, setParaDonde] = useState("");
   const [paraQuien, setParaQuien] = useState("");
+  const [celularEnvio, setCelularEnvio] = useState("");
   const [nitFactura, setNitFactura] = useState("");
   const [nombreFactura, setNombreFactura] = useState("");
-  const [telefonoEntrega, setTelefonoEntrega] = useState("");
+  const [celularFactura, setCelularFactura] = useState("");
   const [processing, setProcessing] = useState(false);
 
   // --- Add-to-cart modal ---
@@ -678,7 +682,8 @@ return [...prev, {
     setRequiereFactura(false);
     setCustomerData({ name: "", nit: "", phone: "" });
     setSaleNote("");
-    setParaDonde(""); setParaQuien(""); setNitFactura(""); setNombreFactura(""); setTelefonoEntrega("");
+    setParaDonde(""); setParaQuien(""); setCelularEnvio("");
+    setNitFactura(""); setNombreFactura(""); setCelularFactura("");
     setShowPayment(true);
   };
 
@@ -751,12 +756,15 @@ return [...prev, {
 
       if (saleType === "DEPARTAMENTAL") {
         payload.requiereFactura = requiereFactura;
+        // Envio: quien recoge, normalmente distinto al cliente.
         payload.paraQuien = paraQuien.trim() || null;
         payload.lugarEntrega = paraDonde.trim() || null;
-        payload.telefono = telefonoEntrega.trim() || null;
-        // El backend ignora el NIT y el nombre si no se pidio factura.
+        payload.telefono = celularEnvio.trim() || null;
+        // Factura: a veces es un tercero. El backend lo ignora si no se pidio
+        // factura, asi que se manda igual sin conditionally.
         payload.datosFactura = nitFactura.trim() || null;
         payload.nitName = nombreFactura.trim() || null;
+        payload.telefonoFactura = celularFactura.trim() || null;
       }
 
       if (selectedLocationId) {
@@ -1702,6 +1710,9 @@ return [...prev, {
 
                 {requiereFactura && (
                   <div className="mt-3 space-y-3 pl-1">
+                    <p className="text-xs text-gray-600">
+                      Datos de quien compra. Los de quien recoge van en “Envío”.
+                    </p>
                     <div>
                       <label htmlFor="venta-nombre" className="block text-xs text-gray-500 mb-1">Nombre / Razón Social *</label>
                       <input id="venta-nombre" type="text" value={customerData.name}
@@ -1729,50 +1740,79 @@ return [...prev, {
                 )}
               </div>
 
-              {/* Envio / factura (solo departamental) */}
+              {/* Envio y factura (solo departamental) */}
               {saleType === "DEPARTAMENTAL" && (
-                <div className="border-t border-dark-700/50 pt-5 space-y-3">
-                  <div>
-                    <label htmlFor="venta-paradone" className="block text-xs text-gray-500 mb-1">A dónde se envía</label>
-                    <input id="venta-paradone" type="text" value={paraDonde}
-                      onChange={(e) => setParaDonde(e.target.value)}
-                      placeholder="Dirección o lugar de entrega"
-                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                  </div>
-                  <div>
-                    <label htmlFor="venta-paraquien" className="block text-xs text-gray-500 mb-1">A qué nombre se envía</label>
-                    <input id="venta-paraquien" type="text" value={paraQuien}
-                      onChange={(e) => setParaQuien(e.target.value)}
-                      placeholder="Nombre de quien recibe"
-                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                  </div>
-                  <div>
-                    <label htmlFor="venta-telentrega" className="block text-xs text-gray-500 mb-1">Celular de contacto</label>
-                    <input id="venta-telentrega" type="tel" value={telefonoEntrega}
-                      onChange={(e) => setTelefonoEntrega(e.target.value)}
-                      placeholder="Celular"
-                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
+                <>
+                  {/* Quiien recoge: normalmente no es el cliente */}
+                  <div className="border-t border-dark-700/50 pt-5 space-y-3">
                     <div>
-                      <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">NIT</label>
-                      <input id="venta-nitfact" type="text" value={nitFactura}
-                        onChange={(e) => setNitFactura(e.target.value)}
-                        placeholder="NIT (si requiere factura)"
+                      <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
+                        Datos de envío
+                      </h4>
+                      <p className="text-xs text-gray-600 mt-0.5">
+                        De quien va a recoger. Puede ser otra persona.
+                      </p>
+                    </div>
+                    <div>
+                      <label htmlFor="venta-paraquien" className="block text-xs text-gray-500 mb-1">Nombre de quien recibe</label>
+                      <input id="venta-paraquien" type="text" value={paraQuien}
+                        onChange={(e) => setParaQuien(e.target.value)}
+                        placeholder="Nombre de quien recoge"
                         className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                     </div>
                     <div>
-                      <label htmlFor="venta-nombrefact" className="block text-xs text-gray-500 mb-1">Nombre / Razón social</label>
-                      <input id="venta-nombrefact" type="text" value={nombreFactura}
-                        onChange={(e) => setNombreFactura(e.target.value)}
-                        placeholder="Nombre del NIT"
+                      <label htmlFor="venta-paradone" className="block text-xs text-gray-500 mb-1">A dónde se envía</label>
+                      <input id="venta-paradone" type="text" value={paraDonde}
+                        onChange={(e) => setParaDonde(e.target.value)}
+                        placeholder="Dirección o lugar de entrega"
+                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                    </div>
+                    <div>
+                      <label htmlFor="venta-celenvio" className="block text-xs text-gray-500 mb-1">Celular de quien recibe</label>
+                      <input id="venta-celenvio" type="tel" value={celularEnvio}
+                        onChange={(e) => setCelularEnvio(e.target.value)}
+                        placeholder="Celular"
                         className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                     </div>
                   </div>
-                  <p className="text-xs text-gray-600">
-                    El NIT y el nombre se guardan solo si marcaste “Requiere factura” más abajo.
-                  </p>
-                </div>
+
+                  {/* A quien se factura: a veces es un tercero distinto */}
+                  {requiereFactura && (
+                    <div className="border-t border-dark-700/50 pt-5 space-y-3">
+                      <div>
+                        <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
+                          Datos de factura
+                        </h4>
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          A nombre de quién se emite. Si es el cliente o quien recoge, repite sus datos.
+                        </p>
+                      </div>
+                      <div>
+                        <label htmlFor="venta-nombrefact" className="block text-xs text-gray-500 mb-1">Nombre / Razón social</label>
+                        <input id="venta-nombrefact" type="text" value={nombreFactura}
+                          onChange={(e) => setNombreFactura(e.target.value)}
+                          placeholder="Nombre a facturar"
+                          className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">NIT / Carnet</label>
+                          <input id="venta-nitfact" type="text" value={nitFactura}
+                            onChange={(e) => setNitFactura(e.target.value)}
+                            placeholder="NIT o CI"
+                            className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                        </div>
+                        <div>
+                          <label htmlFor="vela-celfact" className="block text-xs text-gray-500 mb-1">Celular</label>
+                          <input id="vela-celfact" type="tel" value={celularFactura}
+                            onChange={(e) => setCelularFactura(e.target.value)}
+                            placeholder="Celular"
+                            className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Nota / Recordatorio */}
