@@ -279,7 +279,6 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       return HISTORY_COLUMNS;
     }
   });
-  const isHistCol = (col: string) => histColumns.includes(col);
 
   const [cartColumns, setCartColumns] = useState<string[]>(() => {
     try {
@@ -755,6 +754,79 @@ return [...prev, {
 
   // ==================== RENDER ====================
   const pmLabel: Record<string, string> = { EFECTIVO: "Efectivo", QR: "QR", TRANSFERENCIA: "Transferencia", CREDITO: "Crédito" };
+
+  /**
+   * Celda del historial para una columna concreta.
+   *
+   * El cuerpo recorre histColumns en el mismo orden que el encabezado, y no
+   * con isHistCol por columna: asi mover una columna en el gestor no deja el
+   * titulo desfasado respecto a los datos que tiene debajo.
+   */
+  const renderHistCell = (col: string, s: SaleRecord) => {
+    switch (col) {
+      case "Código":
+        return <td className="px-4 py-3 text-amber-400/90 font-mono text-xs whitespace-nowrap">{saleCode(s.id, s.saleDate)}</td>;
+      case "Fecha":
+        return (
+          <td className="px-4 py-3 text-gray-300 text-xs">
+            {new Date(s.saleDate).toLocaleDateString("es-BO")}{" "}
+            <span className="text-gray-500">
+              {new Date(s.saleDate).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          </td>
+        );
+      case "Cliente":
+        return (
+          <td className="px-4 py-3">
+            {s.customer ? (
+              <div>
+                <p className="text-gray-200 text-sm">{s.customer.name}</p>
+                {s.customer.nit && <p className="text-xs text-gray-500">NIT: {s.customer.nit}</p>}
+              </div>
+            ) : (
+              <span className="text-gray-600 text-xs">Consumidor final</span>
+            )}
+          </td>
+        );
+      case "Usuario":
+        return <td className="px-4 py-3 text-gray-300 text-xs">{s.user.name}</td>;
+      case "Ubicación":
+        return (
+          <td className="px-4 py-3 text-gray-400 text-xs">
+            <span className="inline-flex items-center gap-1"><MapPin size={12} /> {s.location.name}</span>
+          </td>
+        );
+      case "Vendedor":
+        return <td className="px-4 py-3 text-gray-300 text-xs">{s.seller || "—"}</td>;
+      case "Tipo":
+        return (
+          <td className="px-4 py-3 text-center">
+            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+              s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : s.type === "DEPARTAMENTAL" ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"
+            }`}>
+              {s.type === "MAYOR" ? "Mayor" : s.type === "DEPARTAMENTAL" ? "Departamental" : "Normal"}
+            </span>
+          </td>
+        );
+      case "Total":
+        return <td className="px-4 py-3 text-right text-green-400 font-medium text-sm">{formatBs(s.total)}</td>;
+      case "Pagos":
+        return (
+          <td className="px-4 py-3">
+            <div className="flex flex-wrap gap-1">
+              {s.payments.map((pay) => (
+                <span key={pay.id}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-dark-900/50 border border-dark-700/30 rounded-full text-xs text-gray-400">
+                  {pmLabel[pay.method] || pay.method} · {formatBs(pay.amount)}
+                </span>
+              ))}
+            </div>
+          </td>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -1236,10 +1308,14 @@ return [...prev, {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-gray-500 border-b border-dark-700/50">
+                          {/* La primera celda es la del botón de expandir, que no
+                              tiene encabezado. Sin ella, todos los titulos caen
+                              una columna a la izquierda de sus datos. */}
+                          <th className="w-10 px-2 py-3" />
                           {histColumns.map((col) => {
                             const cl = col.toLowerCase();
                             const align = cl === "total" ? "text-right" : cl === "tipo" ? "text-center" : "text-left";
-                            return <th key={col} className={`${align} px-4 py-3 font-medium`}>{col}</th>;
+                            return <th key={col} className={`${align} px-4 py-3 font-medium whitespace-nowrap`}>{col}</th>;
                           })}
                         </tr>
                       </thead>
@@ -1254,60 +1330,9 @@ return [...prev, {
                                 {expandedSale === s.id ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                               </button>
                             </td>
-                            {isHistCol("Código") && <td className="px-4 py-3 text-amber-400/90 font-mono text-xs whitespace-nowrap">{saleCode(s.id, s.saleDate)}</td>}
-                            {isHistCol("Fecha") && (
-                              <td className="px-4 py-3 text-gray-300 text-xs">
-                                {new Date(s.saleDate).toLocaleDateString("es-BO")}{" "}
-                                <span className="text-gray-500">
-                                  {new Date(s.saleDate).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}
-                                </span>
-                              </td>
-                            )}
-                            {isHistCol("Cliente") && (
-                              <td className="px-4 py-3">
-                                {s.customer ? (
-                                  <div>
-                                    <p className="text-gray-200 text-sm">{s.customer.name}</p>
-                                    {s.customer.nit && <p className="text-xs text-gray-500">NIT: {s.customer.nit}</p>}
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-600 text-xs">Consumidor final</span>
-                                )}
-                              </td>
-                            )}
-                            {isHistCol("Usuario") && <td className="px-4 py-3 text-gray-300 text-xs">{s.user.name}</td>}
-                            {isHistCol("Ubicación") && (
-                              <td className="px-4 py-3 text-gray-400 text-xs flex items-center gap-1">
-                                <MapPin size={12} /> {s.location.name}
-                              </td>
-                            )}
-                            {isHistCol("Vendedor") && <td className="px-4 py-3 text-gray-300 text-xs">{s.seller || "—"}</td>}
-                            {isHistCol("Tipo") && (
-                              <td className="px-4 py-3 text-center">
-                                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                                  s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : s.type === "DEPARTAMENTAL" ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"
-                                }`}>
-                                  {s.type === "MAYOR" ? "Mayor" : s.type === "DEPARTAMENTAL" ? "Departamental" : "Normal"}
-                                </span>
-                              </td>
-                            )}
-                            {isHistCol("Total") && (
-                              <td className="px-4 py-3 text-right text-green-400 font-medium text-sm">
-                                {formatBs(s.total)}
-                              </td>
-                            )}
-                            {isHistCol("Pagos") && (
-                              <td className="px-4 py-3">
-                                <div className="flex flex-wrap gap-1">
-                                  {s.payments.map((pay) => (
-                                    <span key={pay.id}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-dark-900/50 border border-dark-700/30 rounded-full text-xs text-gray-400">
-                                      {pmLabel[pay.method] || pay.method} · {formatBs(pay.amount)}
-                                    </span>
-                                  ))}
-                                </div>
-                              </td>
-                            )}
+                            {histColumns.map((col) => (
+                              <Fragment key={col}>{renderHistCell(col, s)}</Fragment>
+                            ))}
                           </tr>
                           {expandedSale === s.id && (
                             <tr className="bg-dark-900/40">
