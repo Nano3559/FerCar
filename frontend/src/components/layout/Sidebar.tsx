@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Package, ShoppingCart, TrendingUp,
   ArrowLeftRight, DollarSign, BarChart3, Settings,
-  RotateCcw, Send, Tags, LogOut, X, ListChecks, ClipboardList, Map,
+  RotateCcw, Send, Tags, LogOut, X, ClipboardList, Map,
 } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { useNavigate } from "react-router-dom";
@@ -15,9 +15,8 @@ const allLinks = [
   { to: "/panel/ventas-departamental", label: "Ventas Departamentales", icon: Map, module: "ventas" },
   { to: "/panel/ventas-mayor", label: "Ventas por Mayor", icon: TrendingUp, module: "ventas-mayor" },
   { to: "/panel/devoluciones", label: "Devoluciones", icon: RotateCcw, module: "devoluciones" },
-  { to: "/panel/solicitudes", label: "Solicitudes", icon: Send, module: "solicitudes" },
+  { to: "/panel/solicitudes", label: "Solicitudes y Despachos", icon: Send, module: "solicitudes", anyModule: ["despachos"] },
   { to: "/panel/movimientos", label: "Movimientos", icon: ArrowLeftRight, module: "movimientos" },
-  { to: "/panel/despachos", label: "Lista de Despacho", icon: ListChecks, module: "despachos" },
   { to: "/panel/costos", label: "Costos", icon: DollarSign, module: "costos" },
   { to: "/panel/precios", label: "Precios", icon: Tags, module: "precios" },
   { to: "/panel/notas-compra", label: "Notas de Compra", icon: ClipboardList, module: "notas-compra" },
@@ -40,7 +39,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const links = allLinks.filter((l) => {
     if (!l.module) return true; // Dashboard always visible
     if (isAdmin) return true; // ADMIN sees everything
-    return permissions.includes(l.module) || (l.module === "inventario" && permissions.includes("productos"));
+    if (permissions.includes(l.module)) return true;
+    // Módulos fusionados en una sola entrada (Solicitudes y Despachos).
+    if (l.anyModule?.some((m) => permissions.includes(m))) return true;
+    return l.module === "inventario" && permissions.includes("productos");
   });
 
   const handleLogout = () => {

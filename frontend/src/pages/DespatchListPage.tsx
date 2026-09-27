@@ -34,9 +34,23 @@ interface NoteItemDto {
 interface DespatchNoteRow {
   id: number; noteNumber: string; date: string;
   userName: string; totalUnits: number; status: "EMITIDA" | "ENTREGADA" | "ANULADA";
+  destinationId: number | null; destinationName: string | null;
+  requests: Array<{ id: number; status: string; quantity: number; product: { name: string; itemCode: string } }>;
   entregadoA: string | null; entregadoAt: string | null;
   observacion: string | null; cancelledReason: string | null;
   createdAt: string; items: NoteItemDto[];
+}
+
+/** Solicitud que se puede cumplir con un despacho. */
+interface PendingRequest {
+  id: number; quantity: number; status: string; date: string;
+  note: string | null; source: string | null;
+  product: { id: number; name: string; itemCode: string; brand: string; model: string };
+  destino: { id: number; name: string; type: string };
+  origen: { id: number; name: string; type: string } | null;
+  originId: number | null;
+  disponible: number; suficiente: boolean;
+  solicitadoPor: { id: number; name: string } | null;
 }
 
 interface DocData {
@@ -71,7 +85,7 @@ const StatusBadge = ({ status }: { status: DespatchNoteRow["status"] }) => {
   );
 };
 
-export default function DespatchListPage() {
+export default function DespatchListPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuthStore();
   const isAdmin = user?.role === "ADMIN";
 
@@ -88,6 +102,15 @@ export default function DespatchListPage() {
   const [observacion, setObservacion] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Tienda destino de la nota y solicitudes que cumple.
+  const [destinationId, setDestinationId] = useState("");
+  const [requestIds, setRequestIds] = useState<number[]>([]);
+  const [showFromRequests, setShowFromRequests] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  const [filterDestination, setFilterDestination] = useState("");
+  const [pickedRequests, setPickedRequests] = useState<number[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+
   const [tab, setTab] = useState<"nueva" | "historial">("nueva");
   const [notes, setNotes] = useState<DespatchNoteRow[]>([]);
   const [historySearch, setHistorySearch] = useState("");
@@ -100,6 +123,7 @@ export default function DespatchListPage() {
   const docRef = useRef<HTMLDivElement>(null);
 
   const [deliverTo, setDeliverTo] = useState("");
+  const [deliverDestination, setDeliverDestination] = useState("");
   const [delivering, setDelivering] = useState(false);
   const [deliverNote, setDeliverNote] = useState<DespatchNoteRow | null>(null);
   const [cancelReason, setCancelReason] = useState("");
@@ -310,17 +334,27 @@ export default function DespatchListPage() {
     });
   };
 
+  const tiendas = useMemo(() => locations.filter((l) => l.type === "TIENDA"), [locations]);
+
   const saveNote = async () => {
     if (activeItems.length === 0) return;
+    if (requestIds.length > 0 && !destinationId) {
+      toast.error("Indica la tienda destino de la nota");
+      return;
+    }
     setSaving(true);
     try {
       const res = await api.post("/despatch-notes", {
         items: activeItems.map((it) => ({ productId: it.productId, quantity: it.quantity, locationId: it.locationId })),
+        destinationId: destinationId ? Number(destinationId) : undefined,
+        requestIds: requestIds.length ? requestIds : undefined,
         observacion: observacion.trim() || undefined,
       });
       toast.success(`Nota ${res.data.note.noteNumber} guardada (${res.data.note.totalUnits} unidades)`);
       setItems([]);
       setObservacion("");
+      setDestinationId("");
+      setRequestIds([]);
       if (isAdmin) loadNotes();
     } catch (e: any) {
       toast.error(e?.response?.data?.message || "Error al guardar la nota");
@@ -329,15 +363,89 @@ export default function DespatchListPage() {
     }
   };
 
+  /** Carga las solicitudes elegidas como ítems de la nota, agrupadas por tienda destino. */
+  const loadFromRequests = async (open = true) => {
+    setShowFromRequests(open);
+    if (!open) return;
+    setLoadingRequests(true);
+    setPickedRequests([]);
+    try {
+      const res = await api.get("/despatch-notes/pending-requests", {
+        params: filterDestination ? { destinationId: filterDestination } : undefined,
+      });
+      setPendingRequests(res.data.requests || []);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || "Error al cargar las solicitudes");
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  const togglePickedRequest = (id: number) => {
+    setPickedRequests((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const applyRequestsToNote = () => {
+    const elegidas = pendingRequests.filter((r) => pickedRequests.includes(r.id));
+    if (elegidas.length === 0) return;
+
+    // Una nota por tienda: no se puede mezclar destinos.
+    const destinos = new Set(elegidas.map((r) => r.destino.id));
+    if (destinos.size > 1) {
+      toast.error("Elegí solicitudes de una sola tienda por nota");
+      return;
+    }
+    const sinStock = elegidas.filter((r) => !r.suficiente);
+    if (sinStock.length > 0) {
+      toast.error(
+        `Sin stock en origen para: ${sinStock.map((r) => r.product.name).join(", ")}. quitá esas solicitudes o cargá el stock.`
+      );
+      return;
+    }
+
+    setDestinationId(String(elegidas[0].destino.id));
+    setRequestIds(elegidas.map((r) => r.id));
+    setItems(
+      elegidas.map((r) => ({
+        uid: `req-${r.id}`,
+        productId: r.product.id,
+        itemCode: r.product.itemCode,
+        name: r.product.name,
+        brand: r.product.brand,
+        model: r.product.model,
+        manufacturer: "",
+        locationId: r.originId as number,
+        locationName: r.origen?.name ?? "",
+        quantity: r.quantity,
+      }))
+    );
+    setObservacion(
+      (prev) => prev.trim() || `Satisfacción de ${elegidas.length} solicitud(es): #${elegidas.map((r) => r.id).join(", #")}`
+    );
+    setShowFromRequests(false);
+    setTab("nueva");
+    toast.success(`${elegidas.length} solicitud(es) cargadas a la nota`);
+  };
+
   const submitDeliver = async () => {
     if (!deliverNote) return;
     if (!deliverTo.trim()) { toast.error("Indica a quién se entregó"); return; }
+    if (!deliverDestination) { toast.error("Indica la tienda destino"); return; }
     setDelivering(true);
     try {
-      const res = await api.patch(`/despatch-notes/${deliverNote.id}`, { entregadoA: deliverTo.trim() });
-      toast.success(`${res.data.noteNumber} entregada a ${res.data.entregadoA}`);
+      const res = await api.patch(`/despatch-notes/${deliverNote.id}`, {
+        entregadoA: deliverTo.trim(),
+        destinationId: Number(deliverDestination),
+      });
+      const cerradas = res.data.solicitudesCerradas as number[] | undefined;
+      toast.success(
+        cerradas?.length
+          ? `${res.data.noteNumber} entregada a ${res.data.entregadoA}. Solicitudes #${cerradas.join(", #")} a la espera de confirmación.`
+          : `${res.data.noteNumber} entregada a ${res.data.entregadoA}`
+      );
       setDeliverNote(null);
       setDeliverTo("");
+      setDeliverDestination("");
       loadNotes();
     } catch (e: any) {
       toast.error(e?.response?.data?.message || "Error al marcar entregada");
@@ -385,19 +493,25 @@ export default function DespatchListPage() {
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Lista de Despacho</h1>
-          <p className="text-gray-400 text-sm mt-1">Arma la lista de productos a sacar, elige la tienda o almacén de origen y la cantidad, luego imprime o guarda la nota.</p>
+          {!embedded && <h1 className="text-2xl font-bold text-foreground">Lista de Despacho</h1>}
+          <p className="text-gray-400 text-sm mt-1">Carga las solicitudes que vas a despachar o arma la lista a mano. Al entregarla, el stock sale del origen y entra a la tienda destino.</p>
         </div>
         <div className="flex items-center gap-2">
           {tab === "nueva" && (
-            <button onClick={clearAll}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
-                confirmClear
-                  ? "bg-red-600 hover:bg-red-700 text-white border-red-600/30"
-                  : "text-gray-400 hover:text-red-400 hover:bg-red-500/10 border-dark-700/50 hover:border-red-500/30"
-              }`}>
-              <Trash2 size={14} /> {confirmClear ? "¿Vaciar lista?" : "Vaciar"}
-            </button>
+            <>
+              <button onClick={() => loadFromRequests(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-primary-400 hover:bg-primary-500/10 border border-primary-500/30 transition-all">
+                <ListChecks size={14} /> Cargar desde Solicitudes
+              </button>
+              <button onClick={clearAll}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
+                  confirmClear
+                    ? "bg-red-600 hover:bg-red-700 text-white border-red-600/30"
+                    : "text-gray-400 hover:text-red-400 hover:bg-red-500/10 border-dark-700/50 hover:border-red-500/30"
+                }`}>
+                <Trash2 size={14} /> {confirmClear ? "¿Vaciar lista?" : "Vaciar"}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -482,6 +596,26 @@ export default function DespatchListPage() {
             </div>
             {isAdmin && (
               <div className="px-4 py-2.5 border-b border-dark-700/50 flex items-center gap-2 flex-wrap bg-dark-900/30">
+                <div className="min-w-[190px]">
+                  <select
+                    value={destinationId}
+                    onChange={(e) => setDestinationId(e.target.value)}
+                    className={`w-full px-3 py-1.5 bg-dark-900/50 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none ${
+                      requestIds.length > 0 && !destinationId ? "border-amber-500/50 text-amber-400" : "border-dark-600/50 text-foreground"
+                    }`}
+                    aria-label="Tienda destino de la nota"
+                  >
+                    <option value="">Tienda destino (opcional)</option>
+                    {tiendas.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {requestIds.length > 0 && (
+                  <span className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary-500/10 text-primary-400 border border-primary-500/30 rounded-lg text-xs font-medium whitespace-nowrap">
+                    <ListChecks size={13} /> {requestIds.length} solicitud(es): #{requestIds.join(", #")}
+                  </span>
+                )}
                 <input value={observacion} onChange={(e) => setObservacion(e.target.value)} maxLength={300}
                   placeholder="Observación de la nota (opcional)"
                   className="flex-1 min-w-[200px] px-3 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
@@ -583,6 +717,7 @@ export default function DespatchListPage() {
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Fecha</th>
                     <th className="text-center px-4 py-3 text-gray-400 font-medium">Ítems</th>
                     <th className="text-center px-4 py-3 text-gray-400 font-medium">Unidades</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Tienda destino</th>
                     <th className="text-center px-4 py-3 text-gray-400 font-medium">Estado</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Elaborado por</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Entregado a</th>
@@ -592,10 +727,18 @@ export default function DespatchListPage() {
                 <tbody>
                   {filteredNotes.map((n) => (
                     <tr key={n.id} className={`border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors ${n.status === "ANULADA" ? "opacity-60" : ""}`}>
-                      <td className="px-4 py-2.5 font-medium text-foreground">{n.noteNumber}</td>
+                      <td className="px-4 py-2.5 font-medium text-foreground">
+                        {n.noteNumber}
+                        {n.requests.length > 0 && (
+                          <span className="block text-[11px] text-primary-400">
+                            Solicitudes #{n.requests.map((r) => r.id).join(", #")}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-gray-300">{fmtShort(n.date)}</td>
                       <td className="px-4 py-2.5 text-center text-gray-300">{n.items.length}</td>
                       <td className="px-4 py-2.5 text-center text-gray-300">{n.totalUnits}</td>
+                      <td className="px-4 py-2.5 text-gray-300">{n.destinationName ?? "—"}</td>
                       <td className="px-4 py-2.5 text-center"><StatusBadge status={n.status} /></td>
                       <td className="px-4 py-2.5 text-gray-300">{n.userName}</td>
                       <td className="px-4 py-2.5 text-gray-300">{n.entregadoA ?? "—"}</td>
@@ -606,7 +749,12 @@ export default function DespatchListPage() {
                             <Eye size={15} />
                           </button>
                           {n.status === "EMITIDA" && (
-                            <button onClick={() => setDeliverNote(n)} title="Marcar entregada" aria-label="Marcar entregada"
+                            <button
+                              onClick={() => {
+                                setDeliverNote(n);
+                                setDeliverDestination(n.destinationId ? String(n.destinationId) : "");
+                              }}
+                              title="Marcar entregada" aria-label="Marcar entregada"
                               className="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all">
                               <CheckCircle2 size={15} />
                             </button>
@@ -628,6 +776,118 @@ export default function DespatchListPage() {
         </div>
       )}
 
+      {/* Modal: cargar solicitudes a la nota */}
+      {showFromRequests && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="min-h-full flex items-center justify-center py-6">
+            <div className="w-full max-w-3xl bg-dark-800 border border-dark-700 rounded-2xl shadow-2xl">
+              <div className="flex items-start justify-between gap-3 p-6 pb-4">
+                <div>
+                  <h3 className="text-foreground font-bold text-lg">Cargar desde Solicitudes</h3>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Elegí las solicitudes a cumplir. La nota se arma sola con el producto, la cantidad y el origen.
+                  </p>
+                </div>
+                <button onClick={() => setShowFromRequests(false)} aria-label="Cerrar"
+                  className="p-1.5 text-gray-400 hover:text-red-400 rounded-lg transition-all">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="px-6 pb-4 flex items-center gap-2 flex-wrap">
+                <select
+                  value={filterDestination}
+                  onChange={(e) => { setFilterDestination(e.target.value); setPickedRequests([]); }}
+                  aria-label="Filtrar por tienda destino"
+                  className="px-3 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                >
+                  <option value="">Todas las tiendas</option>
+                  {tiendas.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <button onClick={() => loadFromRequests(true)} disabled={loadingRequests}
+                  className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 disabled:opacity-50 text-foreground border border-dark-700 rounded-lg text-xs font-medium transition-all">
+                  {loadingRequests ? "Actualizando..." : "Actualizar"}
+                </button>
+                {pickedRequests.length > 0 && (
+                  <button onClick={() => setPickedRequests([])}
+                    className="px-3 py-1.5 text-gray-400 hover:text-foreground text-xs font-medium transition-all">
+                    Quitar selección
+                  </button>
+                )}
+                <span className="text-xs text-gray-500 ml-auto">
+                  {pickedRequests.length} seleccionada(s) · una nota por tienda
+                </span>
+              </div>
+
+              <div className="px-6 pb-6 max-h-[50vh] overflow-y-auto border-t border-dark-700/50">
+                {loadingRequests ? (
+                  <div className="flex items-center justify-center py-10 text-gray-400 text-sm">Cargando solicitudes...</div>
+                ) : pendingRequests.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center">
+                    <PackageOpen size={28} className="text-gray-600 mb-2" />
+                    <p className="text-gray-400 text-sm">No hay solicitudes pendientes de despacho.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm mt-2">
+                    <thead>
+                      <tr className="text-left text-xs text-gray-500 border-b border-dark-700/50">
+                        <th className="w-10 py-2"></th>
+                        <th className="py-2">#</th>
+                        <th className="py-2">Producto</th>
+                        <th className="py-2 text-right">Cant.</th>
+                        <th className="py-2">Origen</th>
+                        <th className="py-2 text-right">Disponible</th>
+                        <th className="py-2">Tienda destino</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingRequests.map((r) => (
+                        <tr
+                          key={r.id}
+                          className={`border-b border-dark-700/30 cursor-pointer transition-colors ${
+                            pickedRequests.includes(r.id) ? "bg-primary-500/10" : "hover:bg-dark-700/20"
+                          }`}
+                          onClick={() => togglePickedRequest(r.id)}
+                        >
+                          <td className="py-2">
+                            <input type="checkbox" checked={pickedRequests.includes(r.id)} readOnly
+                              aria-label={`Seleccionar solicitud ${r.id}`} className="accent-primary-600" />
+                          </td>
+                          <td className="py-2 text-gray-400">{r.id}</td>
+                          <td className="py-2 text-foreground">
+                            {r.product.name}
+                            <span className="block text-xs text-gray-500">{r.product.itemCode}</span>
+                          </td>
+                          <td className="py-2 text-right text-foreground">{r.quantity}</td>
+                          <td className="py-2 text-gray-400">{r.origen?.name ?? "—"}</td>
+                          <td className={`py-2 text-right ${r.suficiente ? "text-emerald-400" : "text-red-400"}`}>
+                            {r.disponible}
+                          </td>
+                          <td className="py-2 text-gray-400">{r.destino.name}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 px-6 py-4 border-t border-dark-700/50">
+                <button onClick={() => setShowFromRequests(false)}
+                  className="px-4 py-2 rounded-xl text-sm bg-dark-700 hover:bg-dark-600 text-foreground border border-dark-700 transition-all">
+                  Cancelar
+                </button>
+                <button onClick={applyRequestsToNote} disabled={pickedRequests.length === 0}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-medium transition-all">
+                  <ListChecks size={15} /> Cargar a la nota
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal: marcar entregada */}
       {deliverNote && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
@@ -642,6 +902,25 @@ export default function DespatchListPage() {
                   <X size={16} />
                 </button>
               </div>
+              <label className="block text-xs text-gray-400 mt-4 mb-1.5" htmlFor="entregado-destino">Tienda destino del stock (obligatorio)</label>
+              <select id="entregado-destino" value={deliverDestination} onChange={(e) => setDeliverDestination(e.target.value)}
+                className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                <option value="">Selecciona la tienda que recibe...</option>
+                {tiendas.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1.5">
+                Se descuenta del origen de cada ítem y se suma acá. Si no hay stock suficiente, la entrega se rechaza.
+              </p>
+              {deliverNote.requests.length > 0 && (
+                <div className="mt-3 px-3 py-2 bg-primary-500/10 border border-primary-500/30 rounded-xl">
+                  <p className="text-xs text-primary-400">
+                    Al entregar, las solicitudes #{deliverNote.requests.map((r) => r.id).join(", #")} pasan a
+                    ENTREGADO y quien las pidió recibe el aviso para confirmar la recepción.
+                  </p>
+                </div>
+              )}
               <label className="block text-xs text-gray-400 mt-4 mb-1.5" htmlFor="entregado-a">¿A quién se entregó? (obligatorio)</label>
               <input id="entregado-a" value={deliverTo} onChange={(e) => setDeliverTo(e.target.value)} autoFocus
                 placeholder="Nombre del que recibe"

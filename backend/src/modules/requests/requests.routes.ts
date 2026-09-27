@@ -79,6 +79,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
           fromLocation: { select: { id: true, name: true, type: true } },
           requestedBy: { select: { id: true, name: true, email: true } },
           confirmedBy: { select: { id: true, name: true } },
+          despatchNote: { select: { id: true, noteNumber: true, status: true } },
           history: { orderBy: { createdAt: "asc" } },
         },
         skip,
@@ -110,6 +111,7 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
         fromLocation: { select: { id: true, name: true, type: true } },
         requestedBy: { select: { id: true, name: true, email: true } },
         confirmedBy: { select: { id: true, name: true } },
+        despatchNote: { select: { id: true, noteNumber: true, status: true } },
         history: {
           include: { request: false },
           orderBy: { createdAt: "asc" },
@@ -229,13 +231,24 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: `Estado inválido. Valores válidos: ${VALID_STATUSES.join(", ")}` });
     }
 
-    const existing = await prisma.productRequest.findUnique({ where: { id } });
+    const existing = await prisma.productRequest.findUnique({
+      where: { id },
+      include: { despatchNote: { select: { id: true, noteNumber: true, status: true } } },
+    });
     if (!existing) return res.status(404).json({ message: "Solicitud no encontrada" });
 
     const allowedTransitions = VALID_TRANSITIONS[existing.status] || [];
     if (!allowedTransitions.includes(status)) {
       return res.status(400).json({
         message: `No se puede cambiar de "${existing.status}" a "${status}"`,
+      });
+    }
+
+    // Si la solicitud ya está en una nota de despacho, el stock se mueve al
+    // entregar esa nota, no marcándola a mano.
+    if (status === "ENTREGADO" && existing.despatchNoteId) {
+      return res.status(400).json({
+        message: `Esta solicitud se entrega con la nota ${existing.despatchNote?.noteNumber}. Entrega la nota para mover el stock.`,
       });
     }
 

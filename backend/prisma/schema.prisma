@@ -52,6 +52,7 @@ model Location {
   movementsTo   Movement[]       @relation("MovementTo")
   requests      ProductRequest[] @relation("RequestDestination")
   requestsFrom  ProductRequest[] @relation("RequestOrigin")
+  despatchNotes DespatchNote[]   @relation("DespatchNoteDestination")
   salesFrom     Sale[]           @relation("SaleFromLocation")
   users         User[]
   purchaseNotes PurchaseNote[]
@@ -212,6 +213,7 @@ model ProductRequest {
   fromLocationId Int?
   confirmedById Int?
   confirmedAt   DateTime?
+  despatchNoteId Int?
   source        String        @default("MANUAL")
   status        RequestStatus @default(PENDIENTE)
   note          String?
@@ -224,6 +226,7 @@ model ProductRequest {
   product       Product       @relation(fields: [productId], references: [id])
   requestedBy   User          @relation("RequestedBy", fields: [requestedById], references: [id])
   confirmedBy   User?         @relation("RequestConfirmedBy", fields: [confirmedById], references: [id])
+  despatchNote  DespatchNote? @relation(fields: [despatchNoteId], references: [id])
   history       RequestHistory[]
   movements     Movement[]
 }
@@ -316,6 +319,7 @@ model DespatchNote {
   date            DateTime           @default(now())
   userId          Int
   totalUnits      Int                @default(0)
+  destinationId   Int?
   status          DespatchNoteStatus @default(EMITIDA)
   entregadoA      String?
   entregadoAt     DateTime?
@@ -326,7 +330,9 @@ model DespatchNote {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   user            User               @relation("DespatchNoteUser", fields: [userId], references: [id])
+  destination     Location?          @relation("DespatchNoteDestination", fields: [destinationId], references: [id])
   items           DespatchNoteItem[]
+  requests        ProductRequest[]
 }
 
 model DespatchNoteItem {

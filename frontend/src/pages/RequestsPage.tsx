@@ -17,6 +17,8 @@ interface RequestRecord {
   id: number; productId: number; quantity: number; locationId: number;
   fromLocationId: number | null; source: string;
   confirmedById: number | null; confirmedAt: string | null;
+  despatchNoteId: number | null;
+  despatchNote?: { id: number; noteNumber: string; status: string } | null;
   status: string; date: string; note: string | null;
   product: { id: number; name: string; itemCode: string; brand: string; model: string };
   location: { id: number; name: string; type: string };
@@ -67,7 +69,7 @@ const STATUS_FLOW: Record<string, { to: string; label: string; icon: typeof Cloc
 
 const PAGE_SIZE = 15;
 
-export default function RequestsPage() {
+export default function RequestsPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuthStore();
   const role = user?.role || "";
   const isInventario = role === "INVENTARIO" || role === "ADMIN";
@@ -221,6 +223,8 @@ export default function RequestsPage() {
   };
 
   const canPerformAction = (actionTo: string, record: RequestRecord): boolean => {
+    // Con nota de despacho asignada, el stock se mueve al entregar la nota.
+    if (actionTo === "ENTREGADO" && record.despatchNoteId) return false;
     if (role === "ADMIN") return true;
     if (["RECIBIDO_POR_INVENTARIO", "PREPARANDO", "ENTREGADO"].includes(actionTo)) return isInventario;
     // La llegada del producto la confirma quien lo pidió.
@@ -244,7 +248,7 @@ export default function RequestsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Solicitudes</h1>
+          {!embedded && <h1 className="text-2xl font-bold text-foreground">Solicitudes</h1>}
           <p className="text-gray-400 text-sm mt-1">
             {total} solicitudes en el periodo · registro conservado
           </p>
@@ -356,6 +360,14 @@ export default function RequestsPage() {
                         <span className={`mt-1 inline-block px-1.5 py-0.5 text-[10px] font-medium rounded border ${source.className}`}>
                           {source.label}
                         </span>
+                        {r.despatchNote && (
+                          <span
+                            className="mt-1 block px-1.5 py-0.5 text-[10px] font-medium rounded border border-primary-500/30 bg-primary-500/10 text-primary-400"
+                            title="Esta solicitud se entrega con una nota de despacho"
+                          >
+                            Nota {r.despatchNote.noteNumber}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-300">{new Date(r.date).toLocaleDateString("es-BO")}</td>
                       <td className="px-4 py-3">
@@ -588,6 +600,12 @@ export default function RequestsPage() {
                 {showHistory.source && (
                   <p className="text-xs text-gray-500 mt-1">
                     Origen de la solicitud: {SOURCE_CONFIG[showHistory.source]?.label || showHistory.source}
+                  </p>
+                )}
+                {showHistory.despatchNote && (
+                  <p className="text-xs text-primary-400 mt-1">
+                    Se entrega con la nota de despacho {showHistory.despatchNote.noteNumber} ({showHistory.despatchNote.status}).
+                    El stock se mueve al entregar la nota.
                   </p>
                 )}
                 {showHistory.confirmedBy && (

@@ -15,13 +15,12 @@ import ProductDetailPage from "./pages/ProductDetailPage";
 import SalesPage from "./pages/SalesPage";
 import WholesalePage from "./pages/WholesalePage";
 import ReturnsPage from "./pages/ReturnsPage";
-import RequestsPage from "./pages/RequestsPage";
+import SolicitudesDespachosPage from "./pages/SolicitudesDespachosPage";
 import MovementsPage from "./pages/MovementsPage";
 import CostsPage from "./pages/CostsPage";
 import PricesPage from "./pages/PricesPage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
-import DespatchListPage from "./pages/DespatchListPage";
 import PurchaseNotesPage from "./pages/PurchaseNotesPage";
 import ErrorBoundary from "./components/ErrorBoundary";
 
@@ -109,10 +108,10 @@ export default function App() {
             </RoleRoute>
           } />
 
-          {/* Solicitudes — todos */}
+          {/* Solicitudes y Despachos — todos */}
           <Route path="solicitudes" element={
             <RoleRoute allowedRoles={ALL} module="solicitudes">
-              <RequestsPage />
+              <SolicitudesDespachosPage />
             </RoleRoute>
           } />
 
@@ -126,7 +125,7 @@ export default function App() {
           {/* Lista de Despacho — todos los roles */}
           <Route path="despachos" element={
             <RoleRoute allowedRoles={ALL} module="despachos">
-              <DespatchListPage />
+              <SolicitudesDespachosPage />
             </RoleRoute>
           } />
 
