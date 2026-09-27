@@ -1654,14 +1654,20 @@ return [...prev, {
               {/* Resumen */}
               <div className="bg-dark-900/50 border border-dark-700/30 rounded-xl p-4 space-y-2">
                 {saleType === "DEPARTAMENTAL" && (
-                  <div className="flex items-start justify-between gap-3 pb-2 mb-1 border-b border-dark-700/30">
-                    <span className="text-gray-400 text-sm shrink-0">Cliente</span>
-                    <span className="text-sm font-medium text-foreground text-right break-words">
-                      {customerData.name.trim() || "—"}
-                      {customerData.nit.trim() && (
-                        <span className="text-gray-400 font-normal"> · {customerData.nit.trim()}</span>
-                      )}
-                    </span>
+                  <div className="space-y-3 pb-3 mb-1 border-b border-dark-700/30">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-gray-400 text-sm shrink-0">Cliente</span>
+                      <span className="text-sm font-medium text-foreground text-right break-words">
+                        {customerData.name.trim() || "—"}
+                      </span>
+                    </div>
+                    <div>
+                      <label htmlFor="venta-cel" className="block text-xs text-gray-500 mb-1">Celular del cliente</label>
+                      <input id="venta-cel" type="tel" value={customerData.phone}
+                        onChange={(e) => setCustomerData((prev) => ({ ...prev, phone: e.target.value }))}
+                        placeholder="Celular"
+                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                    </div>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
@@ -1735,22 +1741,6 @@ return [...prev, {
                       onChange={(e) => setCustomerData((prev) => ({ ...prev, name: e.target.value }))}
                       placeholder="Nombre del cliente"
                       className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="venta-nit" className="block text-xs text-gray-500 mb-1">Número / CI / NIT</label>
-                      <input id="venta-nit" type="text" value={customerData.nit}
-                        onChange={(e) => setCustomerData((prev) => ({ ...prev, nit: e.target.value }))}
-                        placeholder="Número de CI o NIT"
-                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                    </div>
-                    <div>
-                      <label htmlFor="venta-cel" className="block text-xs text-gray-500 mb-1">Celular</label>
-                      <input id="venta-cel" type="tel" value={customerData.phone}
-                        onChange={(e) => setCustomerData((prev) => ({ ...prev, phone: e.target.value }))}
-                        placeholder="Celular"
-                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                    </div>
                   </div>
                 </div>
               )}
