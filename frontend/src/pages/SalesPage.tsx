@@ -1735,7 +1735,7 @@ return [...prev, {
                   </h4>
                   <div>
                     <label htmlFor="venta-nombre" className="block text-xs text-gray-500 mb-1">
-                      Nombre / Razón Social {saleType === "DEPARTAMENTAL" ? "*" : ""}
+                      Nombre {saleType === "DEPARTAMENTAL" ? "*" : ""}
                     </label>
                     <input id="venta-nombre" type="text" value={customerData.name}
                       onChange={(e) => setCustomerData((prev) => ({ ...prev, name: e.target.value }))}
