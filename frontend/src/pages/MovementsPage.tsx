@@ -1,15 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
-  ArrowLeftRight, Search, Plus, X, ChevronDown, ChevronLeft, ChevronRight,
+  ArrowLeftRight, Search, X, ChevronDown, ChevronLeft, ChevronRight,
   RefreshCw, MapPin, Calendar, Eye,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
 import { useDialogBehavior } from "../components/ui/useDialog";
-
-interface Product {
-  id: number; itemCode: string; name: string; brand: string; model: string; stock: number;
-}
 
 interface Location {
   id: number; name: string; type: "ALMACEN" | "TIENDA"; address?: string;
@@ -25,21 +21,6 @@ interface Movement {
 
 export default function MovementsPage() {
   const [locations, setLocations] = useState<Location[]>([]);
-  const [showForm, setShowForm] = useState(false);
-
-  // Form state
-  const [productSearch, setProductSearch] = useState("");
-  const [productResults, setProductResults] = useState<Product[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [fromLocationId, setFromLocationId] = useState("");
-  const [toLocationId, setToLocationId] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [observation, setObservation] = useState("");
-  const [requester, setRequester] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [productStock, setProductStock] = useState<{ total: number; byLocation: { location: string; stock: number }[] } | null>(null);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // History state
   const [movements, setMovements] = useState<Movement[]>([]);
@@ -58,7 +39,6 @@ export default function MovementsPage() {
   // Observation modal
   const [obsModal, setObsModal] = useState<{ open: boolean; observation: string; movementId: number }>({ open: false, observation: "", movementId: 0 });
 
-  const formPanelRef = useDialogBehavior(showForm, () => setShowForm(false));
   const obsPanelRef = useDialogBehavior(obsModal.open, () => setObsModal({ open: false, observation: "", movementId: 0 }));
 
   const fetchLocations = useCallback(async () => {
@@ -69,39 +49,6 @@ export default function MovementsPage() {
   }, []);
 
   useEffect(() => { fetchLocations(); }, [fetchLocations]);
-
-  // ==================== PRODUCT SEARCH ====================
-  const searchProducts = useCallback(async (q: string) => {
-    if (!q || q.length < 2) { setProductResults([]); return; }
-    try {
-      const res = await api.get(`/products?search=${encodeURIComponent(q)}&limit=8`);
-      setProductResults(res.data.products);
-    } catch { toast.error("Error al buscar productos"); }
-  }, []);
-
-  const handleProductSearch = (v: string) => {
-    setProductSearch(v);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => searchProducts(v), 300);
-  };
-
-  const selectProduct = async (p: Product) => {
-    setSelectedProduct(p);
-    setProductSearch(p.name);
-    setProductResults([]);
-    setProductStock(null);
-    try {
-      const res = await api.get(`/products/${p.id}`);
-      const d = res.data;
-      const byLocation: { location: string; stock: number }[] = [];
-      if (d.inventory) {
-        for (const inv of d.inventory) {
-          byLocation.push({ location: inv.location?.name || `Ubicación ${inv.locationId}`, stock: inv.stock });
-        }
-      }
-      setProductStock({ total: d.stockTotal ?? p.stock, byLocation });
-    } catch { /* ignore */ }
-  };
 
   // ==================== FETCH HISTORY ====================
   const fetchMovements = useCallback(async () => {
@@ -127,46 +74,6 @@ export default function MovementsPage() {
   useEffect(() => { fetchMovements(); }, [fetchMovements]);
   useEffect(() => { setPage(1); }, [filterFrom, filterTo, filterDateFrom, filterDateTo, filterSearch]);
 
-  // ==================== SUBMIT ====================
-  const handleSubmit = async () => {
-    if (!selectedProduct) { toast.error("Selecciona un producto"); return; }
-    if (!fromLocationId) { toast.error("Selecciona la ubicación de origen"); return; }
-    if (!toLocationId) { toast.error("Selecciona la ubicación de destino"); return; }
-    if (fromLocationId === toLocationId) { toast.error("Origen y destino deben ser diferentes"); return; }
-    if (!quantity || Number(quantity) <= 0) { toast.error("Ingresa una cantidad válida"); return; }
-
-    try {
-      setSubmitting(true);
-      await api.post("/movements", {
-        productId: selectedProduct.id,
-        fromLocationId: Number(fromLocationId),
-        toLocationId: Number(toLocationId),
-        quantity: Number(quantity),
-        observation: observation.trim() || null,
-        requester: requester.trim() || null,
-      });
-      toast.success("Movimiento registrado exitosamente");
-      setShowForm(false);
-      resetForm();
-      fetchMovements();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Error al registrar movimiento");
-    } finally { setSubmitting(false); }
-  };
-
-  const resetForm = () => {
-    setSelectedProduct(null);
-    setProductSearch("");
-    setFromLocationId("");
-    setToLocationId("");
-    setQuantity("");
-    setObservation("");
-    setRequester("");
-  };
-
-  const fromLocations = locations.filter((l) => l.id !== Number(toLocationId));
-  const toLocations = locations.filter((l) => l.id !== Number(fromLocationId));
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -179,10 +86,6 @@ export default function MovementsPage() {
           <button onClick={fetchMovements}
             className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all" title="Actualizar">
             <RefreshCw size={18} />
-          </button>
-          <button onClick={() => { resetForm(); setShowForm(true); }}
-            className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-primary-600/20">
-            <Plus size={18} /> Nuevo Movimiento
           </button>
         </div>
       </div>
@@ -406,141 +309,6 @@ export default function MovementsPage() {
           </>
         )}
       </div>
-
-      {/* ============ MODAL: Nuevo Movimiento ============ */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div ref={formPanelRef} role="dialog" aria-modal="true" aria-label="Nuevo movimiento" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
-              <h2 className="text-lg font-bold text-foreground">Nuevo Movimiento</h2>
-              <button onClick={() => setShowForm(false)} aria-label="Cerrar"
-                className="p-2 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl transition-all">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              {/* Producto */}
-              <div>
-                <label htmlFor="mov-producto" className="block text-xs text-gray-400 mb-1.5">Producto *</label>
-                {selectedProduct ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-dark-900/50 border border-primary-600/20 rounded-xl">
-                      <div>
-                        <p className="text-sm text-foreground font-medium">{selectedProduct.name}</p>
-                        <p className="text-xs text-gray-500">{selectedProduct.brand} · {selectedProduct.itemCode}</p>
-                      </div>
-                      <button onClick={() => { setSelectedProduct(null); setProductSearch(""); setProductStock(null); }}
-                        className="p-1.5 text-gray-400 hover:text-red-400 transition-all">
-                        <X size={16} />
-                      </button>
-                    </div>
-                    {productStock && (
-                      <div className="p-3 bg-dark-900/30 border border-dark-700/30 rounded-xl">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs text-gray-400">Stock total</span>
-                          <span className={`text-sm font-bold ${productStock.total === 0 ? "text-red-400" : productStock.total <= 5 ? "text-yellow-400" : "text-green-400"}`}>
-                            {productStock.total} unidades
-                          </span>
-                        </div>
-                        {productStock.byLocation.length > 0 && (
-                          <div className="space-y-1 pt-2 border-t border-dark-700/30">
-                            {productStock.byLocation.map((loc, i) => (
-                              <div key={i} className="flex items-center justify-between text-xs">
-                                <span className="text-gray-400 flex items-center gap-1"><MapPin size={10} /> {loc.location}</span>
-                                <span className={loc.stock === 0 ? "text-red-400" : "text-gray-300"}>{loc.stock}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                    <input id="mov-producto" ref={searchInputRef} type="text" value={productSearch}
-                      onChange={(e) => handleProductSearch(e.target.value)}
-                      placeholder="Buscar producto..."
-                      className="w-full pl-9 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                    {productResults.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-dark-800 border border-dark-700/50 rounded-xl max-h-48 overflow-y-auto shadow-xl">
-                        {productResults.map((p) => (
-                          <button key={p.id} onClick={() => selectProduct(p)}
-                            className="w-full text-left px-3 py-2.5 hover:bg-dark-700/50 transition-colors border-b border-dark-700/30 last:border-0">
-                            <p className="text-sm text-foreground">{p.name}</p>
-                            <p className="text-xs text-gray-500">{p.brand} · {p.itemCode} · Stock: {p.stock}</p>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Origen y Destino */}
-              <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
-                <div className="relative">
-                  <label className="block text-xs text-gray-400 mb-1.5">Origen *</label>
-                  <select value={fromLocationId} onChange={(e) => setFromLocationId(e.target.value)}
-                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
-                    <option value="">Seleccionar</option>
-                    {fromLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-2.5 top-[38px] text-gray-500 pointer-events-none" />
-                </div>
-                <div className="pb-1">
-                  <ArrowLeftRight size={20} className="text-primary-400" />
-                </div>
-                <div className="relative">
-                  <label className="block text-xs text-gray-400 mb-1.5">Destino *</label>
-                  <select value={toLocationId} onChange={(e) => setToLocationId(e.target.value)}
-                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
-                    <option value="">Seleccionar</option>
-                    {toLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-2.5 top-[38px] text-gray-500 pointer-events-none" />
-                </div>
-              </div>
-
-              {/* Cantidad */}
-              <div>
-                <label htmlFor="mov-cantidad" className="block text-xs text-gray-400 mb-1.5">Cantidad *</label>
-                <input id="mov-cantidad" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)}
-                  placeholder="Cantidad a mover" min="1"
-                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-              </div>
-
-              {/* Solicitante */}
-              <div>
-                <label htmlFor="mov-solicitante" className="block text-xs text-gray-400 mb-1.5">Solicitado por</label>
-                <input id="mov-solicitante" type="text" value={requester} onChange={(e) => setRequester(e.target.value)}
-                  placeholder="Quién realizó la solicitud (ej. nombre del vendedor o tienda)"
-                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-              </div>
-
-              {/* Observación */}
-              <div>
-                <label htmlFor="mov-observacion" className="block text-xs text-gray-400 mb-1.5">Observación</label>
-                <textarea id="mov-observacion" value={observation} onChange={(e) => setObservation(e.target.value)}
-                  placeholder="Motivo del movimiento (opcional)" rows={2}
-                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600 resize-none" />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 p-5 border-t border-dark-700/50">
-              <button onClick={() => setShowForm(false)}
-                className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground transition-colors">
-                Cancelar
-              </button>
-              <button onClick={handleSubmit} disabled={submitting}
-                className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50">
-                {submitting ? <><RefreshCw size={16} className="animate-spin" /> Registrando...</> : <><Plus size={16} /> Registrar Movimiento</>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ============ MODAL: Observación ============ */}
       {obsModal.open && (
