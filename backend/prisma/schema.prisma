@@ -30,6 +30,7 @@ model User {
   updatedAt    DateTime         @updatedAt
   movements    Movement[]
   requests     ProductRequest[] @relation("RequestedBy")
+  confirmedRequests ProductRequest[] @relation("RequestConfirmedBy")
   sales        Sale[]
   location     Location?        @relation(fields: [locationId], references: [id])
   role         RoleModel        @relation(fields: [roleId], references: [id])
@@ -49,7 +50,8 @@ model Location {
   inventories   Inventory[]
   movementsFrom Movement[]       @relation("MovementFrom")
   movementsTo   Movement[]       @relation("MovementTo")
-  requests      ProductRequest[]
+  requests      ProductRequest[] @relation("RequestDestination")
+  requestsFrom  ProductRequest[] @relation("RequestOrigin")
   salesFrom     Sale[]           @relation("SaleFromLocation")
   users         User[]
   purchaseNotes PurchaseNote[]
@@ -207,15 +209,21 @@ model ProductRequest {
   quantity      Int
   requestedById Int
   locationId    Int
+  fromLocationId Int?
+  confirmedById Int?
+  confirmedAt   DateTime?
+  source        String        @default("MANUAL")
   status        RequestStatus @default(PENDIENTE)
   note          String?
   expectedDate  DateTime?
   date          DateTime      @default(now())
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
-  location      Location      @relation(fields: [locationId], references: [id])
+  location      Location      @relation("RequestDestination", fields: [locationId], references: [id])
+  fromLocation  Location?     @relation("RequestOrigin", fields: [fromLocationId], references: [id])
   product       Product       @relation(fields: [productId], references: [id])
   requestedBy   User          @relation("RequestedBy", fields: [requestedById], references: [id])
+  confirmedBy   User?         @relation("RequestConfirmedBy", fields: [confirmedById], references: [id])
   history       RequestHistory[]
   movements     Movement[]
 }

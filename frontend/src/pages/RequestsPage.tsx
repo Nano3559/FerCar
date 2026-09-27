@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Send, Plus, X, RefreshCw, ChevronDown, ChevronLeft, ChevronRight,
-  Search, Clock, Package, Truck, CheckCircle, Ban, Info, History,
+  Search, Clock, Package, Truck, CheckCircle, Ban, Info, History, Calendar, MapPin,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -15,16 +15,26 @@ interface Product {
 
 interface RequestRecord {
   id: number; productId: number; quantity: number; locationId: number;
+  fromLocationId: number | null; source: string;
+  confirmedById: number | null; confirmedAt: string | null;
   status: string; date: string; note: string | null;
   product: { id: number; name: string; itemCode: string; brand: string; model: string };
   location: { id: number; name: string; type: string };
+  fromLocation?: { id: number; name: string; type: string } | null;
   requestedBy: { id: number; name: string; email: string };
+  confirmedBy?: { id: number; name: string } | null;
   history?: { id: number; previousStatus: string | null; newStatus: string; userId: number; userRole: string; createdAt: string }[];
 }
 
 interface Location {
   id: number; name: string; type: string;
 }
+
+const SOURCE_CONFIG: Record<string, { label: string; className: string }> = {
+  MANUAL: { label: "Manual", className: "text-gray-400 bg-dark-700/50 border-dark-600/50" },
+  VENTA: { label: "Auto · Venta", className: "text-purple-400 bg-purple-500/10 border-purple-500/20" },
+  STOCK_MINIMO: { label: "Auto · Stock mínimo", className: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
+};
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock; bg: string }> = {
   PENDIENTE: { label: "Pendiente", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20", icon: Clock },
@@ -62,6 +72,8 @@ export default function RequestsPage() {
   const role = user?.role || "";
   const isInventario = role === "INVENTARIO" || role === "ADMIN";
   const isTienda = role === "TIENDA" || role === "ADMIN";
+  // Las solicitudes las crean vendedores (tienda) o administradores.
+  const canCreate = role === "TIENDA" || role === "ADMIN";
 
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +81,14 @@ export default function RequestsPage() {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [filterStatus, setFilterStatus] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  // El registro se conserva siempre; la lista abre mostrando los últimos 30 días.
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
 
   const [showNew, setShowNew] = useState(false);
   const [searchProd, setSearchProd] = useState("");
@@ -80,6 +100,7 @@ export default function RequestsPage() {
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedLocation, setSelectedLocation] = useState("");
+  const [selectedOrigin, setSelectedOrigin] = useState("");
   const [quantity, setQuantity] = useState("");
   const [note, setNote] = useState("");
   const [locations, setLocations] = useState<Location[]>([]);
@@ -96,6 +117,8 @@ export default function RequestsPage() {
       setLoading(true);
       const params = new URLSearchParams();
       if (filterStatus) params.set("status", filterStatus);
+      if (dateFrom) params.set("startDate", dateFrom);
+      if (dateTo) params.set("endDate", dateTo);
       params.set("page", String(page));
       params.set("limit", String(PAGE_SIZE));
       const res = await api.get(`/requests?${params.toString()}`);
@@ -107,18 +130,23 @@ export default function RequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, page]);
+  }, [filterStatus, dateFrom, dateTo, page]);
 
   const fetchLocations = useCallback(async () => {
     try {
       const res = await api.get("/locations");
       setLocations(res.data);
+      setSelectedOrigin((prev) => {
+        if (prev) return prev;
+        const almacen = (res.data as Location[]).find((l) => l.type === "ALMACEN");
+        return almacen ? String(almacen.id) : "";
+      });
     } catch { /* ignore */ }
   }, []);
 
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
   useEffect(() => { fetchLocations(); }, [fetchLocations]);
-  useEffect(() => { setPage(1); }, [filterStatus]);
+  useEffect(() => { setPage(1); }, [filterStatus, dateFrom, dateTo]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -159,8 +187,13 @@ export default function RequestsPage() {
   };
 
   const handleCreate = async () => {
-    if (!selectedProduct || !selectedLocation || !quantity || !user) {
+    if (!selectedProduct || !quantity || !user) {
       toast.error("Completa todos los campos obligatorios");
+      return;
+    }
+    // Para el vendedor el destino es su propia tienda; el admin elige la tienda.
+    if (role === "ADMIN" && !selectedLocation) {
+      toast.error("Selecciona la tienda que necesita el producto");
       return;
     }
     const qty = Number(quantity);
@@ -171,8 +204,8 @@ export default function RequestsPage() {
       await api.post("/requests", {
         productId: selectedProduct.id,
         quantity: qty,
-        locationId: Number(selectedLocation),
-        requestedById: user.id,
+        locationId: selectedLocation ? Number(selectedLocation) : undefined,
+        fromLocationId: selectedOrigin ? Number(selectedOrigin) : undefined,
         note: note.trim() || null,
       });
       toast.success("Solicitud creada");
@@ -187,10 +220,13 @@ export default function RequestsPage() {
     }
   };
 
-  const canPerformAction = (actionTo: string): boolean => {
+  const canPerformAction = (actionTo: string, record: RequestRecord): boolean => {
     if (role === "ADMIN") return true;
     if (["RECIBIDO_POR_INVENTARIO", "PREPARANDO", "ENTREGADO"].includes(actionTo)) return isInventario;
-    if (actionTo === "RECIBIDO_POR_TIENDA") return isTienda;
+    // La llegada del producto la confirma quien lo pidió.
+    if (actionTo === "RECIBIDO_POR_TIENDA") {
+      return isTienda && !!user && record.requestedBy.id === user.id;
+    }
     return false;
   };
 
@@ -209,7 +245,9 @@ export default function RequestsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Solicitudes</h1>
-          <p className="text-gray-400 text-sm mt-1">{total} solicitudes</p>
+          <p className="text-gray-400 text-sm mt-1">
+            {total} solicitudes en el periodo · registro conservado
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setShowInfo(true)} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-blue-400 hover:border-blue-500/30 transition-all" title="¿Cómo funciona?">
@@ -218,13 +256,15 @@ export default function RequestsPage() {
           <button onClick={fetchRequests} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all" title="Actualizar">
             <RefreshCw size={18} />
           </button>
-          <button onClick={() => setShowNew(true)} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-primary-600/20">
-            <Plus size={18} /> Nueva Solicitud
-          </button>
+          {canCreate && (
+            <button onClick={() => setShowNew(true)} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-primary-600/20">
+              <Plus size={18} /> Nueva Solicitud
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => setFilterStatus("")} className={`px-3 py-2 rounded-xl text-sm border transition-all ${!filterStatus ? "bg-primary-600/10 border-primary-600/20 text-primary-400" : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-foreground"}`}>
           Todas
         </button>
@@ -237,6 +277,43 @@ export default function RequestsPage() {
             </button>
           );
         })}
+      </div>
+
+      {/* Rango de fechas: por defecto los últimos 30 días */}
+      <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <button onClick={() => setShowFilters((v) => !v)}
+            className="flex items-center gap-2 px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-gray-300 text-sm hover:text-foreground transition-all">
+            <Calendar size={16} /> Fechas
+            <ChevronDown size={14} className={`transition-transform ${showFilters ? "rotate-180" : ""}`} />
+          </button>
+          {showFilters && (
+            <>
+              <div className="flex items-center gap-2">
+                <label htmlFor="req-desde" className="text-xs text-gray-500 whitespace-nowrap">Desde</label>
+                <input id="req-desde" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                  className="px-2.5 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+              </div>
+              <div className="flex items-center gap-2">
+                <label htmlFor="req-hasta" className="text-xs text-gray-500 whitespace-nowrap">Hasta</label>
+                <input id="req-hasta" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                  className="px-2.5 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+              </div>
+              <button onClick={() => {
+                const from = new Date();
+                from.setDate(from.getDate() - 30);
+                setDateFrom(from.toISOString().slice(0, 10));
+                setDateTo(new Date().toISOString().slice(0, 10));
+              }} className="px-3 py-2 text-xs text-gray-400 hover:text-foreground transition-colors">
+                Últimos 30 días
+              </button>
+            </>
+          )}
+          <div className="flex-1" />
+          <p className="text-xs text-gray-500">
+            {dateFrom || "—"} → {dateTo || "—"}
+          </p>
+        </div>
       </div>
 
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
@@ -257,9 +334,10 @@ export default function RequestsPage() {
                   <th className="text-left px-4 py-3 font-medium">ID</th>
                   <th className="text-left px-4 py-3 font-medium">Fecha</th>
                   <th className="text-left px-4 py-3 font-medium">Producto</th>
-                  <th className="text-left px-4 py-3 font-medium">Ubicación</th>
+                  <th className="text-left px-4 py-3 font-medium">Origen → Tienda</th>
                   <th className="text-center px-4 py-3 font-medium">Cantidad</th>
                   <th className="text-left px-4 py-3 font-medium">Solicitado por</th>
+                  <th className="text-left px-4 py-3 font-medium">Confirmado por</th>
                   <th className="text-left px-4 py-3 font-medium">Nota</th>
                   <th className="text-left px-4 py-3 font-medium">Estado</th>
                   <th className="text-center px-4 py-3 font-medium">Acciones</th>
@@ -270,17 +348,36 @@ export default function RequestsPage() {
                   const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG.PENDIENTE;
                   const Icon = cfg.icon;
                   const actions = STATUS_FLOW[r.status] || [];
+                  const source = SOURCE_CONFIG[r.source] || SOURCE_CONFIG.MANUAL;
                   return (
                     <tr key={r.id} className="border-b border-dark-700/30 last:border-0 hover:bg-dark-900/30 transition-colors">
-                      <td className="px-4 py-3 text-gray-400">{r.id}</td>
+                      <td className="px-4 py-3">
+                        <p className="text-gray-400">{r.id}</p>
+                        <span className={`mt-1 inline-block px-1.5 py-0.5 text-[10px] font-medium rounded border ${source.className}`}>
+                          {source.label}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-gray-300">{new Date(r.date).toLocaleDateString("es-BO")}</td>
                       <td className="px-4 py-3">
                         <p className="text-foreground font-medium">{r.product.name}</p>
                         <p className="text-xs text-gray-500">{r.product.itemCode}</p>
                       </td>
-                      <td className="px-4 py-3 text-gray-300">{r.location.name}</td>
+                      <td className="px-4 py-3 text-gray-300">
+                        <p>{r.fromLocation?.name || "—"}</p>
+                        <p className="text-xs text-gray-500">→ {r.location.name}</p>
+                      </td>
                       <td className="px-4 py-3 text-center text-foreground font-medium">{r.quantity}</td>
                       <td className="px-4 py-3 text-gray-400">{r.requestedBy.name}</td>
+                      <td className="px-4 py-3 text-gray-400">
+                        {r.confirmedBy ? (
+                          <>
+                            <p>{r.confirmedBy.name}</p>
+                            {r.confirmedAt && (
+                              <p className="text-xs text-gray-500">{new Date(r.confirmedAt).toLocaleString("es-BO")}</p>
+                            )}
+                          </>
+                        ) : "—"}
+                      </td>
                       <td className="px-4 py-3 text-gray-400 text-xs max-w-[120px] truncate" title={r.note || ""}>
                         {r.note || "—"}
                       </td>
@@ -294,7 +391,7 @@ export default function RequestsPage() {
                           <button onClick={() => setShowHistory(r)} className="p-2 rounded-xl text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Ver historial">
                             <History size={15} />
                           </button>
-                          {actions.filter((a) => canPerformAction(a.to)).map((action) => {
+                          {actions.filter((a) => canPerformAction(a.to, r)).map((action) => {
                             const ActionIcon = action.icon;
                             return (
                               <div key={action.to} className="relative group">
@@ -412,16 +509,39 @@ export default function RequestsPage() {
               </div>
 
               <div className="relative">
-                <label className="block text-xs text-gray-400 mb-1.5">Ubicación solicitante *</label>
-                <select value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)}
+                <label htmlFor="req-origen" className="block text-xs text-gray-400 mb-1.5">Solicitar desde (origen) *</label>
+                <select id="req-origen" value={selectedOrigin} onChange={(e) => setSelectedOrigin(e.target.value)}
                   className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
-                  <option value="">Seleccionar tienda</option>
-                  {locations.filter((l) => l.type === "TIENDA").map((l) => (
-                    <option key={l.id} value={l.id}>{l.name}</option>
+                  <option value="">Seleccionar tienda o almacén</option>
+                  {locations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} ({l.type === "ALMACEN" ? "Almacén" : "Tienda"})
+                    </option>
                   ))}
                 </select>
                 <ChevronDown size={14} className="absolute right-2.5 top-[38px] text-gray-500 pointer-events-none" />
               </div>
+
+              {role === "ADMIN" && (
+                <div className="relative">
+                  <label htmlFor="req-destino" className="block text-xs text-gray-400 mb-1.5">Tienda que lo necesita *</label>
+                  <select id="req-destino" value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)}
+                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                    <option value="">Seleccionar tienda</option>
+                    {locations.filter((l) => l.type === "TIENDA").map((l) => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-2.5 top-[38px] text-gray-500 pointer-events-none" />
+                </div>
+              )}
+
+              {role === "TIENDA" && (
+                <div className="p-3 bg-dark-900/30 border border-dark-700/30 rounded-xl">
+                  <p className="text-xs text-gray-500">La solicitud se enviará a tu tienda</p>
+                  <p className="text-sm text-foreground">{locations.find((l) => l.id === user?.locationId)?.name || "Tu tienda"}</p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs text-gray-400 mb-1.5">Cantidad *</label>
@@ -461,7 +581,21 @@ export default function RequestsPage() {
             <div className="p-5">
               <div className="mb-4 p-3 bg-dark-900/50 rounded-xl border border-dark-700/30">
                 <p className="text-foreground font-medium">{showHistory.product.name}</p>
-                <p className="text-xs text-gray-400">{showHistory.product.itemCode} · Cantidad: {showHistory.quantity} · {showHistory.location.name}</p>
+                <p className="text-xs text-gray-400">{showHistory.product.itemCode} · Cantidad: {showHistory.quantity}</p>
+                <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+                  <MapPin size={11} /> {showHistory.fromLocation?.name || "Sin origen"} → {showHistory.location.name}
+                </p>
+                {showHistory.source && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Origen de la solicitud: {SOURCE_CONFIG[showHistory.source]?.label || showHistory.source}
+                  </p>
+                )}
+                {showHistory.confirmedBy && (
+                  <p className="text-xs text-green-400 mt-1">
+                    Confirmada por {showHistory.confirmedBy.name}
+                    {showHistory.confirmedAt ? ` el ${new Date(showHistory.confirmedAt).toLocaleString("es-BO")}` : ""}
+                  </p>
+                )}
                 {showHistory.note && <p className="text-xs text-gray-400 mt-1 italic">Nota: {showHistory.note}</p>}
               </div>
               {showHistory.history && showHistory.history.length > 0 ? (
@@ -507,8 +641,17 @@ export default function RequestsPage() {
             </div>
             <div className="p-5 space-y-4 text-sm text-gray-300">
               <div>
-                <h4 className="text-foreground font-semibold mb-1">¿Para qué sirve?</h4>
-                <p>Cuando una tienda se queda sin stock de un producto, desde aquí se pide al almacén que lo envíe.</p>
+                <h4 className="text-foreground font-semibold mb-1">¿Quién puede crear solicitudes?</h4>
+                <p>Los <strong className="text-green-400">vendedores</strong> y los <strong className="text-blue-400">administradores</strong>. El vendedor pide para su propia tienda; el administrador elige la tienda de destino y de dónde (tienda o almacén) se requiere el producto.</p>
+              </div>
+              <div>
+                <h4 className="text-foreground font-semibold mb-1">¿Cómo se crean?</h4>
+                <ul className="ml-1 space-y-1 list-disc list-inside">
+                  <li><strong className="text-purple-400">Automáticamente al registrar una venta</strong> cuando el stock de la tienda queda en cero o por debajo del mínimo.</li>
+                  <li><strong className="text-cyan-400">Automáticamente cuando el stock de una tienda baja del mínimo</strong> (revisión diaria del inventario).</li>
+                  <li><strong>Manualmente</strong> con el botón <em>Nueva Solicitud</em>, buscando el producto igual que en Inventarios.</li>
+                </ul>
+                <p className="mt-1 text-xs text-gray-500">Si ya hay una solicitud abierta del mismo producto para la misma tienda, no se genera una nueva.</p>
               </div>
               <div>
                 <h4 className="text-foreground font-semibold mb-1">Flujo de estados:</h4>
@@ -516,14 +659,18 @@ export default function RequestsPage() {
                   <p className="flex items-center gap-2"><Clock size={14} className="text-yellow-400" /> <strong className="text-yellow-400">Pendiente</strong> — Solicitud creada</p>
                   <p className="flex items-center gap-2"><Package size={14} className="text-blue-400" /> <strong className="text-blue-400">Recibido por Inventario</strong> — Inventario tomó conocimiento</p>
                   <p className="flex items-center gap-2"><Package size={14} className="text-purple-400" /> <strong className="text-purple-400">Preparando</strong> — Armando el pedido</p>
-                  <p className="flex items-center gap-2"><Truck size={14} className="text-orange-400" /> <strong className="text-orange-400">Entregado</strong> — Pedido enviado</p>
-                  <p className="flex items-center gap-2"><CheckCircle size={14} className="text-green-400" /> <strong className="text-green-400">Recibido por Tienda</strong> — La tienda confirmó recepción</p>
+                  <p className="flex items-center gap-2"><Truck size={14} className="text-orange-400" /> <strong className="text-orange-400">Entregado</strong> — Pedido enviado a la tienda</p>
+                  <p className="flex items-center gap-2"><CheckCircle size={14} className="text-green-400" /> <strong className="text-green-400">Recibido por Tienda</strong> — <strong>Quien pidió el producto</strong> confirma su llegada</p>
                 </div>
               </div>
               <div>
                 <h4 className="text-foreground font-semibold mb-1">¿Quién puede cambiar el estado?</h4>
                 <p><strong className="text-blue-400">Inventario/Admin:</strong> Recibir, Preparar, Entregar</p>
-                <p><strong className="text-green-400">Tienda/Admin:</strong> Confirmar recepción</p>
+                <p><strong className="text-green-400">Quien creó la solicitud (o Admin):</strong> Confirmar que el producto llegó a la tienda</p>
+              </div>
+              <div>
+                <h4 className="text-foreground font-semibold mb-1">¿Cuánto tiempo se guarda el registro?</h4>
+                <p>El registro se conserva siempre. La lista muestra por defecto los <strong>últimos 30 días</strong>; podés ampliar el rango con el filtro de fechas.</p>
               </div>
             </div>
           </div>

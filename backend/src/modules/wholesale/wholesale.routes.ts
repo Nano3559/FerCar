@@ -4,7 +4,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { authenticate, authorize, requireTiendaLocation } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
-import { nextDayAt8 } from "../../utils/replenish";
+import { ensureRestockRequest } from "../../utils/restockRequest";
 import { validateAndMergeItems } from "../../utils/saleItems";
 
 const router = Router();
@@ -181,30 +181,17 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         }
       }
 
-      // Solicitud automática al almacén (donde se encuentra la mercadería) por
-      // lo que falte en la tienda de venta. Si el producto está en la tienda,
-      // no se crea solicitud.
+      // Solicitud automática al almacén por lo que falte en la tienda de venta.
+      // Si el producto está en la tienda, no se crea solicitud.
       for (const req of supplyRequests) {
-        const existing = await tx.productRequest.findFirst({
-          where: {
-            productId: req.productId,
-            locationId: userLocationId,
-            status: { in: ["PENDIENTE", "RECIBIDO_POR_INVENTARIO", "PREPARANDO"] },
-          },
+        await ensureRestockRequest(tx, {
+          productId: req.productId,
+          destinationId: userLocationId,
+          requestedById: user.userId,
+          quantity: req.quantity,
+          source: "VENTA",
+          note: "Reposición automática: la venta superó el stock disponible",
         });
-        if (!existing) {
-          await tx.productRequest.create({
-            data: {
-              productId: req.productId,
-              quantity: req.quantity,
-              requestedById: user.userId,
-              locationId: userLocationId,
-              status: "PENDIENTE",
-              expectedDate: nextDayAt8(),
-              note: "Despacho venta mayorista",
-            },
-          });
-        }
       }
 
       return {

@@ -2,7 +2,7 @@ import { Router, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import { authenticate, authorize, requireTiendaLocation } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
-import { nextDayAt8 } from "../../utils/replenish";
+import { ensureRestockRequest } from "../../utils/restockRequest";
 import { validateAndMergeItems } from "../../utils/saleItems";
 
 const router = Router();
@@ -426,36 +426,15 @@ router.post("/", async (req: AuthRequest, res: Response) => {
             data: { stock: newStock },
           });
 
-          if (newStock === 0) {
-            const existing = await tx.productRequest.findFirst({
-              where: {
-                productId: update.productId,
-                locationId: userLocationId,
-                status: { in: ["PENDIENTE", "RECIBIDO_POR_INVENTARIO", "PREPARANDO"] },
-              },
-            });
-            if (!existing) {
-              const almacen = await tx.location.findFirst({ where: { type: "ALMACEN" } });
-              if (almacen) {
-                const almacenInv = await tx.inventory.findUnique({
-                  where: { productId_locationId: { productId: update.productId, locationId: almacen.id } },
-                });
-                const requestQty = Math.max(update.quantity, 5);
-                if (almacenInv && almacenInv.stock >= requestQty) {
-                  await tx.productRequest.create({
-                    data: {
-                      productId: update.productId,
-                      quantity: requestQty,
-                      requestedById: user.userId,
-                      locationId: userLocationId,
-                      status: "PENDIENTE",
-                      expectedDate: nextDayAt8(),
-                    },
-                  });
-                }
-              }
-            }
-          }
+          // La venta dejo el stock en cero o por debajo del minimo: se genera
+          // sola la solicitud de reposicion desde el almacen.
+          await ensureRestockRequest(tx, {
+            productId: update.productId,
+            destinationId: userLocationId,
+            requestedById: user.userId,
+            source: "VENTA",
+            note: "Reposición automática: la venta dejó el stock bajo el mínimo",
+          });
         }
       }
 

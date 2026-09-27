@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { PrismaClient } from "@prisma/client";
-import { nextDayAt8 } from "../utils/replenish";
+import { ensureRestockRequest } from "../utils/restockRequest";
 
 const prisma = new PrismaClient();
 
@@ -64,89 +64,29 @@ async function runReplenishCheck() {
   }
 }
 
-// REPO_PRODUCTOS: crea solicitud de reposición cuando una tienda tiene stock < minStock
-// y no existe ya una solicitud abierta para el mismo producto/tienda.
+// Revisa todas las tiendas y delega en el helper compartido la creación de
+// solicitudes para productos cuyo stock quedó en cero o por debajo del mínimo.
 async function generateLowStockRequests() {
   const tiendas = await prisma.location.findMany({ where: { type: "TIENDA" } });
 
   for (const tienda of tiendas) {
     const inventories = await prisma.inventory.findMany({
       where: { locationId: tienda.id },
-      include: { product: true },
     });
 
     for (const inv of inventories) {
-      if (inv.minStock > 0 && inv.stock < inv.minStock) {
-        const openRequest = await prisma.productRequest.findFirst({
-          where: {
-            productId: inv.productId,
-            locationId: tienda.id,
-            status: { in: ["PENDIENTE", "RECIBIDO_POR_INVENTARIO", "PREPARANDO"] },
-          },
-        });
-        if (openRequest) continue;
+      // Quién solicita: un usuario TIENDA de esa ubicación (fallback: admin)
+      const tiendaUser = await prisma.user.findFirst({ where: { locationId: tienda.id, role: { name: "TIENDA" } } });
+      const requestedBy = tiendaUser ?? (await prisma.user.findFirst({ where: { role: { name: "ADMIN" } } }));
+      if (!requestedBy) continue;
 
-        const delta = Math.max(1, inv.minStock - inv.stock);
-
-        // Disponibilidad en almacén
-        const almacen = await prisma.location.findFirst({ where: { type: "ALMACEN" } });
-        if (almacen) {
-          const almacenInv = await prisma.inventory.findUnique({
-            where: { productId_locationId: { productId: inv.productId, locationId: almacen.id } },
-          });
-          if (!almacenInv || almacenInv.stock < delta) continue;
-        }
-
-        // Quién solicita: un usuario TIENDA de esa ubicación (fallback: admin)
-        const tiendaUser = await prisma.user.findFirst({ where: { locationId: tienda.id, role: { name: "TIENDA" } } });
-        const requestedBy = tiendaUser ?? (await prisma.user.findFirst({ where: { role: { name: "ADMIN" } } }));
-        if (!requestedBy) continue;
-
-        const created = await prisma.productRequest.create({
-          data: {
-            productId: inv.productId,
-            quantity: delta,
-            locationId: tienda.id,
-            requestedById: requestedBy.id,
-            note: "Reposición automática por stock mínimo",
-            expectedDate: nextDayAt8(),
-            history: {
-              create: {
-                newStatus: "PENDIENTE",
-                userId: requestedBy.id,
-                userRole: "AUTOMATICO",
-              },
-            },
-          },
-        });
-
-        const inventarioUsers = await prisma.user.findMany({ where: { role: { name: "INVENTARIO" } } });
-        for (const u of inventarioUsers) {
-          await prisma.notification.create({
-            data: {
-              userId: u.id,
-              title: "Reposición automática por stock mínimo",
-              message: `"${inv.product.name}" en ${tienda.name} quedó con stock ${inv.stock} (mínimo ${inv.minStock}). Solicitud #${created.id} generada por ${delta} unidades.`,
-              type: "WARNING",
-              linkUrl: "/panel/solicitudes",
-            },
-          });
-        }
-
-        if (inventarioUsers.length === 0) {
-          await prisma.notification.create({
-            data: {
-              userId: requestedBy.id,
-              title: "Reposición automática por stock mínimo",
-              message: `Se generó la solicitud #${created.id} para "${inv.product.name}" en ${tienda.name}.`,
-              type: "INFO",
-              linkUrl: "/panel/solicitudes",
-            },
-          });
-        }
-
-        console.log(`[replenish] Reposición automática #${created.id} (${inv.product.name} -> ${tienda.name})`);
-      }
+      await ensureRestockRequest(prisma, {
+        productId: inv.productId,
+        destinationId: tienda.id,
+        requestedById: requestedBy.id,
+        source: "STOCK_MINIMO",
+        note: "Reposición automática: el stock quedó por debajo del mínimo",
+      });
     }
   }
 }

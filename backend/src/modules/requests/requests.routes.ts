@@ -26,14 +26,41 @@ const VALID_TRANSITIONS: Record<string, RequestStatus[]> = {
 
 const INVENTARIO_STATUSES: RequestStatus[] = ["RECIBIDO_POR_INVENTARIO", "PREPARANDO", "ENTREGADO"];
 
+function daysAgo(days: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d;
+}
+
+function startOfDay(d: Date): Date {
+  const c = new Date(d);
+  c.setHours(0, 0, 0, 0);
+  return c;
+}
+
+function endOfDay(d: Date): Date {
+  const c = new Date(d);
+  c.setHours(23, 59, 59, 999);
+  return c;
+}
+
 // GET / — Listar solicitudes con filtros + historial
 router.get("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { status, locationId, page = "1", limit = "20" } = req.query;
+    const { status, locationId, startDate, endDate, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
     if (status && typeof status === "string") where.status = status as RequestStatus;
     if (locationId && typeof locationId === "string") where.locationId = Number(locationId);
+
+    // El registro se conserva siempre; la lista muestra por defecto los
+    // últimos 30 días, igual que el historial de devoluciones.
+    const from = startDate ? new Date(String(startDate)) : daysAgo(30);
+    const to = endDate ? new Date(String(endDate)) : endOfDay(new Date());
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      return res.status(400).json({ message: "Rango de fechas inválido" });
+    }
+    where.date = { gte: startOfDay(from), lte: endOfDay(to) };
 
     if (req.user?.role === "TIENDA") {
       where.locationId = req.user.locationId;
@@ -49,7 +76,9 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         include: {
           product: { select: { id: true, name: true, itemCode: true, brand: true, model: true } },
           location: { select: { id: true, name: true, type: true } },
+          fromLocation: { select: { id: true, name: true, type: true } },
           requestedBy: { select: { id: true, name: true, email: true } },
+          confirmedBy: { select: { id: true, name: true } },
           history: { orderBy: { createdAt: "asc" } },
         },
         skip,
@@ -78,7 +107,9 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
       include: {
         product: { select: { id: true, name: true, itemCode: true, brand: true, model: true } },
         location: { select: { id: true, name: true, type: true } },
+        fromLocation: { select: { id: true, name: true, type: true } },
         requestedBy: { select: { id: true, name: true, email: true } },
+        confirmedBy: { select: { id: true, name: true } },
         history: {
           include: { request: false },
           orderBy: { createdAt: "asc" },
@@ -98,9 +129,15 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
   }
 });
 
-// POST — Crear solicitud (tienda pide a almacén)
+// POST — Crear solicitud manual (vendedor o administrador)
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
+    const requesterRole = req.user!.role;
+    // Las solicitudes las crean los vendedores (tienda) o los administradores.
+    if (requesterRole !== "ADMIN" && requesterRole !== "TIENDA") {
+      return res.status(403).json({ message: "Solo vendedores o administradores pueden crear solicitudes" });
+    }
+
     const productId = parsePositiveInt(req.body.productId, "Producto");
     const quantity = parsePositiveInt(req.body.quantity, "Cantidad");
     const note = req.body.note || null;
@@ -109,8 +146,8 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     // El solicitante y su rol salen del token, no del body
     const requestedById = req.user!.userId;
-    const requesterRole = req.user!.role;
 
+    // Destino: la tienda del vendedor o la que elija el administrador.
     let locationId: number;
     if (requesterRole === "TIENDA") {
       if (!req.user!.locationId) {
@@ -121,20 +158,39 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       locationId = parsePositiveInt(req.body.locationId, "Ubicación");
     }
 
-    const [product, location] = await Promise.all([
+    // Origen: de dónde requieren el producto (tienda o almacén). Si no se
+    // indica, se toma el primer almacén registrado.
+    let fromLocationId: number | null = null;
+    if (req.body.fromLocationId) {
+      fromLocationId = parsePositiveInt(req.body.fromLocationId, "Ubicación de origen");
+    } else {
+      const almacen = await prisma.location.findFirst({ where: { type: "ALMACEN" }, orderBy: { id: "asc" } });
+      fromLocationId = almacen?.id ?? null;
+    }
+    if (fromLocationId === locationId) {
+      return res.status(400).json({ message: "El origen y el destino no pueden ser la misma ubicación" });
+    }
+
+    const [product, location, fromLocation] = await Promise.all([
       prisma.product.findUnique({ where: { id: productId } }),
       prisma.location.findUnique({ where: { id: locationId } }),
+      fromLocationId
+        ? prisma.location.findUnique({ where: { id: fromLocationId } })
+        : Promise.resolve(null),
     ]);
 
     if (!product) return res.status(404).json({ message: "Producto no encontrado" });
     if (!location) return res.status(404).json({ message: "Ubicación no encontrada" });
+    if (fromLocationId && !fromLocation) return res.status(404).json({ message: "Ubicación de origen no encontrada" });
 
     const request = await prisma.productRequest.create({
       data: {
         productId,
         quantity,
         locationId,
+        fromLocationId,
         requestedById,
+        source: "MANUAL",
         note,
         history: {
           create: {
@@ -147,6 +203,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       include: {
         product: { select: { name: true, itemCode: true } },
         location: { select: { name: true } },
+        fromLocation: { select: { name: true } },
         history: true,
       },
     });
@@ -189,6 +246,16 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
     if (status === "RECIBIDO_POR_TIENDA" && role !== "ADMIN" && role !== "TIENDA") {
       return res.status(403).json({ message: "Solo TIENDA o ADMIN pueden confirmar recepción" });
     }
+    // La llegada del producto la confirma quien pidió el producto.
+    if (
+      status === "RECIBIDO_POR_TIENDA" &&
+      role !== "ADMIN" &&
+      existing.requestedById !== req.user?.userId
+    ) {
+      return res.status(403).json({
+        message: "Solo quien creó la solicitud puede confirmar la recepción del producto",
+      });
+    }
     if (role === "TIENDA" && existing.locationId !== req.user?.locationId) {
       return res.status(403).json({ message: "No puede modificar solicitudes de otra tienda" });
     }
@@ -205,11 +272,18 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
     const [updated] = await prisma.$transaction([
       prisma.productRequest.update({
         where: { id },
-        data: { status },
+        data: {
+          status,
+          ...(status === "RECIBIDO_POR_TIENDA"
+            ? { confirmedById: req.user?.userId ?? null, confirmedAt: new Date() }
+            : {}),
+        },
         include: {
           product: { select: { name: true, itemCode: true } },
           location: { select: { name: true } },
+          fromLocation: { select: { name: true } },
           requestedBy: { select: { name: true } },
+          confirmedBy: { select: { name: true } },
         },
       }),
       prisma.requestHistory.create({
@@ -224,12 +298,16 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
     ]);
 
     // Notify the requester about status change
-    if (existing.requestedById) {
+    if (existing.requestedById && existing.requestedById !== req.user?.userId) {
+      const actor = await prisma.user.findUnique({
+        where: { id: req.user?.userId || 0 },
+        select: { name: true },
+      });
       await prisma.notification.create({
         data: {
           userId: existing.requestedById,
           title: `Solicitud #${id} - ${STATUS_LABELS[status] || status}`,
-          message: `La solicitud del producto "${updated.product?.name}" fue cambiada a "${STATUS_LABELS[status] || status}" por ${updated.requestedBy?.name || "Sistema"}.`,
+          message: `La solicitud del producto "${updated.product?.name}" fue cambiada a "${STATUS_LABELS[status] || status}" por ${actor?.name || "Sistema"}.`,
           type: status === "CANCELADO" ? "WARNING" : "INFO",
           linkUrl: "/panel/solicitudes",
         },
