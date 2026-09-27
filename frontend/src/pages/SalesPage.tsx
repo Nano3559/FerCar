@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
   FileText, RefreshCw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  Check, Clock, MapPin, User, Filter, Printer,
+  Check, Clock, MapPin, User, Filter, Printer, Send,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import axios from "axios";
@@ -62,6 +62,7 @@ interface SaleRecord {
   location: { id: number; name: string }; user: { id: number; name: string };
   seller: string | null;
   customer: { id: number; name: string; nit: string | null } | null;
+  note?: string | null;
   items: { id: number; quantity: number; unitPrice: number; subtotal: number;
     product: { id: number; name: string; itemCode: string; brand?: string } }[];
   payments: { id: number; method: string; amount: number }[];
@@ -223,6 +224,7 @@ export default function SalesPage() {
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
   const [requiereFactura, setRequiereFactura] = useState(false);
   const [customerData, setCustomerData] = useState<CustomerData>({ name: "", nit: "", phone: "" });
+  const [saleNote, setSaleNote] = useState("");
   const [processing, setProcessing] = useState(false);
 
   // --- Add-to-cart modal ---
@@ -231,6 +233,14 @@ export default function SalesPage() {
   const [addQty, setAddQty] = useState(1);
   const [addTier, setAddTier] = useState<1 | 2>(2);
   const addCartPanelRef = useDialogBehavior(showAddCart, () => { setShowAddCart(false); setAddTarget(null); });
+
+  // --- Solicitar producto a otra tienda/almacén ---
+  const [showRequest, setShowRequest] = useState(false);
+  const [requestTarget, setRequestTarget] = useState<Product | null>(null);
+  const [requestQty, setRequestQty] = useState(1);
+  const [requestNote, setRequestNote] = useState("");
+  const [requestSaving, setRequestSaving] = useState(false);
+  const requestPanelRef = useDialogBehavior(showRequest, () => { setShowRequest(false); setRequestTarget(null); });
 
   // --- Quotation ---
   const [showQuote, setShowQuote] = useState(false);
@@ -405,14 +415,23 @@ return [...prev, {
     if (column === "Acciones") return (
       <td key={column} className="px-3 py-2">
         <div className="flex items-center justify-center gap-1.5">
-          <button
-            onClick={() => openAddToCart(p)}
-            disabled={p.stock <= 0}
-            title={p.stock > 0 ? "Agregar al carrito" : "Sin stock en esta tienda"}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary-600/10 border border-primary-600/25 text-primary-400 hover:bg-primary-600 hover:text-white transition-all text-xs font-medium disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <ShoppingCart size={14} /> Agregar
-          </button>
+          {p.stock <= 0 ? (
+            <button
+              onClick={() => openRequestProduct(p)}
+              title="Solicitar a otra tienda o almacén"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-600/10 border border-amber-600/25 text-amber-400 hover:bg-amber-600 hover:text-white transition-all text-xs font-medium"
+            >
+              <Send size={14} /> Solicitar
+            </button>
+          ) : (
+            <button
+              onClick={() => openAddToCart(p)}
+              title="Agregar al carrito"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary-600/10 border border-primary-600/25 text-primary-400 hover:bg-primary-600 hover:text-white transition-all text-xs font-medium"
+            >
+              <ShoppingCart size={14} /> Agregar
+            </button>
+          )}
           <button
             onClick={() => openLocations(p)}
             title="Ver ubicaciones"
@@ -460,6 +479,7 @@ return [...prev, {
     setPayments([{ method: "EFECTIVO", amount: String(cartTotal.toFixed(2)) }]);
     setRequiereFactura(false);
     setCustomerData({ name: "", nit: "", phone: "" });
+    setSaleNote("");
     setShowPayment(true);
   };
 
@@ -517,6 +537,9 @@ return [...prev, {
       if (selectedSeller) {
         payload.seller = selectedSeller;
       }
+      if (saleNote.trim()) {
+        payload.note = saleNote.trim();
+      }
 
       const res = await api.post("/sales", payload);
       const savedItems = (res.data.items || []).map((item: any) => {
@@ -562,6 +585,66 @@ return [...prev, {
       toast.success("PDF descargado", { id: "pdf" });
     } catch {
       toast.error("Error al generar PDF", { id: "pdf" });
+    }
+  };
+
+  // Nota de venta imprimible (backend HTML A5: Cód. Fábrica, Precio 1/2, Cantidad, Total pagado, Fecha, Tienda)
+  const printSaleNota = async () => {
+    if (!lastSale) return;
+    toast.loading("Preparando nota de venta...", { id: "nota" });
+    try {
+      const res = await api.get(`/sales/${lastSale.id}/nota`, { responseType: "text" });
+      const html = typeof res.data === "string" ? res.data : (res.data as any)?.data || "";
+      const win = window.open("", "_blank", "width=640,height=800");
+      if (!win) {
+        toast.error("Permite ventanas emergentes para imprimir", { id: "nota" });
+        return;
+      }
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      toast.success("Nota lista para imprimir", { id: "nota" });
+    } catch {
+      toast.error("Error al generar la nota", { id: "nota" });
+    }
+  };
+
+  // Solicitar producto a otra tienda o almacén
+  const openRequestProduct = (p: Product) => {
+    setRequestTarget(p);
+    setRequestQty(1);
+    setRequestNote("");
+    setShowRequest(true);
+  };
+
+  const submitRequest = async () => {
+    if (!requestTarget) return;
+    const requestedStoreId = isTienda
+      ? user?.locationId
+      : selectedLocationId
+        ? Number(selectedLocationId)
+        : locations.find((l) => l.type === "TIENDA")?.id;
+    if (!requestedStoreId) {
+      toast.error("Selecciona la tienda solicitante");
+      return;
+    }
+    const qty = Number(requestQty) > 0 ? Number(requestQty) : 1;
+    setRequestSaving(true);
+    try {
+      await api.post("/requests", {
+        productId: requestTarget.id,
+        quantity: qty,
+        locationId: requestedStoreId,
+        note: requestNote.trim() || null,
+      });
+      toast.success("Solicitud enviada a otra tienda/almacén");
+      setShowRequest(false);
+      setRequestTarget(null);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al solicitar el producto");
+    } finally {
+      setRequestSaving(false);
     }
   };
 
@@ -1262,7 +1345,6 @@ return [...prev, {
                           className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                           <option value="EFECTIVO">Efectivo</option>
                           <option value="QR">QR</option>
-                          <option value="TRANSFERENCIA">Transferencia</option>
                           <option value="CREDITO">Crédito</option>
                         </select>
                         <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
@@ -1325,6 +1407,14 @@ return [...prev, {
                   </div>
                 )}
               </div>
+
+              {/* Nota / Recordatorio */}
+              <div className="border-t border-dark-700/50 pt-5">
+                <label htmlFor="venta-nota" className="block text-xs text-gray-500 mb-1.5">Nota / Recordatorio (opcional)</label>
+                <textarea id="venta-nota" value={saleNote} onChange={(e) => setSaleNote(e.target.value)} rows={2}
+                  placeholder="Nota, recordatorio o instrucción para esta venta..."
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none placeholder-gray-600" />
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-3 p-5 border-t border-dark-700/50">
@@ -1367,6 +1457,13 @@ return [...prev, {
               </div>
             )}
 
+            {lastSale.note && (
+              <div className="bg-dark-900/50 border border-dark-700/30 rounded-xl p-3 mb-4 text-left">
+                <p className="text-xs text-gray-500 mb-1">Nota / Recordatorio</p>
+                <p className="text-sm text-yellow-300">{lastSale.note}</p>
+              </div>
+            )}
+
             <div className="bg-dark-900/50 border border-dark-700/30 rounded-xl p-3 mb-5 text-left">
               <p className="text-xs text-gray-500 mb-2">Productos</p>
               <div className="space-y-1.5">
@@ -1391,14 +1488,20 @@ return [...prev, {
               </div>
             </div>
 
-            <div className="flex gap-3">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={printSaleNota}
+                  className="bg-dark-700 hover:bg-dark-600 text-foreground py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
+                  <Printer size={16} /> Imprimir Nota
+                </button>
+                <button onClick={downloadSalePDF}
+                  className="bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
+                  <FileText size={16} /> Descargar PDF
+                </button>
+              </div>
               <button onClick={() => { setShowConfirmed(false); setLastSale(null); }}
-                className="flex-1 bg-dark-700 hover:bg-dark-600 text-foreground py-3 rounded-xl text-sm font-medium transition-all">
+                className="w-full text-sm text-gray-400 hover:text-foreground transition-all py-1">
                 Cerrar
-              </button>
-              <button onClick={downloadSalePDF}
-                className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
-                <FileText size={16} /> Descargar PDF
               </button>
             </div>
           </div>
@@ -1538,6 +1641,72 @@ return [...prev, {
               <button onClick={confirmAddToCart}
                 className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-2.5 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
                 <ShoppingCart size={16} /> Agregar al carrito
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ REQUEST MODAL (solicitar a otra tienda/almacén) ============ */}
+      {showRequest && requestTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div ref={requestPanelRef} role="dialog" aria-modal="true" aria-label="Solicitar producto" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md overflow-hidden">
+            <div className="flex items-start justify-between px-5 py-4 border-b border-dark-700/50">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-foreground truncate">Solicitar producto</h3>
+                <p className="text-xs text-gray-500 mt-2 truncate">{requestTarget.name}</p>
+                <p className="text-xs text-gray-500 truncate">
+                  {requestTarget.manufacturer} · {requestTarget.brand} · {requestTarget.model} · {requestTarget.itemCode}
+                </p>
+              </div>
+              <button onClick={() => { setShowRequest(false); setRequestTarget(null); }}
+                className="p-2 rounded-lg text-gray-400 hover:text-foreground hover:bg-dark-700 transition-all shrink-0 ml-3" aria-label="Cerrar">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-400">Tienda solicitante</span>
+                <span className="text-foreground font-medium">
+                  {isTienda
+                    ? locations.find((l) => l.id === user?.locationId)?.name || "Mi tienda"
+                    : locations.find((l) => l.id === (selectedLocationId ? Number(selectedLocationId) : ""))?.name || "Seleccionada"}
+                </span>
+              </div>
+              <div className={`p-3 rounded-xl border text-sm ${requestTarget.stock === 0 ? "bg-red-500/10 border-red-500/30 text-red-400" : "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"}`}>
+                Sin stock en esta tienda. Se solicitará a otra tienda o al almacén.
+              </div>
+              <div>
+                <span className="block text-xs text-gray-500 mb-1.5">Cantidad</span>
+                <div className="flex items-center justify-center gap-1.5">
+                  <button onClick={() => setRequestQty(Math.max(1, requestQty - 1))} disabled={requestQty <= 1}
+                    className="p-2.5 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground transition-all disabled:opacity-30">
+                    <Minus size={16} />
+                  </button>
+                  <span className="w-16 text-center text-foreground text-xl font-bold">{requestQty}</span>
+                  <button onClick={() => setRequestQty(requestQty + 1)}
+                    className="p-2.5 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground transition-all">
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="req-nota-ventas" className="block text-xs text-gray-500 mb-1.5">Nota / Recordatorio (opcional)</label>
+                <textarea id="req-nota-ventas" value={requestNote} onChange={(e) => setRequestNote(e.target.value)} rows={2}
+                  placeholder="Observación para la solicitud..."
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none placeholder-gray-600" />
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-dark-700/50 flex gap-3">
+              <button onClick={() => { setShowRequest(false); setRequestTarget(null); }}
+                className="flex-1 bg-dark-700 hover:bg-dark-600 text-foreground py-2.5 rounded-xl text-sm font-medium transition-all">
+                Cancelar
+              </button>
+              <button onClick={submitRequest} disabled={requestSaving}
+                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                <Send size={16} /> {requestSaving ? "Enviando..." : "Enviar Solicitud"}
               </button>
             </div>
           </div>

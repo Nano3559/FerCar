@@ -124,6 +124,8 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
     .totals { margin-top: 5px; }
     .totals .row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 10px; }
     .totals .total-final { font-weight: bold; font-size: 12px; border-top: 2px solid #333; padding-top: 4px; margin-top: 4px; }
+    .totals .pagado { font-weight: bold; font-size: 12px; color: #166534; background: #ecfdf5; padding: 4px 6px; border-radius: 4px; }
+    .note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 6px 8px; border-radius: 4px; margin-top: 8px; font-size: 10px; }
     .payments { background: #f5f5f5; padding: 6px 8px; border-radius: 4px; margin-top: 8px; font-size: 10px; }
     .footer { margin-top: 12px; text-align: center; border-top: 2px dashed #333; padding-top: 8px; font-size: 9px; color: #666; }
     .stamp { display: inline-block; border: 1px solid #999; padding: 4px 15px; margin-top: 10px; color: #999; font-size: 9px; }
@@ -132,9 +134,8 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
 </head>
 <body>
   <div class="header">
-    <h2>Shibumi</h2>
-    <p>Sistema de Inventario y Ventas</p>
-    <p>${sale.location?.name || "Tienda"}</p>
+    <h2>${sale.location?.name || "Tienda"}</h2>
+    <p>Nota de Venta — Sistema de Inventario y Ventas</p>
   </div>
 
   <div class="info">
@@ -167,21 +168,29 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
   <table>
     <thead>
       <tr>
-        <th>Cant.</th>
+        <th class="text-center">Cant.</th>
+        <th>Cód. Fábrica</th>
         <th>Descripción</th>
-        <th class="text-right">P. Unit.</th>
+        <th class="text-right">Precio 1/2</th>
         <th class="text-right">Subtotal</th>
       </tr>
     </thead>
     <tbody>
-      ${sale.items.map((item) => `
+      ${sale.items.map((item) => {
+        const p1 = Number(item.product?.price1 || 0);
+        const p2 = Number(item.product?.price2 || 0);
+        const up = Number(item.unitPrice);
+        const tier = p2 > 0 && p2 !== p1 && Math.abs(up - p2) <= Math.abs(up - p1) ? "P2" : "P1";
+        const codFab = item.product?.factoryCode || item.product?.itemCode || "—";
+        return `
       <tr>
         <td class="text-center">${item.quantity}</td>
+        <td><small style="color:#555;font-size:9px">${codFab}</small></td>
         <td>${item.product.name}<br><small style="color:#999">${item.product.brand} · ${item.product.itemCode}</small></td>
-        <td class="text-right">Bs. ${Number(item.unitPrice).toFixed(2)}</td>
+        <td class="text-right"><strong>${tier}</strong> Bs. ${up.toFixed(2)}</td>
         <td class="text-right">Bs. ${Number(item.subtotal).toFixed(2)}</td>
-      </tr>
-      `).join("")}
+      </tr>`;
+      }).join("")}
     </tbody>
   </table>
 
@@ -189,7 +198,7 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
     <div class="row"><span>Subtotal:</span><span>Bs. ${Number(sale.total).toFixed(2)}</span></div>
     ${totalReturned > 0 ? `<div class="row" style="color:#dc2626"><span>Devoluciones:</span><span>- Bs. ${totalReturned.toFixed(2)}</span></div>` : ""}
     <div class="row total-final"><span>TOTAL:</span><span>Bs. ${(Number(sale.total) - totalReturned).toFixed(2)}</span></div>
-    <div class="row"><span>Pagado:</span><span>Bs. ${totalPaid.toFixed(2)}</span></div>
+    <div class="row pagado"><span>TOTAL PAGADO:</span><span>Bs. ${totalPaid.toFixed(2)}</span></div>
     ${totalPaid < (Number(sale.total) - totalReturned) ? `<div class="row" style="color:#dc2626"><span>Pendiente:</span><span>Bs. ${((Number(sale.total) - totalReturned) - totalPaid).toFixed(2)}</span></div>` : ""}
   </div>
 
@@ -197,11 +206,20 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
     <strong>Métodos de pago:</strong> ${paymentMethods || "Sin pagos registrados"}
   </div>
 
+  ${sale.note ? `
+  <div class="note">
+    <strong>Nota / Recordatorio:</strong> ${sale.note}
+  </div>
+  ` : ""}
+
   <div class="footer">
     <p>¡Gracias por su compra!</p>
-    <p>Shibumi — Repuestos de calidad para tu vehículo</p>
+    <p>Repuestos de calidad — ${sale.location?.name || "Tienda"}</p>
     <div class="stamp">SOLD</div>
   </div>
+  <script>
+    window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 250); });
+  </script>
 </body>
 </html>`;
 
@@ -253,7 +271,7 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
 // POST — Crear venta con items, pagos y facturación
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { items, payments, customerId, customerData, requiereFactura, locationId, seller } = req.body;
+    const { items, payments, customerId, customerData, requiereFactura, locationId, seller, note } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
@@ -379,6 +397,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
           locationId: userLocationId,
           customerId: finalCustomerId,
           seller: finalSeller,
+          note: typeof note === "string" && note.trim() ? note.trim() : null,
           items: { create: saleItemsData },
           payments: {
             create: payments.map((p: any) => ({

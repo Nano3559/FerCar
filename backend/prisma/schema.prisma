@@ -134,6 +134,7 @@ model Sale {
   datosFactura  String?
   formaPago     String?
   origen        String?
+  note          String?
   envioExterior Boolean    @default(false)
   quienRecoge   String?
   telefono      String?
