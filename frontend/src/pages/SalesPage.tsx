@@ -267,6 +267,12 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [paraQuien, setParaQuien] = useState("");
   const [celularEnvio, setCelularEnvio] = useState("");
 
+  // Factura: se llena aparte porque puede ser el cliente, quien recoge, o un
+  // tercero. Son tres personas distintas que a veces coinciden.
+  const [nombreFactura, setNombreFactura] = useState("");
+  const [nitFactura, setNitFactura] = useState("");
+  const [celularFactura, setCelularFactura] = useState("");
+
   const [processing, setProcessing] = useState(false);
 
   // --- Add-to-cart modal ---
@@ -681,6 +687,7 @@ return [...prev, {
     setCustomerData({ name: "", nit: "", phone: "" });
     setSaleNote("");
     setParaDonde(""); setParaQuien(""); setCelularEnvio("");
+    setNombreFactura(""); setNitFactura(""); setCelularFactura("");
     setShowPayment(true);
   };
 
@@ -713,7 +720,18 @@ return [...prev, {
       return;
     }
 
-    if (requiereFactura && !customerData.name.trim()) {
+    // El cliente es quien compra y a quien se le cobra al final del dia, asi
+    // que en departamental siempre se necesita. La factura es aparte.
+    if (saleType === "DEPARTAMENTAL") {
+      if (!customerData.name.trim()) {
+        toast.error("Ingresa el nombre del cliente");
+        return;
+      }
+      if (requiereFactura && !nombreFactura.trim()) {
+        toast.error("Ingresa el nombre a facturar");
+        return;
+      }
+    } else if (requiereFactura && !customerData.name.trim()) {
       toast.error("Ingresa el nombre del cliente para la factura");
       return;
     }
@@ -743,7 +761,9 @@ return [...prev, {
         }
       }
 
-      if (requiereFactura && customerData.name.trim()) {
+      // El cliente se guarda siempre en departamental, sea con factura o sin
+      // ella. En local solo cuando se pidio factura, como antes.
+      if (customerData.name.trim() && (saleType === "DEPARTAMENTAL" || requiereFactura)) {
         payload.customerData = {
           name: customerData.name.trim(),
           nit: customerData.nit.trim() || null,
@@ -757,11 +777,10 @@ return [...prev, {
         payload.paraQuien = paraQuien.trim() || null;
         payload.lugarEntrega = paraDonde.trim() || null;
         payload.telefono = celularEnvio.trim() || null;
-        // La factura va a nombre del cliente, asi que toma sus mismos datos.
-        // El backend los ignora si no se pidio factura.
-        payload.datosFactura = customerData.nit.trim() || null;
-        payload.nitName = customerData.name.trim() || null;
-        payload.telefonoFactura = customerData.phone.trim() || null;
+        // Factura: se llena aparte. El backend la ignora si no se pidio.
+        payload.datosFactura = nitFactura.trim() || null;
+        payload.nitName = nombreFactura.trim() || null;
+        payload.telefonoFactura = celularFactura.trim() || null;
       }
 
       if (selectedLocationId) {
@@ -1639,6 +1658,9 @@ return [...prev, {
                     <span className="text-gray-400 text-sm shrink-0">Cliente</span>
                     <span className="text-sm font-medium text-foreground text-right break-words">
                       {customerData.name.trim() || "—"}
+                      {customerData.nit.trim() && (
+                        <span className="text-gray-400 font-normal"> · {customerData.nit.trim()}</span>
+                      )}
                     </span>
                   </div>
                 )}
@@ -1698,90 +1720,138 @@ return [...prev, {
                 </div>
               </div>
 
-              {/* Facturación */}
-              <div className="border-t border-dark-700/50 pt-5">
-                <button onClick={() => setRequiereFactura(!requiereFactura)} aria-expanded={requiereFactura}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
-                    requiereFactura
-                      ? "bg-primary-600/10 border-primary-600/30 text-primary-300"
-                      : "bg-dark-900/50 border-dark-700/30 text-gray-400 hover:border-primary-500/30"
-                  }`}>
-                  <div className="flex items-center gap-2">
-                    <FileText size={16} />
-                    <span className="text-sm font-medium">Requiere Factura</span>
+              {/* 1. Cliente: quien compra. En departamental siempre se pide,
+                  porque la venta se cobra al final del dia. */}
+              {(saleType === "DEPARTAMENTAL" || requiereFactura) && (
+                <div className="border-t border-dark-700/50 pt-5 space-y-3">
+                  <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
+                    Datos de Cliente
+                  </h4>
+                  <div>
+                    <label htmlFor="venta-nombre" className="block text-xs text-gray-500 mb-1">
+                      Nombre / Razón Social {saleType === "DEPARTAMENTAL" ? "*" : ""}
+                    </label>
+                    <input id="venta-nombre" type="text" value={customerData.name}
+                      onChange={(e) => setCustomerData((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="Nombre del cliente"
+                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                   </div>
-                  <ChevronDown size={16} className={`transition-transform ${requiereFactura ? "rotate-180" : ""}`} />
-                </button>
-              </div>
-
-              {/* Envio y factura (solo departamental) */}
-              {saleType === "DEPARTAMENTAL" && (
-                <>
-                  {/* Quiien recoge: normalmente no es el cliente */}
-                  <div className="border-t border-dark-700/50 pt-5 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
-                        Datos de envío
-                      </h4>
-                      <p className="text-xs text-gray-600 mt-0.5">
-                        De quien va a recoger. Puede ser otra persona.
-                      </p>
-                    </div>
-                    <div>
-                      <label htmlFor="venta-paraquien" className="block text-xs text-gray-500 mb-1">Nombre de quien recibe</label>
-                      <input id="venta-paraquien" type="text" value={paraQuien}
-                        onChange={(e) => setParaQuien(e.target.value)}
-                        placeholder="Nombre de quien recoge"
+                      <label htmlFor="venta-nit" className="block text-xs text-gray-500 mb-1">Número / CI / NIT</label>
+                      <input id="venta-nit" type="text" value={customerData.nit}
+                        onChange={(e) => setCustomerData((prev) => ({ ...prev, nit: e.target.value }))}
+                        placeholder="Número de CI o NIT"
                         className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                     </div>
                     <div>
-                      <label htmlFor="venta-paradone" className="block text-xs text-gray-500 mb-1">A dónde se envía</label>
-                      <input id="venta-paradone" type="text" value={paraDonde}
-                        onChange={(e) => setParaDonde(e.target.value)}
-                        placeholder="Dirección o lugar de entrega"
-                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                    </div>
-                    <div>
-                      <label htmlFor="venta-celenvio" className="block text-xs text-gray-500 mb-1">Celular de quien recibe</label>
-                      <input id="venta-celenvio" type="tel" value={celularEnvio}
-                        onChange={(e) => setCelularEnvio(e.target.value)}
+                      <label htmlFor="venta-cel" className="block text-xs text-gray-500 mb-1">Celular</label>
+                      <input id="venta-cel" type="tel" value={customerData.phone}
+                        onChange={(e) => setCustomerData((prev) => ({ ...prev, phone: e.target.value }))}
                         placeholder="Celular"
                         className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                     </div>
                   </div>
+                </div>
+              )}
 
-                  {/* Datos del cliente: una sola vez, y es el nombre de quien compra */}
+              {/* 2. Envio: solo departamental, porque la venta local se entrega
+                  en el mostrador. */}
+              {saleType === "DEPARTAMENTAL" && (
+                <div className="border-t border-dark-700/50 pt-5 space-y-3">
+                  <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
+                    Datos de envío
+                  </h4>
+                  <div>
+                    <label htmlFor="venta-paraquien" className="block text-xs text-gray-500 mb-1">Nombre de quien recibe</label>
+                    <input id="venta-paraquien" type="text" value={paraQuien}
+                      onChange={(e) => setParaQuien(e.target.value)}
+                      placeholder="Nombre de quien recoge"
+                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                  </div>
+                  <div>
+                    <label htmlFor="venta-paradone" className="block text-xs text-gray-500 mb-1">A dónde se envía</label>
+                    <input id="venta-paradone" type="text" value={paraDonde}
+                      onChange={(e) => setParaDonde(e.target.value)}
+                      placeholder="Dirección o lugar de entrega"
+                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                  </div>
+                  <div>
+                    <label htmlFor="venta-celenvio" className="block text-xs text-gray-500 mb-1">Celular de quien recibe</label>
+                    <input id="venta-celenvio" type="tel" value={celularEnvio}
+                      onChange={(e) => setCelularEnvio(e.target.value)}
+                      placeholder="Celular"
+                      className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Factura: al final y solo si la piden. Puede ser el cliente,
+                  quien recoge, o un tercero. */}
+              {saleType === "DEPARTAMENTAL" && (
+                <div className="border-t border-dark-700/50 pt-5 space-y-3">
+                  <button onClick={() => setRequiereFactura(!requiereFactura)} aria-expanded={requiereFactura}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
+                      requiereFactura
+                        ? "bg-primary-600/10 border-primary-600/30 text-primary-300"
+                        : "bg-dark-900/50 border-dark-700/30 text-gray-400 hover:border-primary-500/30"
+                    }`}>
+                    <div className="flex items-center gap-2">
+                      <FileText size={16} />
+                      <span className="text-sm font-medium">Requiere Factura</span>
+                    </div>
+                    <ChevronDown size={16} className={`transition-transform ${requiereFactura ? "rotate-180" : ""}`} />
+                  </button>
+
                   {requiereFactura && (
-                    <div className="border-t border-dark-700/50 pt-5 space-y-3">
+                    <div className="space-y-3">
                       <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
-                        Datos de Cliente
+                        Datos de factura
                       </h4>
                       <div>
                         <label htmlFor="venta-nombrefact" className="block text-xs text-gray-500 mb-1">Nombre / Razón social *</label>
-                        <input id="venta-nombrefact" type="text" value={customerData.name}
-                          onChange={(e) => setCustomerData((prev) => ({ ...prev, name: e.target.value }))}
-                          placeholder="Nombre del cliente"
+                        <input id="venta-nombrefact" type="text" value={nombreFactura}
+                          onChange={(e) => setNombreFactura(e.target.value)}
+                          placeholder="Nombre a facturar"
                           className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">CI / NIT / Carnet</label>
-                          <input id="venta-nitfact" type="text" value={customerData.nit}
-                            onChange={(e) => setCustomerData((prev) => ({ ...prev, nit: e.target.value }))}
-                            placeholder="CI, NIT o carnet"
+                          <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">NIT / Carnet</label>
+                          <input id="venta-nitfact" type="text" value={nitFactura}
+                            onChange={(e) => setNitFactura(e.target.value)}
+                            placeholder="NIT o CI"
                             className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                         </div>
                         <div>
                           <label htmlFor="venta-celfact" className="block text-xs text-gray-500 mb-1">Celular</label>
-                          <input id="venta-celfact" type="tel" value={customerData.phone}
-                            onChange={(e) => setCustomerData((prev) => ({ ...prev, phone: e.target.value }))}
+                          <input id="venta-celfact" type="tel" value={celularFactura}
+                            onChange={(e) => setCelularFactura(e.target.value)}
                             placeholder="Celular"
                             className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                         </div>
                       </div>
                     </div>
                   )}
-                </>
+                </div>
+              )}
+
+              {/* En local el cliente solo se pide si lleva factura. */}
+              {saleType !== "DEPARTAMENTAL" && (
+                <div className="border-t border-dark-700/50 pt-5">
+                  <button onClick={() => setRequiereFactura(!requiereFactura)} aria-expanded={requiereFactura}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
+                      requiereFactura
+                        ? "bg-primary-600/10 border-primary-600/30 text-primary-300"
+                        : "bg-dark-900/50 border-dark-700/30 text-gray-400 hover:border-primary-500/30"
+                    }`}>
+                    <div className="flex items-center gap-2">
+                      <FileText size={16} />
+                      <span className="text-sm font-medium">Requiere Factura</span>
+                    </div>
+                    <ChevronDown size={16} className={`transition-transform ${requiereFactura ? "rotate-180" : ""}`} />
+                  </button>
+                </div>
               )}
 
               {/* Nota / Recordatorio */}
