@@ -101,15 +101,6 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   // Tiendas donde se puede haber registrado una venta (filtro del historial).
   const histStores = locations.filter((l) => l.type === "TIENDA");
 
-  // El filtro "Ubicacion" y el selector de tienda de arriba son la misma
-  // decision (donde se cobra), asi que el texto del filtro se refleja solo
-  // cuando la tienda cambia desde el otro lado.
-  useEffect(() => {
-    if (!locations.length) return;
-    const found = locations.find((l) => l.id === selectedLocationId);
-    setLocationName(found ? found.name : "");
-  }, [selectedLocationId, locations]);
-
   // --- Seller ---
   // El vendedor de la venta es siempre la cuenta con la que se entro, asi que
   // aqui solo se carga el listado para el filtro del historial.
@@ -136,8 +127,6 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
 
   // --- Search (igual que inventario) ---
   const [search, setSearch] = useState("");
-  const [nameFilter, setNameFilter] = useState("");
-  const [itemCodeFilter, setItemCodeFilter] = useState("");
   const [manufacturer, setManufacturer] = useState("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
@@ -149,9 +138,6 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [detailFilter, setDetailFilter] = useState("");
   const [supplierName, setSupplierName] = useState("");
   const [supplierId, setSupplierId] = useState("");
-  // El filtro de Ubicacion escribe en selectedLocationId, que es la misma
-  // tienda donde se cobra: el stock que se muestra tiene que ser el de ahi.
-  const [locationName, setLocationName] = useState("");
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([]);
   const [showFilters, setShowFilters] = useState(true);
   const [filters, setFilters] = useState<ProductFilters>({
@@ -192,8 +178,6 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     const t = setTimeout(() => {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
-      if (nameFilter) params.set("name", nameFilter);
-      if (itemCodeFilter) params.set("itemCode", itemCodeFilter);
       if (brand) params.set("brand", brand);
       if (manufacturer) params.set("manufacturer", manufacturer);
       if (model) params.set("model", model);
@@ -218,19 +202,19 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     }, 300);
     setSearching(true);
     return () => { controller.abort(); clearTimeout(t); };
-  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId, searchPage, isVendedor, allowedCategories, activeTab]);
+  }, [search, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId, searchPage, isVendedor, allowedCategories, activeTab]);
 
-  useEffect(() => { setSearchPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId]);
+  useEffect(() => { setSearchPage(1); }, [search, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId]);
 
   const clearSearchFilters = () => {
-    setNameFilter(""); setItemCodeFilter(""); setManufacturer(""); setBrand(""); setModel(""); setYear("");
+    setManufacturer(""); setBrand(""); setModel(""); setYear("");
     setCategoryName(""); setCategoryId(""); setOemCode(""); setFactoryCode(""); setDetailFilter("");
-    // No se toca la tienda: es donde se cobra, no un filtro de busqueda.
     setSupplierName(""); setSupplierId("");
+    // No se toca la tienda: es donde se cobra, no un filtro de busqueda.
     setShowFilters(false);
   };
 
-  const hasActiveSearchFilters = !!(nameFilter || itemCodeFilter || manufacturer || brand || model || year || categoryId || oemCode || factoryCode || detailFilter || supplierId);
+  const hasActiveSearchFilters = !!(manufacturer || brand || model || year || categoryId || oemCode || factoryCode || detailFilter || supplierId);
 
   // --- Carts (uno por cliente) ---
   const [carts, setCarts] = useState<Cart[]>(() => [{ id: "c1", label: "Carrito 1", items: [] }]);
@@ -1018,23 +1002,15 @@ return [...prev, {
             </div>
 
             {showFilters && (
-              // Mismo orden que los filtros de Inventario: si ya se conoce
-              // una pantalla, los campos caen donde uno los busca.
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-4 pt-4 border-t border-dark-700/50">
+                <Autocomplete value={manufacturer} onChange={setManufacturer} suggestions={filters.manufacturers}
+                  placeholder="Todos los fabricantes" label="Fabricante" />
                 <Autocomplete value={supplierName} onChange={(v) => {
                   setSupplierName(v);
                   const found = suppliers.find((s) => s.name === v);
                   setSupplierId(found ? String(found.id) : "");
                 }}
                   suggestions={suppliers.map((s) => s.name)} placeholder="Todos los proveedores" label="Proveedor" />
-                <Autocomplete value={itemCodeFilter} onChange={setItemCodeFilter} suggestions={filters.itemCodes || []}
-                  placeholder="Escribe el código..." label="Código (Item)" />
-                <Autocomplete value={manufacturer} onChange={setManufacturer} suggestions={filters.manufacturers}
-                  placeholder="Todos los fabricantes" label="Fabricante" />
-                <Autocomplete value={categoryName} onChange={(v) => { setCategoryName(v); const found = filters.categories.find((c) => c.name === v); setCategoryId(found ? String(found.id) : ""); }}
-                  suggestions={filters.categories.map((c) => c.name)} placeholder="Todas las categorías" label="Categoría" />
-                <Autocomplete value={nameFilter} onChange={setNameFilter} suggestions={filters.names || []}
-                  placeholder="Escribe el nombre..." label="Producto (nombre)" />
                 <Autocomplete value={brand} onChange={setBrand} suggestions={filters.brands}
                   placeholder="Todas las marcas" label="Marca" />
                 <Autocomplete value={model} onChange={setModel} suggestions={filters.models || []}
@@ -1047,12 +1023,8 @@ return [...prev, {
                   placeholder="Todos los OEM" label="Cód. OEM" />
                 <Autocomplete value={factoryCode} onChange={setFactoryCode} suggestions={filters.factoryCodes || []}
                   placeholder="Todos los códigos de fábrica" label="Cód. Fábrica" />
-                <Autocomplete value={locationName} onChange={(v) => {
-                  setLocationName(v);
-                  const found = locations.find((l) => l.name === v);
-                  setSelectedLocationId(found ? found.id : "");
-                }}
-                  suggestions={locations.map((l) => l.name)} placeholder="Todas las ubicaciones" label="Ubicación" />
+                <Autocomplete value={categoryName} onChange={(v) => { setCategoryName(v); const found = filters.categories.find((c) => c.name === v); setCategoryId(found ? String(found.id) : ""); }}
+                  suggestions={filters.categories.map((c) => c.name)} placeholder="Todas las categorías" label="Categoría" />
               </div>
             )}
 
