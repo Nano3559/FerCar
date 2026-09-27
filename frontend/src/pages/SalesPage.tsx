@@ -300,20 +300,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     if (column === "Producto") return <td key={column} className="px-5 py-3"><p className="text-foreground font-medium text-sm">{c.name}</p><p className="text-xs text-gray-500">{c.brand} · {c.itemCode}</p></td>;
     if (column === "Precio") return (
       <td key={column} className="px-4 py-3 text-right">
-        {c.price2 > 0 && c.price2 !== c.price1 ? (
-          <div className="flex items-center justify-end gap-1">
-            <button
-              onClick={() => changePriceTier(c.productId, 1, String(c.price1), String(c.price2))}
-              className={`px-2 py-1 rounded-lg text-xs font-medium transition-all ${c.priceTier === 1 ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground"}`}
-            >Mayorista</button>
-            <button
-              onClick={() => changePriceTier(c.productId, 2, String(c.price1), String(c.price2))}
-              className={`px-2 py-1 rounded-lg text-xs font-medium transition-all ${c.priceTier === 2 ? "bg-primary-600 text-white" : "bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground"}`}
-            >Minorista</button>
-          </div>
-        ) : (
-          <span className="text-gray-300">{formatBs(c.unitPrice)}</span>
-        )}
+        <span className="text-gray-300">{formatBs(c.unitPrice)}</span>
       </td>
     );
     if (column === "Cantidad") return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1.5"><button onClick={() => updateQuantity(c.productId, c.quantity - 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Minus size={14} /></button><span className="w-10 text-center text-foreground text-sm font-medium">{c.quantity}</span><button onClick={() => updateQuantity(c.productId, c.quantity + 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Plus size={14} /></button></div><p className="text-center text-xs text-gray-600 mt-0.5">disp: {c.availableStock}</p></td>;
@@ -461,14 +448,6 @@ return [...prev, {
         return { ...c, quantity: c.availableStock };
       }
       return { ...c, quantity: newQty };
-    }));
-  };
-
-  const changePriceTier = (productId: number, tier: 1 | 2, price1: string, price2: string) => {
-    updateActiveCart((prev) => prev.map((c) => {
-      if (c.productId !== productId) return c;
-      const price = tier === 2 && Number(price2) > 0 ? Number(price2) : Number(price1);
-      return { ...c, priceTier: tier, unitPrice: price };
     }));
   };
 
