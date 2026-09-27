@@ -98,6 +98,9 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     }).catch(() => {});
   }, [isTienda, user?.locationId]);
 
+  // Tiendas donde se puede haber registrado una venta (filtro del historial).
+  const histStores = locations.filter((l) => l.type === "TIENDA");
+
   // --- Seller ---
   // El vendedor de la venta es siempre la cuenta con la que se entro, asi que
   // aqui solo se carga el listado para el filtro del historial.
@@ -107,7 +110,14 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     if (!isTienda && isAdmin) {
       api.get("/users").then((r) => {
         const users = Array.isArray(r.data) ? r.data : r.data.users || [];
-        setVendedores(users.filter((u: any) => u.role === "TIENDA").map((u: any) => ({ id: u.id, name: u.name, locationId: u.locationId })));
+        // ADMIN tambien vende: como el vendedor es la cuenta con la que se
+        // entra, dejar fuera a los admin escondia sus propias ventas del
+        // filtro. Se listan inactivos a proposito: sus ventas son historico.
+        setVendedores(
+          users
+            .filter((u: any) => u.role === "TIENDA" || u.role === "ADMIN")
+            .map((u: any) => ({ id: u.id, name: u.name, locationId: u.locationId }))
+        );
       }).catch(() => {});
     }
   }, [isAdmin, isTienda]);
@@ -727,6 +737,9 @@ return [...prev, {
 
   // ==================== HISTORY ====================
   const [histSeller, setHistSeller] = useState("");
+  // Filtro de tienda del historial. Es aparte del selector de tienda de la
+  // venta: ese elige donde se cobra, este solo acota que ventas se miran.
+  const [histLocation, setHistLocation] = useState("");
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -736,7 +749,10 @@ return [...prev, {
       if (histDateTo) params.set("endDate", histDateTo);
       if (histSeller) params.set("seller", histSeller);
       if (saleType !== "NORMAL") params.set("type", saleType);
+      // El backend ya fuerza la tienda del usuario TIENDA; enviar la suya
+      // seria redundante y para ADMIN es justamente el filtro que se pide.
       if (isTienda && user?.locationId) params.set("locationId", String(user.locationId));
+      else if (histLocation) params.set("locationId", histLocation);
 
       const res = await api.get(`/sales?${params.toString()}`);
       setSales(res.data.sales);
@@ -744,13 +760,13 @@ return [...prev, {
       setHistPages(res.data.pagination.pages);
     } catch { toast.error("Error al cargar historial"); }
     finally { setHistLoading(false); }
-  }, [histPage, histDateFrom, histDateTo, histSeller, isTienda, user?.locationId]);
+  }, [histPage, histDateFrom, histDateTo, histSeller, histLocation, isTienda, user?.locationId]);
 
   useEffect(() => {
     if (activeTab === "historial") fetchHistory();
   }, [activeTab, fetchHistory]);
 
-  useEffect(() => { if (activeTab === "historial") setHistPage(1); }, [histDateFrom, histDateTo, histSeller, activeTab]);
+  useEffect(() => { if (activeTab === "historial") setHistPage(1); }, [histDateFrom, histDateTo, histSeller, histLocation, activeTab]);
 
   // ==================== RENDER ====================
   const pmLabel: Record<string, string> = { EFECTIVO: "Efectivo", QR: "QR", TRANSFERENCIA: "Transferencia", CREDITO: "Crédito" };
@@ -1267,20 +1283,35 @@ return [...prev, {
                   className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
               </div>
               <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">Vendedor</label>
+                  <label className="block text-xs text-gray-500 mb-1" htmlFor="hist-seller">Vendedor</label>
                   <div className="relative">
-                    <select value={histSeller} onChange={(e) => setHistSeller(e.target.value)}
+                    <select id="hist-seller" value={histSeller} onChange={(e) => setHistSeller(e.target.value)}
                       className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                       <option value="">Todos</option>
                       {isTienda
                         ? (user?.name ? <option value={user.name}>{user.name}</option> : null)
-                        : vendedores.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+                        // El filtro va por nombre, asi que dos cuentas con el
+                        // mismo nombre se muestran una sola vez.
+                        : [...new Map(vendedores.map((v) => [v.name, v])).values()].map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
                     </select>
                     <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                   </div>
                 </div>
-              {(histDateFrom || histDateTo || histSeller) && (
-                <button onClick={() => { setHistDateFrom(""); setHistDateTo(""); setHistSeller(""); }}
+              {!isTienda && (
+                <div className="flex-1">
+                  <label className="block text-xs text-gray-500 mb-1" htmlFor="hist-location">Tienda</label>
+                  <div className="relative">
+                    <select id="hist-location" value={histLocation} onChange={(e) => setHistLocation(e.target.value)}
+                      className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                      <option value="">Todas</option>
+                      {histStores.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  </div>
+                </div>
+              )}
+              {(histDateFrom || histDateTo || histSeller || histLocation) && (
+                <button onClick={() => { setHistDateFrom(""); setHistDateTo(""); setHistSeller(""); setHistLocation(""); }}
                   className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl border border-dark-600/50 transition-all">
                   Limpiar
                 </button>

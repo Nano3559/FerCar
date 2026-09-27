@@ -33,9 +33,12 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 
     const user = req.user!;
     if (user.role === "TIENDA") {
+      // El filtro de tienda de la URL no puede sacar a un vendedor de su tienda.
       where.locationId = user.locationId;
     } else if (locationId && typeof locationId === "string") {
-      where.locationId = Number(locationId);
+      const loc = Number(locationId);
+      // Number("abc") es NaN y Prisma lo rechaza con un 500.
+      if (Number.isInteger(loc) && loc > 0) where.locationId = loc;
     }
 
     const skip = (Number(page) - 1) * Number(limit);
