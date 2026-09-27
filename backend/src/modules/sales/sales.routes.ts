@@ -271,7 +271,9 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
 // POST — Crear venta con items, pagos y facturación
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { items, payments, customerId, customerData, requiereFactura, locationId, seller, note, type } = req.body;
+    // El "seller" del body se acepta por compatibilidad con clientes viejos,
+    // pero el vendedor real es siempre la cuenta autenticada (ver mas abajo).
+    const { items, payments, customerId, customerData, requiereFactura, locationId, note, type } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
@@ -311,25 +313,14 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Vendedor:
-    // - TIENDA: la venta siempre se registra a nombre de la cuenta que la realiza.
-    // - ADMIN: puede elegir cualquier vendedor de la tienda (o libre).
-    let finalSeller = seller && typeof seller === "string" ? seller : null;
-
-    if (user.role === "TIENDA") {
-      const tiendaUser = await prisma.user.findUnique({ where: { id: user.userId }, select: { name: true } });
-      finalSeller = tiendaUser?.name || finalSeller;
-    }
-
-    // C2: validar que el vendedor pertenezca a la tienda, solo si es un usuario registrado.
-    if (finalSeller) {
-      const sellerUser = await prisma.user.findFirst({ where: { name: finalSeller } });
-      if (sellerUser) {
-        if (sellerUser.locationId !== userLocationId) {
-          return res.status(400).json({ message: `El vendedor "${finalSeller}" no pertenece a esta tienda` });
-        }
-      }
-    }
+    // Vendedor: la venta se registra SIEMPRE a nombre de la cuenta que la
+    // realiza. El vendedor viaja en el body del cliente, asi que se ignora por
+    // completo: nadie puede registrar una venta a nombre de otro usuario.
+    const accountUser = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { name: true },
+    });
+    const finalSeller = accountUser?.name ?? null;
 
     const validMethods = ["EFECTIVO", "QR", "TRANSFERENCIA", "CREDITO"];
     for (const p of payments) {

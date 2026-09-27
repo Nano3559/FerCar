@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
   FileText, RefreshCw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  Check, Clock, MapPin, User, Filter, Printer, Send,
+  Check, Clock, MapPin, User, Filter, Printer, Send, Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import axios from "axios";
@@ -96,7 +96,8 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   }, [isTienda, user?.locationId]);
 
   // --- Seller ---
-  const [selectedSeller, setSelectedSeller] = useState<string>(isTienda ? user?.name || "" : "");
+  // El vendedor de la venta es siempre la cuenta con la que se entro, asi que
+  // aqui solo se carga el listado para el filtro del historial.
   const [vendedores, setVendedores] = useState<{ id: number; name: string; locationId: number | null }[]>([]);
 
   useEffect(() => {
@@ -192,8 +193,6 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   };
 
   const hasActiveSearchFilters = !!(nameFilter || itemCodeFilter || manufacturer || brand || model || year || categoryId || oemCode || factoryCode || detailFilter);
-
-  const vendedoresDisponibles = vendedores.filter((v) => !selectedLocationId || v.locationId === selectedLocationId);
 
   // --- Carts (uno por cliente) ---
   const [carts, setCarts] = useState<Cart[]>(() => [{ id: "c1", label: "Carrito 1", items: [] }]);
@@ -444,7 +443,7 @@ return [...prev, {
   // de que tienda es, aunque el admin no haya elegido ninguna.
   const quoteLocationId = isTienda ? user?.locationId ?? selectedLocationId : selectedLocationId;
   const quoteStoreName = locations.find((l) => l.id === quoteLocationId)?.name || "";
-  const quoteSeller = (isTienda ? user?.name || "" : selectedSeller).trim();
+  const quoteSeller = (user?.name || "").trim();
   const quoteClient = /^Carrito \d+$/.test(activeCart.label) ? "" : activeCart.label.trim();
 
   // ACCIONES: ver ubicaciones donde está el producto
@@ -594,9 +593,6 @@ return [...prev, {
       if (selectedLocationId) {
         payload.locationId = selectedLocationId;
       }
-      if (selectedSeller) {
-        payload.seller = selectedSeller;
-      }
       if (saleNote.trim()) {
         payload.note = saleNote.trim();
       }
@@ -619,7 +615,6 @@ return [...prev, {
       setShowPayment(false);
       setShowConfirmed(true);
       updateActiveCart(() => []);
-      setSelectedSeller("");
       setActiveTab("venta");
       toast.success("¡Venta registrada exitosamente!");
     } catch (err: any) {
@@ -791,7 +786,7 @@ return [...prev, {
       {/* ============ PRODUCTOS (búsqueda) ============ */}
       {activeTab === "venta" && (
         <>
-          {/* Location + Seller selector */}
+          {/* Tienda + vendedor fijo (la cuenta con la que se entro) */}
           <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 text-sm text-gray-400 shrink-0">
@@ -821,20 +816,16 @@ return [...prev, {
                 <User size={16} className="text-primary-400" />
                 <span>Vendedor:</span>
               </div>
-              {isAdmin ? (
-                <div className="relative flex-1">
-                  <select value={selectedSeller} onChange={(e) => setSelectedSeller(e.target.value)}
-                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
-                    <option value="">Seleccionar vendedor</option>
-                    {vendedoresDisponibles.map((v) => (
-                      <option key={v.id} value={v.name}>{v.name}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                </div>
-              ) : (
-                <span className="text-foreground text-sm font-medium">{user?.name || "Cargando..."}</span>
-              )}
+              {/* El vendedor es la cuenta con la que se entro: no se puede cambiar. */}
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="text-foreground text-sm font-medium truncate">{user?.name || "Cargando..."}</span>
+                <span
+                  title="La venta se registra a nombre de tu cuenta"
+                  className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-dark-900/60 border border-dark-600/50 px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400"
+                >
+                  <Lock size={10} /> Tu cuenta
+                </span>
+              </div>
             </div>
 
             <div className="flex items-center gap-3 sm:col-span-2">
