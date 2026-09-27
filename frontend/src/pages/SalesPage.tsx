@@ -96,6 +96,9 @@ export default function SalesPage() {
     }
   }, [isAdmin, isTienda]);
 
+  // --- Views (pestañas) ---
+  const [activeTab, setActiveTab] = useState<"venta" | "carrito" | "historial">("venta");
+
   // --- Search (igual que inventario) ---
   const [search, setSearch] = useState("");
   const [nameFilter, setNameFilter] = useState("");
@@ -136,6 +139,7 @@ export default function SalesPage() {
   // (mismo patrón que inventario). Muestra todos los productos, tengan o no
   // stock en la tienda seleccionada (includeZeroStock).
   useEffect(() => {
+    if (activeTab !== "venta") return;
     const controller = new AbortController();
     const t = setTimeout(() => {
       const params = new URLSearchParams();
@@ -165,7 +169,7 @@ export default function SalesPage() {
     }, 300);
     setSearching(true);
     return () => { controller.abort(); clearTimeout(t); };
-  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, selectedLocationId, searchPage, isVendedor, allowedCategories]);
+  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, selectedLocationId, searchPage, isVendedor, allowedCategories, activeTab]);
 
   useEffect(() => { setSearchPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, selectedLocationId]);
 
@@ -188,8 +192,6 @@ export default function SalesPage() {
   const [requiereFactura, setRequiereFactura] = useState(false);
   const [customerData, setCustomerData] = useState<CustomerData>({ name: "", nit: "", phone: "" });
   const [processing, setProcessing] = useState(false);
-
-  const [activeTab, setActiveTab] = useState<"venta" | "carrito" | "historial">("venta");
 
   // --- Add-to-cart modal ---
   const [showAddCart, setShowAddCart] = useState(false);
@@ -719,7 +721,9 @@ export default function SalesPage() {
             ) : searchResults.length === 0 ? (
               <div className="py-10 text-center">
                 <Search size={40} className="text-gray-600 mx-auto mb-3" />
-                <p className="text-gray-400 text-sm">Busca un producto o activa los filtros para ver resultados</p>
+                <p className="text-gray-400 text-sm">
+                  {search || hasActiveSearchFilters ? "No se encontraron productos con esos criterios" : "Cargando productos..."}
+                </p>
               </div>
             ) : (
               <>
