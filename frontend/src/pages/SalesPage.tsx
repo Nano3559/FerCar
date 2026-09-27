@@ -266,9 +266,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [paraDonde, setParaDonde] = useState("");
   const [paraQuien, setParaQuien] = useState("");
   const [celularEnvio, setCelularEnvio] = useState("");
-  const [nitFactura, setNitFactura] = useState("");
-  const [nombreFactura, setNombreFactura] = useState("");
-  const [celularFactura, setCelularFactura] = useState("");
+
   const [processing, setProcessing] = useState(false);
 
   // --- Add-to-cart modal ---
@@ -683,7 +681,6 @@ return [...prev, {
     setCustomerData({ name: "", nit: "", phone: "" });
     setSaleNote("");
     setParaDonde(""); setParaQuien(""); setCelularEnvio("");
-    setNitFactura(""); setNombreFactura(""); setCelularFactura("");
     setShowPayment(true);
   };
 
@@ -760,11 +757,11 @@ return [...prev, {
         payload.paraQuien = paraQuien.trim() || null;
         payload.lugarEntrega = paraDonde.trim() || null;
         payload.telefono = celularEnvio.trim() || null;
-        // Factura: a veces es un tercero. El backend lo ignora si no se pidio
-        // factura, asi que se manda igual sin conditionally.
-        payload.datosFactura = nitFactura.trim() || null;
-        payload.nitName = nombreFactura.trim() || null;
-        payload.telefonoFactura = celularFactura.trim() || null;
+        // La factura va a nombre del cliente, asi que toma sus mismos datos.
+        // El backend los ignora si no se pidio factura.
+        payload.datosFactura = customerData.nit.trim() || null;
+        payload.nitName = customerData.name.trim() || null;
+        payload.telefonoFactura = customerData.phone.trim() || null;
       }
 
       if (selectedLocationId) {
@@ -1637,6 +1634,14 @@ return [...prev, {
             <div className="p-5 space-y-5">
               {/* Resumen */}
               <div className="bg-dark-900/50 border border-dark-700/30 rounded-xl p-4 space-y-2">
+                {saleType === "DEPARTAMENTAL" && (
+                  <div className="flex items-start justify-between gap-3 pb-2 mb-1 border-b border-dark-700/30">
+                    <span className="text-gray-400 text-sm shrink-0">Cliente</span>
+                    <span className="text-sm font-medium text-foreground text-right break-words">
+                      {customerData.name.trim() || "—"}
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400 text-sm">Total a cobrar</span>
                   <span className="text-xl font-bold text-green-400">{formatBs(cartTotal)}</span>
@@ -1707,37 +1712,6 @@ return [...prev, {
                   </div>
                   <ChevronDown size={16} className={`transition-transform ${requiereFactura ? "rotate-180" : ""}`} />
                 </button>
-
-                {requiereFactura && (
-                  <div className="mt-3 space-y-3 pl-1">
-                    <p className="text-xs text-gray-600">
-                      Datos de quien compra. Los de quien recoge van en “Envío”.
-                    </p>
-                    <div>
-                      <label htmlFor="venta-nombre" className="block text-xs text-gray-500 mb-1">Nombre / Razón Social *</label>
-                      <input id="venta-nombre" type="text" value={customerData.name}
-                        onChange={(e) => setCustomerData((prev) => ({ ...prev, name: e.target.value }))}
-                        placeholder="Nombre del cliente"
-                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor="venta-nit" className="block text-xs text-gray-500 mb-1">CI / NIT</label>
-                        <input id="venta-nit" type="text" value={customerData.nit}
-                          onChange={(e) => setCustomerData((prev) => ({ ...prev, nit: e.target.value }))}
-                          placeholder="CI o NIT"
-                          className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                      </div>
-                      <div>
-                        <label htmlFor="venta-cel" className="block text-xs text-gray-500 mb-1">Celular</label>
-                        <input id="venta-cel" type="text" value={customerData.phone}
-                          onChange={(e) => setCustomerData((prev) => ({ ...prev, phone: e.target.value }))}
-                          placeholder="Celular"
-                          className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Envio y factura (solo departamental) */}
@@ -1776,36 +1750,31 @@ return [...prev, {
                     </div>
                   </div>
 
-                  {/* A quien se factura: a veces es un tercero distinto */}
+                  {/* Datos del cliente: una sola vez, y es el nombre de quien compra */}
                   {requiereFactura && (
                     <div className="border-t border-dark-700/50 pt-5 space-y-3">
+                      <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
+                        Datos de Cliente
+                      </h4>
                       <div>
-                        <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
-                          Datos de factura
-                        </h4>
-                        <p className="text-xs text-gray-600 mt-0.5">
-                          A nombre de quién se emite. Si es el cliente o quien recoge, repite sus datos.
-                        </p>
-                      </div>
-                      <div>
-                        <label htmlFor="venta-nombrefact" className="block text-xs text-gray-500 mb-1">Nombre / Razón social</label>
-                        <input id="venta-nombrefact" type="text" value={nombreFactura}
-                          onChange={(e) => setNombreFactura(e.target.value)}
-                          placeholder="Nombre a facturar"
+                        <label htmlFor="venta-nombrefact" className="block text-xs text-gray-500 mb-1">Nombre / Razón social *</label>
+                        <input id="venta-nombrefact" type="text" value={customerData.name}
+                          onChange={(e) => setCustomerData((prev) => ({ ...prev, name: e.target.value }))}
+                          placeholder="Nombre del cliente"
                           className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">NIT / Carnet</label>
-                          <input id="venta-nitfact" type="text" value={nitFactura}
-                            onChange={(e) => setNitFactura(e.target.value)}
-                            placeholder="NIT o CI"
+                          <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">CI / NIT / Carnet</label>
+                          <input id="venta-nitfact" type="text" value={customerData.nit}
+                            onChange={(e) => setCustomerData((prev) => ({ ...prev, nit: e.target.value }))}
+                            placeholder="CI, NIT o carnet"
                             className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                         </div>
                         <div>
-                          <label htmlFor="vela-celfact" className="block text-xs text-gray-500 mb-1">Celular</label>
-                          <input id="vela-celfact" type="tel" value={celularFactura}
-                            onChange={(e) => setCelularFactura(e.target.value)}
+                          <label htmlFor="venta-celfact" className="block text-xs text-gray-500 mb-1">Celular</label>
+                          <input id="venta-celfact" type="tel" value={customerData.phone}
+                            onChange={(e) => setCustomerData((prev) => ({ ...prev, phone: e.target.value }))}
                             placeholder="Celular"
                             className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                         </div>
