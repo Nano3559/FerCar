@@ -13,6 +13,9 @@ import Autocomplete from "../components/ui/Autocomplete";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
+import { saleCode } from "../utils/documentCodes";
+import { downloadElementAsPdf } from "../utils/quotePdf";
+import QuoteDocument from "../components/quotes/QuoteDocument";
 
 const HISTORY_COLUMNS = ["#", "Fecha", "Cliente", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos"];
 const CART_COLUMNS = ["Producto", "Precio", "Cantidad", "Subtotal", "Eliminar"];
@@ -250,6 +253,9 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
 
   // --- Quotation ---
   const [showQuote, setShowQuote] = useState(false);
+  // Ultima cotizacion guardada desde este carrito. Si despues se cobra la
+  // venta, el backend la marca como CONVERTIDA y las dos quedan trazadas.
+  const [savedQuote, setSavedQuote] = useState<{ id: number; code: string; total: number } | null>(null);
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [histLoading, setHistLoading] = useState(false);
   const [histPage, setHistPage] = useState(1);
@@ -294,32 +300,6 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
 
   const formatBs = (v: number) =>
     `Bs. ${v.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-  /**
-   * Vuelca la captura en el PDF repartida en paginas A4. Sin esto la imagen
-   * entra entera en la primera pagina y el resto se pierde, dejando ademas
-   * una pagina en blanco al final.
-   */
-  const addCanvasAsA4Pages = (pdf: jsPDF, canvas: HTMLCanvasElement) => {
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const sliceHeightPx = Math.floor((canvas.width / pageWidth) * pageHeight);
-    const totalSlices = Math.max(1, Math.ceil(canvas.height / sliceHeightPx));
-    for (let i = 0; i < totalSlices; i++) {
-      const y = i * sliceHeightPx;
-      const h = Math.min(sliceHeightPx, canvas.height - y);
-      const slice = document.createElement("canvas");
-      slice.width = canvas.width;
-      slice.height = h;
-      const ctx = slice.getContext("2d");
-      if (!ctx) return;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, slice.width, slice.height);
-      ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
-      if (i > 0) pdf.addPage();
-      pdf.addImage(slice.toDataURL("image/png"), "PNG", 0, 0, pageWidth, (h * pageWidth) / canvas.width);
-    }
-  };
 
   /** Cambia el precio de la línea entre Precio 1 y Precio 2. */
   const setCartTier = (productId: number, tier: 1 | 2) => {
@@ -420,20 +400,39 @@ return [...prev, {
     setAddTarget(null);
   };
 
-  // Cotización imprimible desde el carrito
+  /**
+   * Cotizacion imprimible desde el carrito.
+   *
+   * Primero se guarda en el servidor: el PDF tiene que salir con el codigo
+   * (COT-2026-0007) y no con algo que se pierda al cerrar el navegador. Si el
+    * guardado falla no se imprime nada, para no entregar un documento que
+   * el taller no puede volver a encontrar.
+   */
   const downloadQuotePDF = async () => {
     if (cart.length === 0) return;
-    const el = document.getElementById("sale-quote-doc");
-    if (!el) return;
     toast.loading("Generando cotización...", { id: "quote" });
     try {
-      const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
-      const pdf = new jsPDF("p", "mm", "a4");
-      addCanvasAsA4Pages(pdf, canvas);
-      pdf.save(`cotizacion-${new Date().toISOString().slice(0, 10)}.pdf`);
-      toast.success("Cotización descargada", { id: "quote" });
+      const res = await api.post("/quotes", {
+        items: cart.map((c) => ({
+          productId: c.productId,
+          quantity: c.quantity,
+          unitPrice: Number(c.unitPrice),
+          priceTier: c.priceTier ?? null,
+        })),
+        clientName: /^Carrito \d+$/.test(activeCart.label) ? "" : activeCart.label.trim(),
+        saleType,
+        locationId: quoteLocationId ?? undefined,
+      });
+      const saved = res.data.quote as { id: number; code: string; total: number };
+      setSavedQuote({ id: saved.id, code: saved.code, total: Number(saved.total) });
+
+      setShowQuote(true);
+      // Un frame para que el codigo ya este pintado antes de capturar.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      await downloadElementAsPdf("sale-quote-doc", `cotizacion-${saved.code}.pdf`);
+      toast.success(`Cotización ${saved.code} descargada`, { id: "quote" });
     } catch {
-      toast.error("Error al generar cotización", { id: "quote" });
+      toast.error("Error al generar la cotización", { id: "quote" });
     } finally {
       setShowQuote(false);
     }
@@ -582,6 +581,16 @@ return [...prev, {
         })),
       };
 
+      if (savedQuote) {
+        // La cotizacion que salio impresa se cierra como CONVERTIDA y queda
+        // enlazada a esta venta. Solo enlaza si el carrito no cambio desde la
+        // impresion: si el vendedor toco cantidades o precios, el documento
+        // entregado ya no describe esta venta y el vinculo seria falso.
+        if (Math.abs(savedQuote.total - cartTotal) < 0.005) {
+          payload.quoteId = savedQuote.id;
+        }
+      }
+
       if (requiereFactura && customerData.name.trim()) {
         payload.customerData = {
           name: customerData.name.trim(),
@@ -615,6 +624,7 @@ return [...prev, {
       setShowPayment(false);
       setShowConfirmed(true);
       updateActiveCart(() => []);
+      setSavedQuote(null);
       setActiveTab("venta");
       toast.success("¡Venta registrada exitosamente!");
     } catch (err: any) {
@@ -636,7 +646,7 @@ return [...prev, {
       const pageWidth = pdf.internal.pageSize.getWidth();
       const imgHeight = (canvas.height * pageWidth) / canvas.width;
       pdf.addImage(img, "PNG", 0, 0, pageWidth, imgHeight);
-      pdf.save(`venta-${lastSale.id}.pdf`);
+      pdf.save(`venta-${saleCode(lastSale.id, lastSale.saleDate)}.pdf`);
       toast.success("PDF descargado", { id: "pdf" });
     } catch {
       toast.error("Error al generar PDF", { id: "pdf" });
@@ -1048,7 +1058,7 @@ return [...prev, {
               <ColumnManager module="carrito" columns={CART_COLUMNS} onVisibleChange={setCartColumns} />
               {cart.length > 0 && (
                 <>
-                  <button onClick={() => { setShowQuote(true); setTimeout(downloadQuotePDF, 100); }}
+                  <button onClick={downloadQuotePDF}
                     title="Imprimir cotización de la venta"
                     className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600/10 border border-blue-600/25 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all font-medium">
                     <Printer size={14} /> Cotización
@@ -1152,7 +1162,7 @@ return [...prev, {
                   </div>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <button onClick={() => { setShowQuote(true); setTimeout(downloadQuotePDF, 100); }}
+                  <button onClick={downloadQuotePDF}
                     className="flex-1 bg-blue-600/10 border border-blue-600/25 text-blue-400 hover:bg-blue-600 hover:text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
                     <Printer size={16} /> Imprimir Cotización
                   </button>
@@ -1242,7 +1252,7 @@ return [...prev, {
                                 {expandedSale === s.id ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                               </button>
                             </td>
-                            {isHistCol("#") && <td className="px-4 py-3 text-gray-400">{s.id}</td>}
+                            {isHistCol("#") && <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{saleCode(s.id, s.saleDate)}</td>}
                             {isHistCol("Fecha") && (
                               <td className="px-4 py-3 text-gray-300 text-xs">
                                 {new Date(s.saleDate).toLocaleDateString("es-BO")}{" "}
@@ -1526,7 +1536,7 @@ return [...prev, {
             </div>
             <h3 className="text-xl font-bold text-foreground mb-1">¡Venta Registrada!</h3>
             <p className="text-gray-400 text-sm mb-2">
-              Venta #{lastSale.id} · {new Date(lastSale.saleDate).toLocaleString("es-BO")}
+              Venta {saleCode(lastSale.id, lastSale.saleDate)} · {new Date(lastSale.saleDate).toLocaleString("es-BO")}
               {lastSale.seller && <span className="ml-2 text-primary-400">· {lastSale.seller}</span>}
             </p>
             <p className="text-2xl font-bold text-green-400 mb-4">{formatBs(lastSale.total)}</p>
@@ -1821,107 +1831,26 @@ return [...prev, {
         </div>
       )}
 
-      {/* ============ QUOTE DOCUMENT (hidden, capturado por html2canvas) ============ */}
+      {/* ============ QUOTE DOCUMENT (oculto, capturado por html2canvas) ============ */}
       {showQuote && (
-        <div id="sale-quote-doc" className="fixed" style={{ left: "-9999px", top: 0, width: "680px", background: "#ffffff", color: "#111827", fontFamily: "'Segoe UI', Arial, sans-serif", fontSize: "12px" }}>
-          <div style={{ padding: "0 40px 30px" }}>
-            {/* Encabezado */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", padding: "26px 0 18px", borderBottom: "1px solid #e5e7eb" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <div style={{ width: "4px", height: "40px", backgroundColor: "#f59e0b", borderRadius: "2px" }} />
-                <div>
-                  <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#111827", margin: 0, letterSpacing: "3px", lineHeight: 1.1 }}>
-                    COTIZACIÓN
-                  </h1>
-                  <p style={{ margin: "4px 0 0", color: "#9ca3af", fontSize: "10px", letterSpacing: "1.5px", textTransform: "uppercase" }}>
-                    {title}
-                  </p>
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <p style={{ margin: 0, fontSize: "10px", color: "#9ca3af", letterSpacing: "1.5px", textTransform: "uppercase" }}>Fecha</p>
-                <p style={{ margin: "3px 0 0", fontSize: "15px", fontWeight: 600, color: "#111827" }}>
-                  {new Date().toLocaleDateString("es-BO")}
-                </p>
-              </div>
-            </div>
-
-            {/* Tienda, vendedor y cliente */}
-            <div style={{ display: "flex", gap: "12px", margin: "20px 0 22px" }}>
-              <div style={{ flex: 1, backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "12px 14px" }}>
-                <p style={{ margin: 0, fontSize: "9px", color: "#9ca3af", letterSpacing: "1.2px", textTransform: "uppercase" }}>Tienda</p>
-                <p style={{ margin: "5px 0 0", fontSize: "15px", fontWeight: 700, color: "#111827" }}>{quoteStoreName || "—"}</p>
-              </div>
-              <div style={{ flex: 1, backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "12px 14px" }}>
-                <p style={{ margin: 0, fontSize: "9px", color: "#9ca3af", letterSpacing: "1.2px", textTransform: "uppercase" }}>Vendedor</p>
-                <p style={{ margin: "5px 0 0", fontSize: "15px", fontWeight: 700, color: "#111827" }}>{quoteSeller || "—"}</p>
-              </div>
-              <div style={{ flex: 1, backgroundColor: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "12px 14px" }}>
-                <p style={{ margin: 0, fontSize: "9px", color: "#9ca3af", letterSpacing: "1.2px", textTransform: "uppercase" }}>Cliente</p>
-                <p style={{ margin: "5px 0 0", fontSize: "15px", fontWeight: 700, color: "#111827" }}>{quoteClient || "—"}</p>
-              </div>
-            </div>
-
-            {/* Detalle */}
-            <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-              <colgroup>
-                <col style={{ width: "15%" }} />
-                <col style={{ width: "41%" }} />
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "17%" }} />
-                <col style={{ width: "17%" }} />
-              </colgroup>
-              <thead>
-                <tr style={{ backgroundColor: "#111827" }}>
-                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#ffffff", fontSize: "9px", fontWeight: 700, letterSpacing: "1.2px", textTransform: "uppercase", borderRadius: "6px 0 0 6px" }}>Código</th>
-                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#ffffff", fontSize: "9px", fontWeight: 700, letterSpacing: "1.2px", textTransform: "uppercase" }}>Producto</th>
-                  <th style={{ padding: "10px 12px", textAlign: "center", color: "#ffffff", fontSize: "9px", fontWeight: 700, letterSpacing: "1.2px", textTransform: "uppercase" }}>Cant.</th>
-                  <th style={{ padding: "10px 12px", textAlign: "right", color: "#ffffff", fontSize: "9px", fontWeight: 700, letterSpacing: "1.2px", textTransform: "uppercase" }}>P. unitario</th>
-                  <th style={{ padding: "10px 12px", textAlign: "right", color: "#ffffff", fontSize: "9px", fontWeight: 700, letterSpacing: "1.2px", textTransform: "uppercase", borderRadius: "0 6px 6px 0" }}>Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cart.map((c, idx) => (
-                  <tr key={c.productId} style={{ backgroundColor: idx % 2 === 0 ? "#ffffff" : "#f9fafb" }}>
-                    <td style={{ padding: "11px 12px", borderBottom: "1px solid #e5e7eb", color: "#6b7280", fontSize: "11px" }}>{c.itemCode}</td>
-                    <td style={{ padding: "11px 12px", borderBottom: "1px solid #e5e7eb", color: "#111827", fontSize: "12px" }}>
-                      <span style={{ fontWeight: 600 }}>{c.name}</span>
-                      <span style={{ color: "#9ca3af", fontSize: "11px" }}> · {c.brand}</span>
-                    </td>
-                    <td style={{ padding: "11px 12px", borderBottom: "1px solid #e5e7eb", textAlign: "center", color: "#374151", fontSize: "12px" }}>{c.quantity}</td>
-                    <td style={{ padding: "11px 12px", borderBottom: "1px solid #e5e7eb", textAlign: "right", whiteSpace: "nowrap", color: "#374151", fontSize: "12px" }}>
-                      {formatBs(c.unitPrice)}
-                    </td>
-                    <td style={{ padding: "11px 12px", borderBottom: "1px solid #e5e7eb", textAlign: "right", whiteSpace: "nowrap", color: "#111827", fontSize: "12px", fontWeight: 600 }}>
-                      {formatBs(c.unitPrice * c.quantity)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Total */}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "18px" }}>
-              <div style={{ minWidth: "240px", backgroundColor: "#fffbeb", border: "1px solid #fde68a", borderRadius: "10px", padding: "14px 20px", textAlign: "right" }}>
-                <p style={{ margin: 0, fontSize: "9px", color: "#b45309", letterSpacing: "1.5px", textTransform: "uppercase" }}>Total a cotizar</p>
-                <p style={{ margin: "4px 0 0", fontSize: "24px", fontWeight: 700, color: "#b45309", letterSpacing: "-0.5px" }}>
-                  {formatBs(cartTotal)}
-                </p>
-              </div>
-            </div>
-
-            {/* Pie */}
-            <div style={{ margin: "26px 0 0", padding: "14px 0 0", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <p style={{ margin: 0, fontSize: "10px", color: "#9ca3af" }}>
-                {cart.length} producto(s) · {cartItemCount} unidad(es)
-              </p>
-              <p style={{ margin: 0, fontSize: "11px", color: "#374151", fontWeight: 600 }}>¡Gracias por su compra!</p>
-            </div>
-            <p style={{ margin: "6px 0 0", fontSize: "9px", color: "#9ca3af", textAlign: "center", letterSpacing: "0.5px" }}>
-              Cotización sin valor fiscal
-            </p>
-          </div>
-        </div>
+        <QuoteDocument
+          id="sale-quote-doc"
+          code={savedQuote?.code ?? null}
+          date={new Date()}
+          title={title}
+          storeName={quoteStoreName}
+          sellerName={quoteSeller}
+          clientName={quoteClient}
+          items={cart.map((c) => ({
+            itemCode: c.itemCode,
+            name: c.name,
+            brand: c.brand,
+            quantity: c.quantity,
+            unitPrice: Number(c.unitPrice),
+            priceTier: c.priceTier ?? null,
+          }))}
+          total={cartTotal}
+        />
       )}
     </div>
   );

@@ -11,6 +11,7 @@ import Autocomplete from "../components/ui/Autocomplete";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
+import { saleCode } from "../utils/documentCodes";
 
 interface WholesaleItem {
   productId: number; itemCode: string; name: string; brand: string;
@@ -361,7 +362,7 @@ export default function WholesalePage() {
     win.document.write(`<html><head><title>Nota de Venta #${sale.id}</title>
       <style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}th{background:#f0f0f0}h1{font-size:18px}.total{font-size:16px;font-weight:bold;text-align:right;margin-top:10px}</style></head><body>
       <h1>Shibumi - Nota de Venta Mayorista</h1>
-      <p><b>Fecha:</b> ${new Date(sale.saleDate).toLocaleDateString("es-BO")} | <b>ID:</b> #${sale.id}</p>
+      <p><b>Fecha:</b> ${new Date(sale.saleDate).toLocaleDateString("es-BO")} | <b>ID:</b> ${saleCode(sale.id, sale.saleDate)}</p>
        <p><b>Cliente:</b> ${sale.customer?.name || sale.paraQuien || "N/A"} | <b>Lugar:</b> ${sale.lugarEntrega || sale.location?.name || "N/A"}</p>
        ${sale.paraQuien ? `<p><b>A quién:</b> ${sale.paraQuien}</p>` : ""}
        ${sale.nitName ? `<p><b>Nombre del NIT:</b> ${sale.nitName}</p>` : ""}
@@ -517,7 +518,7 @@ export default function WholesalePage() {
                     const paid = salePaid(s);
                     return (
                     <tr key={s.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                      <td className="px-4 py-3 text-gray-300 font-mono text-xs">#{s.id}</td>
+                      <td className="px-4 py-3 text-amber-400/90 font-mono text-xs whitespace-nowrap">{saleCode(s.id, s.saleDate)}</td>
                       <td className="px-4 py-3 text-gray-300">{formatDate(s.saleDate)}</td>
                       <td className="px-4 py-3 text-foreground font-medium">{s.customer?.name || s.paraQuien || "N/A"}</td>
                       <td className="px-4 py-3 text-gray-300">{s.lugarEntrega || s.location?.name || "N/A"}</td>

@@ -4,6 +4,7 @@ import { authenticate, authorize, requireTiendaLocation } from "../../shared/mid
 import { AuthRequest } from "../../shared/types";
 import { ensureRestockRequest } from "../../utils/restockRequest";
 import { validateAndMergeItems } from "../../utils/saleItems";
+import { saleCode } from "../../shared/documentCodes";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -105,7 +106,7 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Nota de Venta #${sale.id}</title>
+  <title>Nota de Venta ${saleCode(sale.id, sale.saleDate)}</title>
   <style>
     @page { size: A5; margin: 10mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -139,7 +140,7 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
   </div>
 
   <div class="info">
-    <div><strong>NOTA DE VENTA #${sale.id}</strong></div>
+    <div><strong>NOTA DE VENTA ${saleCode(sale.id, sale.saleDate)}</strong></div>
     <div class="text-right">${new Date(sale.saleDate).toLocaleDateString("es-BO")} ${new Date(sale.saleDate).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}</div>
   </div>
   <div class="info">
@@ -322,6 +323,26 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     });
     const finalSeller = accountUser?.name ?? null;
 
+    // Cotizacion de origen (opcional). Se valida antes de cobrar para no
+    // registrar una venta colgada de un papel que ya se uso o de otra tienda.
+    let quoteId: number | null = null;
+    if (req.body.quoteId) {
+      const id = Number(req.body.quoteId);
+      if (Number.isInteger(id) && id > 0) {
+        const quote = await prisma.quote.findUnique({ where: { id } });
+        if (!quote) return res.status(400).json({ message: "La cotización indicada no existe" });
+        if (quote.saleId) {
+          return res.status(400).json({ message: "Esa cotización ya se convirtió en una venta" });
+        }
+        // La venta siempre se registra en userLocationId, asi que la cotizacion
+        // tiene que ser de esa misma tienda o el vinculo seria falso.
+        if (quote.locationId !== userLocationId) {
+          return res.status(403).json({ message: "No puede usar una cotización de otra tienda" });
+        }
+        quoteId = id;
+      }
+    }
+
     const validMethods = ["EFECTIVO", "QR", "TRANSFERENCIA", "CREDITO"];
     for (const p of payments) {
       if (!validMethods.includes(p.method)) {
@@ -404,6 +425,15 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         },
         include: { items: true, payments: true },
       });
+
+      // Si la venta viene de una cotizacion, se marca como convertida para que
+      // el papel y la venta queden unidos en ambos sentidos.
+      if (quoteId) {
+        await tx.quote.update({
+          where: { id: quoteId },
+          data: { saleId: sale.id, status: "CONVERTIDA" },
+        });
+      }
 
       for (const update of stockUpdates) {
         const inv = await tx.inventory.findUnique({

@@ -15,6 +15,7 @@ import ProductDetailPage from "./pages/ProductDetailPage";
 import SalesPage from "./pages/SalesPage";
 import WholesalePage from "./pages/WholesalePage";
 import ReturnsPage from "./pages/ReturnsPage";
+import QuotesPage from "./pages/QuotesPage";
 import SolicitudesDespachosPage from "./pages/SolicitudesDespachosPage";
 import MovementsPage from "./pages/MovementsPage";
 import CostsPage from "./pages/CostsPage";
@@ -105,6 +106,13 @@ export default function App() {
           <Route path="devoluciones" element={
             <RoleRoute allowedRoles={["ADMIN", "TIENDA"]} module="devoluciones">
               <ReturnsPage />
+            </RoleRoute>
+          } />
+
+          {/* Cotizaciones — ADMIN + TIENDA (mismo permiso que ventas) */}
+          <Route path="cotizaciones" element={
+            <RoleRoute allowedRoles={["ADMIN", "TIENDA"]} module="ventas" anyModule={["ventas-mayor"]}>
+              <QuotesPage />
             </RoleRoute>
           } />
 

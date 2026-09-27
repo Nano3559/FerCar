@@ -6,6 +6,7 @@ import {
 import toast from "react-hot-toast";
 import api from "../services/api";
 import { useDialogBehavior } from "../components/ui/useDialog";
+import { saleCode, parseSaleCode } from "../utils/documentCodes";
 
 interface Sale {
   id: number; saleDate: string; total: number; type: string;
@@ -65,6 +66,20 @@ export default function ReturnsPage() {
   const [loadingRecent, setLoadingRecent] = useState(false);
   const [showRecentSales, setShowRecentSales] = useState(true);
   const [retSeller, setRetSeller] = useState("");
+  const [vendedores, setVendedores] = useState<{ id: number; name: string; locationId: number | null }[]>([]);
+
+  // El filtro de vendedor se alimenta de las cuentas reales: antes tenia
+  // "Vendedor 1/2/3" fijos, que noCoinciden con nadie y no filtraban nada.
+  useEffect(() => {
+    api.get("/users").then((r) => {
+      const users = Array.isArray(r.data) ? r.data : r.data.users || [];
+      setVendedores(
+        users
+          .filter((u: any) => u.role === "TIENDA" || u.role === "ADMIN")
+          .map((u: any) => ({ id: u.id, name: u.name, locationId: u.locationId }))
+      );
+    }).catch(() => {});
+  }, []);
 
   const formatBs = (v: number) =>
     `Bs. ${v.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -107,13 +122,16 @@ export default function ReturnsPage() {
   };
 
   const searchSaleById = async (id?: string) => {
-    const searchIdVal = id || searchId;
-    if (!searchIdVal.trim()) { toast.error("Ingresa un ID de venta"); return; }
+    const raw = (id || searchId).trim();
+    if (!raw) { toast.error("Ingresa el código o ID de la venta"); return; }
+    // Acepta el codigo impreso (V-2026-1042), "#1042" o solo el numero.
+    const saleId = parseSaleCode(raw);
+    if (!saleId) { toast.error("No es un código de venta válido"); return; }
     try {
       setSearching(true);
       clearReturnForm();
       setMethod("EFECTIVO");
-      const res = await api.get(`/returns/sale/${searchIdVal.trim()}`);
+      const res = await api.get(`/returns/sale/${saleId}`);
       setSale(res.data);
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Venta no encontrada");
@@ -242,7 +260,7 @@ export default function ReturnsPage() {
                   className="w-full flex items-center justify-between px-3 py-2.5 bg-dark-900/50 border border-dark-700/30 rounded-xl hover:border-primary-500/30 hover:bg-dark-800/50 transition-all text-left"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-foreground font-medium">Venta #{rs.id}</p>
+                    <p className="text-sm text-foreground font-medium">{saleCode(rs.id, rs.saleDate)}</p>
                     <p className="text-xs text-gray-500">
                       {new Date(rs.saleDate).toLocaleDateString("es-BO")} · {rs.location.name}
                       {rs.seller && <span className="ml-1 text-primary-400">· {rs.seller}</span>}
@@ -261,15 +279,15 @@ export default function ReturnsPage() {
 
       {/* Buscar venta */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4">
-        <p className="text-sm text-gray-400 mb-3">Buscar venta por ID</p>
+        <p className="text-sm text-gray-400 mb-3">Buscar venta por código o ID</p>
         <div className="flex gap-3">
           <div className="relative flex-1">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
-              type="number" value={searchId} onChange={(e) => setSearchId(e.target.value)}
+              type="text" value={searchId} onChange={(e) => setSearchId(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && searchSaleById()}
-              placeholder="ID de la venta..."
-              aria-label="Buscar venta por ID"
+              placeholder="V-2026-1042 o 1042..."
+              aria-label="Buscar venta por codigo o ID"
               className="w-full pl-10 pr-4 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground placeholder-gray-500 focus:ring-2 focus:ring-primary-500 outline-none text-sm"
             />
           </div>
@@ -286,7 +304,7 @@ export default function ReturnsPage() {
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div>
-              <h3 className="text-foreground font-semibold">Venta #{sale.id}</h3>
+              <h3 className="text-foreground font-semibold">Venta {saleCode(sale.id, sale.saleDate)}</h3>
               <p className="text-gray-400 text-sm">{new Date(sale.saleDate).toLocaleDateString("es-BO")} · {sale.location.name} · {sale.type}</p>
               <p className={`text-xs mt-1 ${canReturn ? "text-emerald-400" : "text-red-400"}`}>
                 {canReturn
@@ -410,17 +428,25 @@ export default function ReturnsPage() {
 
       {/* Historial de devoluciones */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between gap-3">
           <h3 className="text-foreground font-semibold">Historial de Devoluciones <span className="text-xs text-gray-500 font-normal">(últimos 30 días)</span></h3>
-          <div className="relative">
-            <select value={retSeller} onChange={(e) => setRetSeller(e.target.value)}
-              className="appearance-none px-3 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-xs focus:ring-2 focus:ring-primary-500 outline-none pr-6">
-              <option value="">Todos los vendedores</option>
-              <option value="Vendedor 1">Vendedor 1</option>
-              <option value="Vendedor 2">Vendedor 2</option>
-              <option value="Vendedor 3">Vendedor 3</option>
-            </select>
-            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <select value={retSeller} onChange={(e) => { setRetSeller(e.target.value); setRetPage(1); }}
+                aria-label="Filtrar por vendedor"
+                className="appearance-none px-3 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-xs focus:ring-2 focus:ring-primary-500 outline-none pr-6">
+                <option value="">Todos los vendedores</option>
+                {vendedores.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+              </select>
+              <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            </div>
+            {retSeller && (
+              <button onClick={() => { setRetSeller(""); setRetPage(1); }}
+                title="Quitar filtro"
+                className="text-gray-500 hover:text-gray-300 transition-colors">
+                <X size={14} />
+              </button>
+            )}
           </div>
         </div>
         {loadingReturns ? (
@@ -454,7 +480,15 @@ export default function ReturnsPage() {
                     <td className="px-4 py-3 text-gray-400">{r.id}</td>
                     <td className="px-4 py-3 text-gray-300">{new Date(r.date).toLocaleDateString("es-BO")}</td>
                     <td className="px-4 py-3 text-foreground">{r.product.name}</td>
-                    <td className="px-4 py-3 text-gray-400">#{r.saleId}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => { setSearchId(saleCode(r.saleId, r.sale?.saleDate)); searchSaleById(saleCode(r.saleId, r.sale?.saleDate)); }}
+                        title="Abrir esta venta"
+                        className="text-primary-400 hover:text-primary-300 hover:underline font-mono text-xs transition-colors"
+                      >
+                        {saleCode(r.saleId, r.sale?.saleDate)}
+                      </button>
+                    </td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{r.sale?.seller || "—"}</td>
                     <td className="px-4 py-3 text-center text-yellow-400 font-medium">{r.quantity}</td>
                     <td className="px-4 py-3 text-right text-red-400 font-medium">{formatBs(Number(r.amount))}</td>

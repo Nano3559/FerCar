@@ -5,9 +5,11 @@ interface RoleRouteProps {
   children: React.ReactNode;
   allowedRoles: string[];
   module?: string;
+  /** Módulos fusionados en una sola entrada: basta con tener uno de ellos. */
+  anyModule?: string[];
 }
 
-export default function RoleRoute({ children, allowedRoles, module }: RoleRouteProps) {
+export default function RoleRoute({ children, allowedRoles, module, anyModule }: RoleRouteProps) {
   const { user, isAuthenticated, permissions, hydrated } = useAuthStore();
 
   if (!hydrated) return null;
@@ -19,7 +21,7 @@ export default function RoleRoute({ children, allowedRoles, module }: RoleRouteP
 
   // Check module permission if specified
   const hasModule = module && (permissions.includes(module) || (module === "inventario" && permissions.includes("productos")));
-  if (module && !hasModule) return <Navigate to="/panel" />;
+  if (module && !hasModule && !anyModule?.some((m) => permissions.includes(m))) return <Navigate to="/panel" />;
 
   return <>{children}</>;
 }

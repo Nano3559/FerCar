@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 import api from "../services/api";
 import * as XLSX from "xlsx";
 import { useAuthStore } from "../stores/authStore";
+import { saleCode } from "../utils/documentCodes";
 
 interface SalesReport {
   id: number; date: string; type: string; total: number;
@@ -447,7 +448,7 @@ export default function ReportsPage() {
                 <tbody>
                   {filteredSales.map((s) => (
                     <tr key={s.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                      <td className="px-4 py-3 text-gray-300 font-mono text-xs">#{s.id}</td>
+                      <td className="px-4 py-3 text-amber-400/90 font-mono text-xs whitespace-nowrap">{saleCode(s.id, s.date)}</td>
                       <td className="px-4 py-3 text-gray-300">{formatDate(s.date)}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : s.type === "DEPARTAMENTAL" ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"}`}>
