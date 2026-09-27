@@ -12,15 +12,24 @@ interface ColumnManagerProps {
 
 type Tab = "visible" | "all";
 
+// Renombra columnas cuyo encabezado cambio. Sin esto, quien ya habia
+// configurado sus columnas se quedaria sin la nueva: su lista guardada
+// tiene el nombre viejo y la columna desapareceria en silencio.
+const RENAMED_COLUMNS: Record<string, string> = {
+  "Unit Price": "Precio USD",
+  Hermana: "Costo Tiendas",
+  "#": "Código",
+};
+
+export const migrateCols = (cols: string[]): string[] =>
+  cols.map((c) => RENAMED_COLUMNS[c] || c);
+
 export default function ColumnManager({ module, columns, onVisibleChange }: ColumnManagerProps) {
   const { columnConfig } = useAuthStore();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("visible");
   const [visible, setVisible] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-
-  const migrateCols = (cols: string[]): string[] =>
-    cols.map((c) => ({ "Unit Price": "Precio USD", Hermana: "Costo Tiendas" }[c] || c));
 
   useEffect(() => {
     if (!open) return;

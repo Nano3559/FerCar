@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 import axios from "axios";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
-import ColumnManager from "../components/ui/ColumnManager";
+import ColumnManager, { migrateCols } from "../components/ui/ColumnManager";
 import Autocomplete from "../components/ui/Autocomplete";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
@@ -17,7 +17,7 @@ import { saleCode } from "../utils/documentCodes";
 import { downloadElementAsPdf } from "../utils/quotePdf";
 import QuoteDocument from "../components/quotes/QuoteDocument";
 
-const HISTORY_COLUMNS = ["#", "Fecha", "Cliente", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos"];
+const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos"];
 const CART_COLUMNS = ["Producto", "Precio", "Cantidad", "Subtotal", "Eliminar"];
 const SEARCH_COLUMNS = [
   "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
@@ -270,7 +270,9 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       const raw = localStorage.getItem("columns_ventas");
       const stored = raw ? JSON.parse(raw) : null;
       const roleCols = useAuthStore.getState().columnConfig?.ventas;
-      const base = stored?.length ? stored : roleCols?.length ? roleCols : HISTORY_COLUMNS;
+      // migrateCols: un "#" guardado se traduce a "Código", si no la columna
+      // del código no apareceria en los equipos que ya tenian columnas fijadas.
+      const base = migrateCols(stored?.length ? stored : roleCols?.length ? roleCols : HISTORY_COLUMNS);
       const merged = HISTORY_COLUMNS.filter((c) => base.includes(c));
       return merged.length ? merged : HISTORY_COLUMNS;
     } catch {
@@ -1252,7 +1254,7 @@ return [...prev, {
                                 {expandedSale === s.id ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                               </button>
                             </td>
-                            {isHistCol("#") && <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{saleCode(s.id, s.saleDate)}</td>}
+                            {isHistCol("Código") && <td className="px-4 py-3 text-amber-400/90 font-mono text-xs whitespace-nowrap">{saleCode(s.id, s.saleDate)}</td>}
                             {isHistCol("Fecha") && (
                               <td className="px-4 py-3 text-gray-300 text-xs">
                                 {new Date(s.saleDate).toLocaleDateString("es-BO")}{" "}

@@ -463,7 +463,7 @@ export default function ReturnsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-gray-500 border-b border-dark-700/50">
-                  <th className="text-left px-4 py-3 font-medium">ID</th>
+                  <th className="text-left px-4 py-3 font-medium">Nº dev.</th>
                   <th className="text-left px-4 py-3 font-medium">Fecha</th>
                   <th className="text-left px-4 py-3 font-medium">Producto</th>
                   <th className="text-left px-4 py-3 font-medium">Venta</th>

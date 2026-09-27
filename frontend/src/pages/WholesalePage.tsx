@@ -501,7 +501,7 @@ export default function WholesalePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-dark-700/50">
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium">ID</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Código</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Fecha</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Cliente</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Para dónde</th>

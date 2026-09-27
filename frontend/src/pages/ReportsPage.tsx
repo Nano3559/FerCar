@@ -436,7 +436,7 @@ export default function ReportsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-dark-700/50">
-                    <SortableTh>ID</SortableTh>
+                    <SortableTh>Código</SortableTh>
                     <SortableTh>Fecha</SortableTh>
                     <SortableTh>Tipo</SortableTh>
                     <RightTh>Total</RightTh>
