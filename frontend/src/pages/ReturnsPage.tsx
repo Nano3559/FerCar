@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Search, RotateCcw, RefreshCw, ChevronDown,
-  ChevronLeft, ChevronRight, Info, X,
+  ChevronLeft, ChevronRight, Info, X, Square, CheckSquare, AlertTriangle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -9,6 +9,7 @@ import { useDialogBehavior } from "../components/ui/useDialog";
 
 interface Sale {
   id: number; saleDate: string; total: number; type: string;
+  daysOld?: number; returnable?: boolean;
   location: { id: number; name: string };
   customer: { id: number; name: string; nit: string | null } | null;
   seller: string | null;
@@ -44,11 +45,10 @@ export default function ReturnsPage() {
   const [searchId, setSearchId] = useState("");
   const [sale, setSale] = useState<Sale | null>(null);
   const [searching, setSearching] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<number | null>(null);
 
+  const [selected, setSelected] = useState<number[]>([]);
+  const [returnQtys, setReturnQtys] = useState<Record<number, number>>({});
   const [reason, setReason] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<string>("EFECTIVO");
   const [saving, setSaving] = useState(false);
 
@@ -100,13 +100,19 @@ export default function ReturnsPage() {
   useEffect(() => { fetchReturns(); }, [fetchReturns]);
   useEffect(() => { fetchRecentSales(); }, [fetchRecentSales]);
 
+  const clearReturnForm = () => {
+    setSelected([]);
+    setReturnQtys({});
+    setReason("");
+  };
+
   const searchSaleById = async (id?: string) => {
     const searchIdVal = id || searchId;
     if (!searchIdVal.trim()) { toast.error("Ingresa un ID de venta"); return; }
     try {
       setSearching(true);
-      setSelectedItem(null);
-      setReason(""); setQuantity(""); setAmount(""); setMethod("EFECTIVO");
+      clearReturnForm();
+      setMethod("EFECTIVO");
       const res = await api.get(`/returns/sale/${searchIdVal.trim()}`);
       setSale(res.data);
     } catch (err: any) {
@@ -117,44 +123,76 @@ export default function ReturnsPage() {
     }
   };
 
-  const selectItem = (item: Sale["items"][0]) => {
-    const alreadyReturned = (sale?.returns || [])
-      .filter((r) => r.productId === item.productId)
+  const returnedFor = (saleData: Sale, productId: number) =>
+    (saleData.returns || [])
+      .filter((r) => r.productId === productId)
       .reduce((sum, r) => sum + r.quantity, 0);
-    const maxQty = item.quantity - alreadyReturned;
-    if (maxQty <= 0) {
-      toast.error("Este producto ya fue devuelto completamente");
+
+  const remainingFor = (item: Sale["items"][0]) =>
+    item.quantity - returnedFor(sale!, item.productId);
+
+  const canReturn = sale?.returnable !== false;
+
+  const toggleSelect = (productId: number, remaining: number) => {
+    if (!canReturn) { toast.error("La venta está fuera del plazo de devolución (10 días)"); return; }
+    if (selected.includes(productId)) {
+      setSelected((prev) => prev.filter((p) => p !== productId));
       return;
     }
-    setSelectedItem(item.productId);
-    setQuantity(String(maxQty));
-    setAmount(String(Number(item.unitPrice) * maxQty));
+    if (remaining <= 0) { toast.error("Este producto ya fue devuelto completamente"); return; }
+    setSelected((prev) => [...prev, productId]);
+    setReturnQtys((prev) => ({ ...prev, [productId]: remaining }));
   };
 
+  const selectAll = () => {
+    if (!sale || !canReturn) return;
+    const toSelect = sale.items.filter((i) => remainingFor(i) > 0);
+    if (toSelect.length === 0) { toast.error("Todos los productos ya fueron devueltos"); return; }
+    setSelected(toSelect.map((i) => i.productId));
+    setReturnQtys((prev) => {
+      const next = { ...prev };
+      toSelect.forEach((i) => { next[i.productId] = remainingFor(i); });
+      return next;
+    });
+  };
+
+  const clearSelection = () => { setSelected([]); setReturnQtys({}); };
+
+  const setQty = (productId: number, value: number) => {
+    const n = Math.max(1, Math.floor(Number(value) || 0));
+    setReturnQtys((prev) => ({ ...prev, [productId]: n }));
+  };
+
+  const selectedItems = sale ? sale.items.filter((i) => selected.includes(i.productId)) : [];
+
+  const totalReturn = selectedItems.reduce((sum, it) => {
+    const qty = Math.min(returnQtys[it.productId] || 0, remainingFor(it));
+    return sum + qty * Number(it.unitPrice);
+  }, 0);
+
   const handleReturn = async () => {
-    if (!sale || !selectedItem || !reason || !quantity || !amount) {
-      toast.error("Completa todos los campos");
-      return;
-    }
-    const qty = Number(quantity);
-    const amt = Number(amount);
-    if (qty <= 0 || amt <= 0) { toast.error("Cantidad y monto deben ser mayores a 0"); return; }
+    if (!sale) return;
+    if (!reason.trim()) { toast.error("Escribe el motivo de la devolución"); return; }
+    const items = selectedItems
+      .map((it) => ({
+        productId: it.productId,
+        quantity: Math.min(returnQtys[it.productId] || 1, remainingFor(it)),
+      }))
+      .filter((i) => i.quantity > 0);
+    if (items.length === 0) { toast.error("Selecciona al menos un producto a devolver"); return; }
 
     try {
       setSaving(true);
-      await api.post("/returns", {
+      const res = await api.post("/returns", {
         saleId: sale.id,
-        productId: selectedItem,
-        reason,
-        quantity: qty,
-        amount: amt,
+        reason: reason.trim(),
         method,
+        items,
       });
-      toast.success("Devolución registrada");
-      setSelectedItem(null);
-      setReason(""); setQuantity(""); setAmount(""); setMethod("EFECTIVO");
-      const res = await api.get(`/returns/sale/${sale.id}`);
-      setSale(res.data);
+      toast.success(`Devolución registrada (Bs. ${Number(res.data.total || 0).toFixed(2)})`);
+      clearReturnForm();
+      const refreshed = await api.get(`/returns/sale/${sale.id}`);
+      setSale(refreshed.data);
       fetchReturns();
       fetchRecentSales();
     } catch (err: any) {
@@ -164,19 +202,13 @@ export default function ReturnsPage() {
     }
   };
 
-  const getReturnedQty = (saleData: Sale, productId: number) => {
-    return (saleData.returns || [])
-      .filter((r) => r.productId === productId)
-      .reduce((sum, r) => sum + r.quantity, 0);
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Devoluciones</h1>
-          <p className="text-gray-400 text-sm mt-1">{retTotal} devoluciones registradas</p>
+          <p className="text-gray-400 text-sm mt-1">{retTotal} devoluciones registradas (últimos 30 días)</p>
         </div>
         <div className="flex items-center gap-3 self-start">
           <button onClick={() => setShowInfo(true)} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-blue-400 hover:border-blue-500/30 transition-all" title="¿Cómo funciona?">
@@ -192,7 +224,7 @@ export default function ReturnsPage() {
       {!sale && showRecentSales && recentSales.length > 0 && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-gray-400">Ventas recientes (selecciona una para devolución rápida)</p>
+            <p className="text-sm text-gray-400">Ventas recientes · últimos 10 días (selecciona una para devolución rápida)</p>
             <button onClick={() => setShowRecentSales(false)} className="text-xs text-gray-500 hover:text-gray-300">
               <X size={14} />
             </button>
@@ -249,13 +281,18 @@ export default function ReturnsPage() {
         </div>
       </div>
 
-      {/* Detalle de venta + Selección de producto */}
+      {/* Detalle de venta + Selección de productos */}
       {sale && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div>
               <h3 className="text-foreground font-semibold">Venta #{sale.id}</h3>
               <p className="text-gray-400 text-sm">{new Date(sale.saleDate).toLocaleDateString("es-BO")} · {sale.location.name} · {sale.type}</p>
+              <p className={`text-xs mt-1 ${canReturn ? "text-emerald-400" : "text-red-400"}`}>
+                {canReturn
+                  ? `Dentro del plazo · ${sale.daysOld ?? 0} día(s) desde la venta`
+                  : `Fuera de plazo · ${sale.daysOld ?? "—"} día(s) desde la venta (máximo 10)`}
+              </p>
             </div>
             <div className="text-right">
               <p className="text-foreground font-semibold">{formatBs(Number(sale.total))}</p>
@@ -263,65 +300,108 @@ export default function ReturnsPage() {
             </div>
           </div>
 
-          <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Selecciona producto a devolver</p>
+          {!canReturn && (
+            <div className="flex items-start gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-sm text-red-400">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <span>Solo se pueden devolver ventas dentro de los últimos 10 días. Esta venta ya no puede devolverse.</span>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Selecciona los productos a devolver (todos o algunos)</p>
+            <div className="flex items-center gap-2">
+              <button onClick={selectAll} disabled={!canReturn}
+                className="text-xs px-3 py-1.5 rounded-lg bg-primary-600/10 border border-primary-600/25 text-primary-400 hover:bg-primary-600 hover:text-white transition-all disabled:opacity-40">
+                Devolver todos
+              </button>
+              {selected.length > 0 && (
+                <button onClick={clearSelection}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground transition-all">
+                  Quitar todos
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="space-y-2">
             {sale.items.map((item) => {
-              const returned = getReturnedQty(sale, item.productId);
-              const maxQty = item.quantity - returned;
+              const returned = returnedFor(sale, item.productId);
+              const remaining = item.quantity - returned;
+              const isSelected = selected.includes(item.productId);
+              const qty = isSelected ? returnQtys[item.productId] || remaining : 0;
               return (
-                <div key={item.id} className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${selectedItem === item.productId ? "bg-primary-600/10 border-primary-600/30" : "bg-dark-900/50 border-dark-700/30 hover:border-dark-600"}`}
-                  onClick={() => maxQty > 0 && selectItem(item)}>
+                <div key={item.id}
+                  className={`flex flex-wrap items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${isSelected ? "bg-primary-600/10 border-primary-600/40" : remaining > 0 ? "bg-dark-900/50 border-dark-700/30 hover:border-dark-600" : "bg-dark-900/30 border-dark-700/20 opacity-50 cursor-not-allowed"}`}
+                  onClick={() => remaining > 0 && toggleSelect(item.productId, remaining)}>
+                  <span className={`shrink-0 p-1 rounded-md border ${isSelected ? "bg-primary-600 text-white border-primary-600" : "border-dark-600 text-gray-600 hover:text-white"}`}>
+                    {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                  </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground font-medium truncate">{item.product.name}</p>
-                    <p className="text-xs text-gray-500">{item.product.itemCode} · {item.product.brand} · {item.quantity} vendidos</p>
+                    <p className="text-xs text-gray-500">{item.product.itemCode} · {item.product.brand} · {item.quantity} vendidos{returned > 0 && <span className="text-yellow-400"> · {returned} devueltos</span>}</p>
                   </div>
-                  <div className="text-right ml-3">
+                  <div className="text-right shrink-0">
                     <p className="text-sm text-green-400">{formatBs(Number(item.unitPrice))}</p>
-                    {returned > 0 && <p className="text-xs text-yellow-400">{returned} devueltos</p>}
-                    {maxQty <= 0 && <p className="text-xs text-red-400">Devuelto</p>}
+                    {remaining <= 0 && <p className="text-xs text-red-400">Devuelto</p>}
                   </div>
+                  {isSelected && (
+                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <div>
+                        <label className="block text-[10px] text-gray-500 uppercase">Cantidad</label>
+                        <input type="number" min={1} max={remaining} value={qty}
+                          onChange={(e) => setQty(item.productId, Number(e.target.value))}
+                          className="w-20 px-2 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm text-center focus:ring-2 focus:ring-primary-500 outline-none" />
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] text-gray-500 uppercase">Subtotal</p>
+                        <p className="text-sm text-emerald-400 font-medium min-w-[90px]">
+                          {formatBs(Math.min(qty, remaining) * Number(item.unitPrice))}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* Formulario de devolución */}
-          {selectedItem && (
+          {/* Formulario de devolución (lote) */}
+          {selectedItems.length > 0 && (
             <div className="mt-4 pt-4 border-t border-dark-700/50 space-y-3">
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Datos de la devolución</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <p className="text-xs text-gray-500 uppercase tracking-wider">
+                Devolución de {selectedItems.length} producto(s)
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Cantidad *</label>
-                  <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} min="1"
-                    className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Monto (Bs.) *</label>
-                  <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min="0" step="0.01"
-                    className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-                </div>
-                <div className="relative">
                   <label className="block text-xs text-gray-400 mb-1">Método *</label>
-                  <select value={method} onChange={(e) => setMethod(e.target.value)}
-                    className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
-                    <option value="EFECTIVO">Efectivo</option>
-                    <option value="QR">QR</option>
-                    <option value="TRANSFERENCIA">Transferencia</option>
-                    <option value="CREDITO">Crédito</option>
-                  </select>
-                  <ChevronDown size={14} className="absolute right-2.5 top-[38px] text-gray-500 pointer-events-none" />
+                  <div className="relative">
+                    <select value={method} onChange={(e) => setMethod(e.target.value)}
+                      className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                      <option value="EFECTIVO">Efectivo</option>
+                      <option value="QR">QR</option>
+                      <option value="TRANSFERENCIA">Transferencia</option>
+                      <option value="CREDITO">Crédito</option>
+                    </select>
+                    <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  </div>
                 </div>
-                <div className="flex items-end">
-                  <button onClick={handleReturn} disabled={saving}
-                    className="w-full bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-                    <RotateCcw size={16} /> {saving ? "Procesando..." : "Devolver"}
-                  </button>
+                <div className="flex items-end justify-end">
+                  <div className="text-right w-full">
+                    <p className="text-[10px] text-gray-500 uppercase">Total a devolver</p>
+                    <p className="text-2xl font-bold text-red-400">{formatBs(totalReturn)}</p>
+                  </div>
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Motivo *</label>
+                <label className="block text-xs text-gray-400 mb-1">Motivo de devolución *</label>
                 <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder="Describe el motivo de la devolución..."
                   className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600 resize-none" />
+              </div>
+              <div className="flex justify-end">
+                <button onClick={handleReturn} disabled={saving}
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                  <RotateCcw size={16} /> {saving ? "Procesando..." : `Devolver ${selectedItems.length} producto(s)`}
+                </button>
               </div>
             </div>
           )}
@@ -331,7 +411,7 @@ export default function ReturnsPage() {
       {/* Historial de devoluciones */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
         <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-          <h3 className="text-foreground font-semibold">Historial de Devoluciones</h3>
+          <h3 className="text-foreground font-semibold">Historial de Devoluciones <span className="text-xs text-gray-500 font-normal">(últimos 30 días)</span></h3>
           <div className="relative">
             <select value={retSeller} onChange={(e) => setRetSeller(e.target.value)}
               className="appearance-none px-3 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-xs focus:ring-2 focus:ring-primary-500 outline-none pr-6">
@@ -350,7 +430,7 @@ export default function ReturnsPage() {
         ) : returns.length === 0 ? (
           <div className="p-6 text-center">
             <RotateCcw size={40} className="text-gray-600 mx-auto mb-3" />
-            <p className="text-gray-400 text-sm">Sin devoluciones registradas</p>
+            <p className="text-gray-400 text-sm">Sin devoluciones registradas en los últimos 30 días</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -379,7 +459,7 @@ export default function ReturnsPage() {
                     <td className="px-4 py-3 text-center text-yellow-400 font-medium">{r.quantity}</td>
                     <td className="px-4 py-3 text-right text-red-400 font-medium">{formatBs(Number(r.amount))}</td>
                     <td className="px-4 py-3 text-gray-300">{r.method}</td>
-                    <td className="px-4 py-3 text-gray-400 max-w-[200px] truncate">{r.reason}</td>
+                    <td className="px-4 py-3 text-gray-400 max-w-[200px] truncate" title={r.reason}>{r.reason}</td>
                   </tr>
                 ))}
               </tbody>
@@ -431,20 +511,24 @@ export default function ReturnsPage() {
               <div>
                 <h4 className="text-foreground font-semibold mb-1">¿Cómo registrar una devolución?</h4>
                 <ol className="list-decimal list-inside space-y-1 ml-1">
-                  <li>Busca la venta original por su <strong>número de ID</strong>.</li>
-                  <li>Selecciona el producto que el cliente devuelve.</li>
-                  <li>Indica la <strong>cantidad</strong>, el <strong>monto</strong> a devolver y el <strong>método</strong> de devolución (efectivo, QR, etc.).</li>
+                  <li>Busca la venta original por su <strong>número de ID</strong> o selecciona una <strong>venta reciente</strong>.</li>
+                  <li>Marca los productos que el cliente devuelve: <strong>todos o solo algunos</strong>.</li>
+                  <li>Ajusta la <strong>cantidad</strong> por producto y elige el <strong>método</strong> de devolución (efectivo, QR, etc.).</li>
                   <li>Escribe el <strong>motivo</strong> de la devolución.</li>
                   <li>Presiona <strong>"Devolver"</strong> y listo.</li>
                 </ol>
               </div>
               <div>
-                <h4 className="text-foreground font-semibold mb-1">¿Qué pasa después?</h4>
-                <p>El producto vuelve al stock de la tienda automáticamente. En el historial de abajo puedes ver todas las devoluciones registradas.</p>
+                <h4 className="text-foreground font-semibold mb-1">Plazo de devolución</h4>
+                <p>Solo se pueden devolver ventas dentro de los <strong>primeros 10 días</strong>. Las ventas de más de 10 días aparecen marcadas y no se pueden devolver.</p>
+              </div>
+              <div>
+                <h4 className="text-foreground font-semibold mb-1">¿Cuánto tiempo se guarda el registro?</h4>
+                <p>Las devoluciones se conservan en el historial por <strong>30 días</strong>.</p>
               </div>
               <div>
                 <h4 className="text-foreground font-semibold mb-1">¿Puedo devolver todo?</h4>
-                <p>Solo se puede devolver lo que aún no fue devuelto. Si un producto ya fue devuelto completamente, aparece marcado y no se puede seleccionar de nuevo.</p>
+                <p>Puedes devolver todos los productos de una venta de una sola vez con el botón <strong>"Devolver todos"</strong> o marcar solo algunos. Lo ya devuelto no se puede devolver dos veces.</p>
               </div>
             </div>
           </div>
