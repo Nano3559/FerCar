@@ -442,13 +442,13 @@ export default function WholesalePage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
             <Upload size={16} /> Importar Excel
           </button>
-          <button onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchSales(); }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-xl text-sm transition-all border border-dark-600">
-            <FileText size={16} /> Historial
-          </button>
           <button onClick={() => { resetForm(); setShowForm(true); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-primary-600/20">
             <Plus size={16} /> Nueva Venta Mayor
+          </button>
+          <button onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchSales(); }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-xl text-sm transition-all border border-dark-600">
+            <FileText size={16} /> Historial
           </button>
         </div>
       </div>
