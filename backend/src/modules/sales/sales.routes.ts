@@ -371,11 +371,14 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         if (nit) {
           customer = await prisma.customer.findFirst({ where: { nit } });
         }
-        // El formulario ya no pide CI/NIT del cliente, solo nombre y celular.
-        // Sin NIT hay que buscar por celular, o cada venta crearia un cliente
-        // nuevo de la misma persona.
-        if (!customer && phone) {
-          customer = await prisma.customer.findFirst({ where: { phone } });
+        // El formulario ya no pide CI/NIT ni celular del cliente, solo el
+        // nombre. Sin NIT ni celular hay que buscar por nombre, o cada venta
+        // crearia un cliente nuevo de la misma persona. Sin distincion de
+        // mayusculas, para que "juan" y "Juan" sean el mismo cliente.
+        if (!customer) {
+          customer = await prisma.customer.findFirst({
+            where: { name: { equals: name, mode: "insensitive" } },
+          });
         }
         if (!customer) {
           customer = await prisma.customer.create({
