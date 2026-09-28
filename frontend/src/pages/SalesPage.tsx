@@ -17,7 +17,7 @@ import { saleCode } from "../utils/documentCodes";
 import { downloadElementAsPdf } from "../utils/quotePdf";
 import QuoteDocument from "../components/quotes/QuoteDocument";
 
-const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Celular", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos", "Nota"];
+const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Celular", "Datos de envío", "Datos de factura", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos", "Nota"];
 const CART_COLUMNS = ["Producto", "Precio", "Cantidad", "Subtotal", "Eliminar"];
 const SEARCH_COLUMNS = [
   "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
@@ -72,6 +72,7 @@ interface SaleRecord {
   datosFactura?: string | null;
   nitName?: string | null;
   telefono?: string | null;
+  telefonoFactura?: string | null;
   items: { id: number; quantity: number; unitPrice: number; subtotal: number;
     product: { id: number; name: string; itemCode: string; brand?: string } }[];
   payments: { id: number; method: string; amount: number }[];
@@ -982,6 +983,36 @@ return [...prev, {
         );
       case "Celular":
         return <td className="px-4 py-3 text-gray-300 text-xs whitespace-nowrap">{s.customer?.phone || "—"}</td>;
+      // Envio y factura van como bloques aparte, igual que en el formulario:
+      // son tres personas distintas y el cliente ya esta en su propia columna.
+      case "Datos de envío":
+        return (
+          <td className="px-4 py-3">
+            {s.paraQuien || s.lugarEntrega || s.telefono ? (
+              <div className="space-y-0.5">
+                {s.paraQuien && <p className="text-gray-200 text-sm">{s.paraQuien}</p>}
+                {s.lugarEntrega && <p className="text-xs text-gray-500">{s.lugarEntrega}</p>}
+                {s.telefono && <p className="text-xs text-gray-500">Tel: {s.telefono}</p>}
+              </div>
+            ) : (
+              <span className="text-gray-600 text-xs">—</span>
+            )}
+          </td>
+        );
+      case "Datos de factura":
+        return (
+          <td className="px-4 py-3">
+            {s.nitName || s.datosFactura || s.telefonoFactura ? (
+              <div className="space-y-0.5">
+                {s.nitName && <p className="text-gray-200 text-sm">{s.nitName}</p>}
+                {s.datosFactura && <p className="text-xs text-gray-500">NIT: {s.datosFactura}</p>}
+                {s.telefonoFactura && <p className="text-xs text-gray-500">Tel: {s.telefonoFactura}</p>}
+              </div>
+            ) : (
+              <span className="text-gray-600 text-xs">—</span>
+            )}
+          </td>
+        );
       case "Usuario":
         return <td className="px-4 py-3 text-gray-300 text-xs">{s.user.name}</td>;
       case "Ubicación":
