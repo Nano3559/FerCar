@@ -74,7 +74,7 @@ interface SaleRecord {
   telefono?: string | null;
   telefonoFactura?: string | null;
   items: { id: number; quantity: number; unitPrice: number; subtotal: number;
-    product: { id: number; name: string; itemCode: string; brand?: string } }[];
+    product: { id: number; name: string; itemCode: string; brand?: string; manufacturer?: string | null } }[];
   payments: { id: number; method: string; amount: number }[];
 }
 
@@ -1634,6 +1634,7 @@ return [...prev, {
                                       <thead>
                                         <tr className="text-gray-500 border-b border-dark-700/50">
                                           <th className="text-left px-2 py-1.5 font-medium">Producto</th>
+                                          <th className="text-left px-2 py-1.5 font-medium">Fabricante</th>
                                           <th className="text-left px-2 py-1.5 font-medium">Código</th>
                                           <th className="text-right px-2 py-1.5 font-medium">Cantidad</th>
                                           <th className="text-right px-2 py-1.5 font-medium">Precio</th>
@@ -1642,13 +1643,14 @@ return [...prev, {
                                       </thead>
                                       <tbody>
                                         {s.items.length === 0 ? (
-                                          <tr><td colSpan={5} className="px-2 py-3 text-center text-gray-600">Sin ítems</td></tr>
+                                          <tr><td colSpan={6} className="px-2 py-3 text-center text-gray-600">Sin ítems</td></tr>
                                         ) : s.items.map((item) => (
                                           <tr key={item.id} className="border-b border-dark-700/20">
                                             <td className="px-2 py-1.5">
                                               <span className="text-foreground">{item.product?.name || "Producto"}</span>
                                               {item.product?.brand && <span className="text-gray-500 ml-2">{item.product.brand}</span>}
                                             </td>
+                                            <td className="px-2 py-1.5 text-gray-400">{item.product?.manufacturer || "—"}</td>
                                             <td className="px-2 py-1.5 text-gray-400 font-mono">{item.product?.itemCode || "—"}</td>
                                             <td className="px-2 py-1.5 text-right text-gray-300">{item.quantity}</td>
                                             <td className="px-2 py-1.5 text-right text-gray-300">{formatBs(Number(item.unitPrice))}</td>

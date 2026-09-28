@@ -53,7 +53,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
           user: { select: { id: true, name: true } },
           location: { select: { id: true, name: true } },
           customer: true,
-          items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true } } } },
+          items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true, manufacturer: true } } } },
           payments: true,
         },
         orderBy: { saleDate: "desc" },
@@ -644,7 +644,7 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
           user: { select: { id: true, name: true } },
           location: { select: { id: true, name: true } },
           customer: true,
-          items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true } } } },
+          items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true, manufacturer: true } } } },
           payments: true,
         },
       });
@@ -720,7 +720,7 @@ router.post("/:id/payments", async (req: AuthRequest, res: Response) => {
         user: { select: { id: true, name: true } },
         location: { select: { id: true, name: true } },
         customer: true,
-        items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true } } } },
+        items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true, manufacturer: true } } } },
         payments: true,
       },
     });
