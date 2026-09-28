@@ -972,10 +972,7 @@ return [...prev, {
         return (
           <td className="px-4 py-3">
             {s.customer ? (
-              <div>
-                <p className="text-gray-200 text-sm">{s.customer.name}</p>
-                {s.customer.nit && <p className="text-xs text-gray-500">NIT: {s.customer.nit}</p>}
-              </div>
+              <span className="text-gray-200 text-sm">{s.customer.name}</span>
             ) : (
               <span className="text-gray-600 text-xs">Consumidor final</span>
             )}
