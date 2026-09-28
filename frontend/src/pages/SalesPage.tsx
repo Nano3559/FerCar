@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "react";
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
   FileText, RefreshCw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
@@ -77,6 +77,15 @@ interface SaleRecord {
     product: { id: number; name: string; itemCode: string; brand?: string } }[];
   payments: { id: number; method: string; amount: number }[];
 }
+
+interface OpenSaleFilters {
+  manufacturer: string; supplierId: string; brand: string; model: string; year: string;
+  detail: string; oemCode: string; factoryCode: string; categoryId: string;
+}
+const EMPTY_OPEN_SALE_FILTERS: OpenSaleFilters = {
+  manufacturer: "", supplierId: "", brand: "", model: "", year: "",
+  detail: "", oemCode: "", factoryCode: "", categoryId: "",
+};
 
 const PAGE_SIZE = 15;
 
@@ -316,6 +325,12 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [openSaleSearch, setOpenSaleSearch] = useState("");
   const [openSaleResults, setOpenSaleResults] = useState<Product[]>([]);
   const [openSaleSearching, setOpenSaleSearching] = useState(false);
+  // Mismos filtros que usa el catalogo de la venta: al ampliar un pedido se
+  // busca sobre el mismo criterio con el que se armo, no con un buscador
+  // aparte. Van aparte del de la pagina para no mover lo que el vendedor ya
+  // dejo filtrado ahi.
+  const [openSaleFilters, setOpenSaleFilters] = useState<OpenSaleFilters>(EMPTY_OPEN_SALE_FILTERS);
+  const [showOpenSaleFilters, setShowOpenSaleFilters] = useState(false);
   const [openSalePending, setOpenSalePending] = useState<{ productId: number; quantity: number; unitPrice: number; priceTier: 1 | 2; name: string; itemCode: string }[]>([]);
   const [openSalePayMethod, setOpenSalePayMethod] = useState("EFECTIVO");
   const [openSalePayAmount, setOpenSalePayAmount] = useState("");
@@ -323,6 +338,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const openSaleRef = useDialogBehavior(openSale !== null, () => {
     setOpenSale(null);
     setOpenSaleSearch(""); setOpenSaleResults([]); setOpenSalePending([]);
+    setOpenSaleFilters(EMPTY_OPEN_SALE_FILTERS); setShowOpenSaleFilters(false);
     setOpenSalePayAmount(""); setOpenSalePayMethod("EFECTIVO");
   });
 
@@ -333,20 +349,40 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const openSaleAdded = openSalePending.reduce((s, c) => s + c.quantity * c.unitPrice, 0);
 
   // ==================== AMPLIAR VENTA DEPARTAMENTAL ====================
-  const searchForOpenSale = async (term: string) => {
-    if (!term.trim()) { setOpenSaleResults([]); return; }
-    const params = new URLSearchParams({ search: term.trim(), includeZeroStock: "true", page: "1", limit: "8" });
-    if (openSale) params.set("locationId", String(openSale.location.id));
-    try {
+  const openSaleHasFilters = useMemo(
+    () => Object.values(openSaleFilters).some((v) => v !== ""),
+    [openSaleFilters]
+  );
+  const setOpenSaleFilter = (key: keyof OpenSaleFilters, value: string) =>
+    setOpenSaleFilters((prev) => ({ ...prev, [key]: value }));
+
+  // Busca con texto y filtros, con debounce y cancelando la peticion anterior
+  // (mismo patron que el catalogo). Sin includeZeroStock solo salen productos
+  // que hay en la tienda de la venta: offering algo sin stock no se puede.
+  useEffect(() => {
+    if (!openSale) return;
+    const controller = new AbortController();
+    const t = setTimeout(() => {
+      const params = new URLSearchParams({ page: "1", limit: "8" });
+      if (openSaleSearch.trim()) params.set("search", openSaleSearch.trim());
+      if (openSaleFilters.manufacturer) params.set("manufacturer", openSaleFilters.manufacturer);
+      if (openSaleFilters.supplierId) params.set("supplierId", openSaleFilters.supplierId);
+      if (openSaleFilters.brand) params.set("brand", openSaleFilters.brand);
+      if (openSaleFilters.model) params.set("model", openSaleFilters.model);
+      if (openSaleFilters.year) params.set("year", openSaleFilters.year);
+      if (openSaleFilters.detail) params.set("detail", openSaleFilters.detail);
+      if (openSaleFilters.oemCode) params.set("oemCode", openSaleFilters.oemCode);
+      if (openSaleFilters.factoryCode) params.set("factoryCode", openSaleFilters.factoryCode);
+      if (openSaleFilters.categoryId) params.set("categoryId", openSaleFilters.categoryId);
+      params.set("locationId", String(openSale.location.id));
       setOpenSaleSearching(true);
-      const res = await api.get(`/products?${params.toString()}`);
-      setOpenSaleResults(res.data.products || []);
-    } catch {
-      setOpenSaleResults([]);
-    } finally {
-      setOpenSaleSearching(false);
-    }
-  };
+      api.get(`/products?${params.toString()}`, { signal: controller.signal })
+        .then((res) => setOpenSaleResults(res.data.products || []))
+        .catch((err) => { if (!axios.isCancel(err)) setOpenSaleResults([]); })
+        .finally(() => setOpenSaleSearching(false));
+    }, 300);
+    return () => { clearTimeout(t); controller.abort(); };
+  }, [openSale, openSaleSearch, openSaleFilters]);
 
   const addToOpenSale = (p: Product, tier: 1 | 2) => {
     const precio = Number(tier === 1 ? p.price1 : p.price2);
@@ -2249,12 +2285,68 @@ return [...prev, {
             <div className="px-5 py-4 space-y-4">
               {/* Buscar productos a agregar */}
               <div>
-                <label htmlFor="ampliar-buscar" className="block text-xs text-gray-500 mb-1.5">Agregar productos</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="ampliar-buscar" className="block text-xs text-gray-500">Agregar productos</label>
+                  <div className="flex items-center gap-2">
+                    {openSaleHasFilters && (
+                      <button onClick={() => setOpenSaleFilters(EMPTY_OPEN_SALE_FILTERS)}
+                        className="text-xs text-gray-400 hover:text-foreground transition-colors">
+                        Limpiar
+                      </button>
+                    )}
+                    <button onClick={() => setShowOpenSaleFilters(!showOpenSaleFilters)} aria-expanded={showOpenSaleFilters}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs border transition-all ${
+                        showOpenSaleFilters && openSaleHasFilters
+                          ? "bg-primary-600/10 border-primary-600/30 text-primary-400"
+                          : "bg-dark-900/50 border-dark-600/50 text-gray-400 hover:text-foreground"
+                      }`}>
+                      <Filter size={12} /> Filtros
+                      {openSaleHasFilters && <span className="w-1.5 h-1.5 rounded-full bg-primary-400" />}
+                    </button>
+                  </div>
+                </div>
                 <input id="ampliar-buscar" type="text" value={openSaleSearch}
-                  onChange={(e) => { setOpenSaleSearch(e.target.value); searchForOpenSale(e.target.value); }}
+                  onChange={(e) => setOpenSaleSearch(e.target.value)}
                   placeholder="Buscar por código, nombre, marca o modelo..."
                   className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+
+                {showOpenSaleFilters && (
+                  <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-dark-700/50">
+                    <Autocomplete value={openSaleFilters.manufacturer} onChange={(v) => setOpenSaleFilter("manufacturer", v)}
+                      suggestions={filters.manufacturers} placeholder="Todos los fabricantes" label="Fabricante" />
+                    <Autocomplete value={openSaleFilters.supplierId} onChange={(v) => {
+                      setOpenSaleFilter("supplierId", v);
+                      const found = suppliers.find((s) => s.name === v);
+                      setOpenSaleFilter("supplierId", found ? String(found.id) : "");
+                    }}
+                      suggestions={suppliers.map((s) => s.name)} placeholder="Todos los proveedores" label="Proveedor" />
+                    <Autocomplete value={openSaleFilters.brand} onChange={(v) => setOpenSaleFilter("brand", v)}
+                      suggestions={filters.brands} placeholder="Todas las marcas" label="Marca" />
+                    <Autocomplete value={openSaleFilters.model} onChange={(v) => setOpenSaleFilter("model", v)}
+                      suggestions={filters.models || []} placeholder="Todos los modelos" label="Modelo" />
+                    <Autocomplete value={openSaleFilters.year} onChange={(v) => setOpenSaleFilter("year", v)}
+                      suggestions={filters.years || []} placeholder="Todos los años" label="Año / rango" />
+                    <Autocomplete value={openSaleFilters.detail} onChange={(v) => setOpenSaleFilter("detail", v)}
+                      suggestions={filters.detalles || []} placeholder="Detalle, versión, uso..." label="Detalles" />
+                    <Autocomplete value={openSaleFilters.oemCode} onChange={(v) => setOpenSaleFilter("oemCode", v)}
+                      suggestions={filters.oemCodes || []} placeholder="Todos los OEM" label="Cód. OEM" />
+                    <Autocomplete value={openSaleFilters.factoryCode} onChange={(v) => setOpenSaleFilter("factoryCode", v)}
+                      suggestions={filters.factoryCodes || []} placeholder="Cód. de fábrica" label="Cód. Fábrica" />
+                    <Autocomplete value={openSaleFilters.categoryId} onChange={(v) => {
+                      setOpenSaleFilter("categoryId", v);
+                      const found = filters.categories.find((c) => c.name === v);
+                      setOpenSaleFilter("categoryId", found ? String(found.id) : "");
+                    }}
+                      suggestions={filters.categories.map((c) => c.name)} placeholder="Todas las categorías" label="Categoría" />
+                  </div>
+                )}
+
                 {openSaleSearching && <p className="text-xs text-gray-500 mt-1.5">Buscando...</p>}
+                {!openSaleSearching && openSaleResults.length === 0 && (
+                  <p className="text-xs text-gray-600 mt-1.5">
+                    No se encontraron productos con esos criterios.
+                  </p>
+                )}
                 {!openSaleSearching && openSaleResults.length > 0 && (
                   <div className="mt-2 border border-dark-700/50 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
                     {openSaleResults.map((p) => (
