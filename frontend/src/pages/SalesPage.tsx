@@ -647,15 +647,18 @@ return [...prev, {
     }
   };
 
+  // Los textos largos se cortan para que la tabla entre sin barra horizontal.
+  // Con 12 columnas, un detalle o un nombre sin limite ensanchan la tabla
+  // entera y obligan a scrollear de lado. El texto completo queda en el title.
   const renderSearchCell = (p: Product, column: string) => {
-    if (column === "Fabricante") return <td key={column} className="px-3 py-2 text-gray-300">{p.manufacturer}</td>;
-    if (column === "Producto") return <td key={column} className="px-3 py-2 text-foreground font-medium max-w-[200px] truncate">{p.name}</td>;
-    if (column === "Marca") return <td key={column} className="px-3 py-2 text-gray-300">{p.brand}</td>;
-    if (column === "Modelo") return <td key={column} className="px-3 py-2 text-gray-300">{p.model}</td>;
-    if (column === "Año") return <td key={column} className="px-3 py-2 text-gray-400">{p.year}</td>;
-    if (column === "Detalles") return <td key={column} className="px-3 py-2 text-gray-400 text-xs">{p.detalles || p.detail || "—"}</td>;
-    if (column === "Cód. OEM") return <td key={column} className="px-3 py-2 text-gray-400 text-xs">{p.oemCode || "—"}</td>;
-    if (column === "Cód. Fábrica") return <td key={column} className="px-3 py-2 text-gray-400 text-xs">{p.factoryCode || "—"}</td>;
+    if (column === "Fabricante") return <td key={column} className="px-3 py-2 text-gray-300 max-w-[110px] truncate" title={p.manufacturer}>{p.manufacturer}</td>;
+    if (column === "Producto") return <td key={column} className="px-3 py-2 text-foreground font-medium max-w-[190px] truncate" title={p.name}>{p.name}</td>;
+    if (column === "Marca") return <td key={column} className="px-3 py-2 text-gray-300 max-w-[100px] truncate" title={p.brand}>{p.brand}</td>;
+    if (column === "Modelo") return <td key={column} className="px-3 py-2 text-gray-300 max-w-[110px] truncate" title={p.model}>{p.model}</td>;
+    if (column === "Año") return <td key={column} className="px-3 py-2 text-gray-400 whitespace-nowrap">{p.year}</td>;
+    if (column === "Detalles") return <td key={column} className="px-3 py-2 text-gray-400 text-xs max-w-[130px] truncate" title={p.detalles || p.detail || ""}>{p.detalles || p.detail || "—"}</td>;
+    if (column === "Cód. OEM") return <td key={column} className="px-3 py-2 text-gray-400 text-xs max-w-[110px] truncate" title={p.oemCode || ""}>{p.oemCode || "—"}</td>;
+    if (column === "Cód. Fábrica") return <td key={column} className="px-3 py-2 text-gray-400 text-xs max-w-[110px] truncate" title={p.factoryCode || ""}>{p.factoryCode || "—"}</td>;
     if (column === "Precio 1") return <td key={column} className="px-3 py-2 text-right text-green-400 font-medium whitespace-nowrap">{formatBs(Number(p.price1))}</td>;
     if (column === "Precio 2") return <td key={column} className="px-3 py-2 text-right text-blue-400 whitespace-nowrap">{Number(p.price2) > 0 ? formatBs(Number(p.price2)) : "—"}</td>;
     if (column === "Stock") return (
@@ -2250,7 +2253,7 @@ return [...prev, {
       {openSale && (
         <div ref={openSaleRef} role="dialog" aria-modal="true" aria-label={`Ampliar venta ${saleCode(openSale.id, openSale.saleDate)}`}
           className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm overflow-y-auto">
-          <div className="w-full max-w-6xl bg-dark-900 border border-dark-700/50 rounded-2xl shadow-2xl my-auto">
+          <div className="w-full max-w-[96vw] bg-dark-900 border border-dark-700/50 rounded-2xl shadow-2xl my-auto">
             <div className="flex items-start justify-between px-5 py-4 border-b border-dark-700/50">
               <div>
                 <h3 className="text-base font-bold text-foreground">
