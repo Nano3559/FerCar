@@ -363,7 +363,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     if (!openSale) return;
     const controller = new AbortController();
     const t = setTimeout(() => {
-      const params = new URLSearchParams({ page: "1", limit: "8" });
+      const params = new URLSearchParams({ page: "1", limit: "15" });
       if (openSaleSearch.trim()) params.set("search", openSaleSearch.trim());
       if (openSaleFilters.manufacturer) params.set("manufacturer", openSaleFilters.manufacturer);
       if (openSaleFilters.supplierId) params.set("supplierId", openSaleFilters.supplierId);
@@ -2248,7 +2248,7 @@ return [...prev, {
       {openSale && (
         <div ref={openSaleRef} role="dialog" aria-modal="true" aria-label={`Ampliar venta ${saleCode(openSale.id, openSale.saleDate)}`}
           className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm overflow-y-auto">
-          <div className="w-full max-w-2xl bg-dark-900 border border-dark-700/50 rounded-2xl shadow-2xl my-auto">
+          <div className="w-full max-w-6xl bg-dark-900 border border-dark-700/50 rounded-2xl shadow-2xl my-auto">
             <div className="flex items-start justify-between px-5 py-4 border-b border-dark-700/50">
               <div>
                 <h3 className="text-base font-bold text-foreground">
@@ -2311,7 +2311,7 @@ return [...prev, {
                   className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
 
                 {showOpenSaleFilters && (
-                  <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-dark-700/50">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 mt-3 pt-3 border-t border-dark-700/50">
                     <Autocomplete value={openSaleFilters.manufacturer} onChange={(v) => setOpenSaleFilter("manufacturer", v)}
                       suggestions={filters.manufacturers} placeholder="Todos los fabricantes" label="Fabricante" />
                     <Autocomplete value={openSaleFilters.supplierId} onChange={(v) => {
@@ -2348,23 +2348,41 @@ return [...prev, {
                   </p>
                 )}
                 {!openSaleSearching && openSaleResults.length > 0 && (
-                  <div className="mt-2 border border-dark-700/50 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
-                    {openSaleResults.map((p) => (
-                      <div key={p.id} className="flex items-center justify-between gap-2 px-3 py-2 border-b border-dark-700/30 last:border-0 hover:bg-dark-800/50">
-                        <div className="min-w-0">
-                          <p className="text-xs text-foreground truncate">{p.name}</p>
-                          <p className="text-xs text-gray-500">{p.itemCode} · stock {p.stock}</p>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button onClick={() => addToOpenSale(p, 1)} className="px-2 py-1 rounded-lg text-xs bg-primary-600/15 text-primary-400 hover:bg-primary-600/25 transition-colors">
-                            P1 {formatBs(Number(p.price1))}
-                          </button>
-                          <button onClick={() => addToOpenSale(p, 2)} className="px-2 py-1 rounded-lg text-xs bg-dark-700/60 text-gray-300 hover:bg-dark-700 transition-colors">
-                            P2 {formatBs(Number(p.price2))}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="mt-3 border border-dark-700/50 rounded-xl overflow-x-auto max-h-[45vh] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-500 border-b border-dark-700/50">
+                          {SEARCH_COLUMNS.map((col) => {
+                            const align = ["Precio 1", "Precio 2"].includes(col) ? "text-right" : ["Stock", "Acciones"].includes(col) ? "text-center" : "text-left";
+                            return <th key={col} className={`${align} px-3 py-2 font-medium whitespace-nowrap`}>{col}</th>;
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {openSaleResults.map((p) => (
+                          <tr key={p.id} className="border-b border-dark-700/30 last:border-0 hover:bg-dark-900/30">
+                            {SEARCH_COLUMNS.map((col) =>
+                              col === "Acciones" ? (
+                                <td key={col} className="px-3 py-2">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button onClick={() => addToOpenSale(p, 1)}
+                                      className="px-2 py-1 rounded-lg text-xs bg-primary-600/15 text-primary-400 hover:bg-primary-600/25 transition-colors whitespace-nowrap">
+                                      P1 {formatBs(Number(p.price1))}
+                                    </button>
+                                    <button onClick={() => addToOpenSale(p, 2)}
+                                      className="px-2 py-1 rounded-lg text-xs bg-dark-700/60 text-gray-300 hover:bg-dark-700 transition-colors whitespace-nowrap">
+                                      P2 {formatBs(Number(p.price2))}
+                                    </button>
+                                  </div>
+                                </td>
+                              ) : (
+                                renderSearchCell(p, col)
+                              )
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
