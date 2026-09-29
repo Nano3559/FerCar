@@ -1872,78 +1872,60 @@ return [...prev, {
               )}
 
               {/* 3. Factura: al final y solo si la piden. Puede ser el cliente,
-                  quien recoge, o un tercero. */}
-              {saleType === "DEPARTAMENTAL" && (
-                <div className="border-t border-dark-700/50 pt-5 space-y-3">
-                  <button onClick={() => setRequiereFactura(!requiereFactura)} aria-expanded={requiereFactura}
-                    className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
-                      requiereFactura
-                        ? "bg-primary-600/10 border-primary-600/30 text-primary-300"
-                        : "bg-dark-900/50 border-dark-700/30 text-gray-400 hover:border-primary-500/30"
-                    }`}>
-                    <div className="flex items-center gap-2">
-                      <FileText size={16} />
-                      <span className="text-sm font-medium">Requiere Factura</span>
-                    </div>
-                    <ChevronDown size={16} className={`transition-transform ${requiereFactura ? "rotate-180" : ""}`} />
-                  </button>
+                  quien recoge, o un tercero. En local tambien aplica: el
+                  comprobante se emite en el momento de la venta, asi que sin
+                  NIT ni celular no sale. */}
+              <div className="border-t border-dark-700/50 pt-5 space-y-3">
+                <button onClick={() => setRequiereFactura(!requiereFactura)} aria-expanded={requiereFactura}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
+                    requiereFactura
+                      ? "bg-primary-600/10 border-primary-600/30 text-primary-300"
+                      : "bg-dark-900/50 border-dark-700/30 text-gray-400 hover:border-primary-500/30"
+                  }`}>
+                  <div className="flex items-center gap-2">
+                    <FileText size={16} />
+                    <span className="text-sm font-medium">Requiere Factura</span>
+                  </div>
+                  <ChevronDown size={16} className={`transition-transform ${requiereFactura ? "rotate-180" : ""}`} />
+                </button>
 
-                  {requiereFactura && (
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
-                        Datos de factura
-                      </h4>
+                {requiereFactura && (
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
+                      Datos de factura
+                    </h4>
+                    <div>
+                      <label htmlFor="venta-nombrefact" className="block text-xs text-gray-500 mb-1">
+                        Nombre / Razón social{saleType === "DEPARTAMENTAL" ? " *" : ""}
+                      </label>
+                      <input id="venta-nombrefact" type="text" value={nombreFactura}
+                        onChange={(e) => setNombreFactura(e.target.value)}
+                        placeholder="Nombre a facturar"
+                        className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label htmlFor="venta-nombrefact" className="block text-xs text-gray-500 mb-1">
-                          Nombre / Razón social{saleType === "DEPARTAMENTAL" ? " *" : ""}
+                        <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">
+                          NIT / Carnet{saleType !== "DEPARTAMENTAL" ? " *" : ""}
                         </label>
-                        <input id="venta-nombrefact" type="text" value={nombreFactura}
-                          onChange={(e) => setNombreFactura(e.target.value)}
-                          placeholder="Nombre a facturar"
+                        <input id="venta-nitfact" type="text" value={nitFactura}
+                          onChange={(e) => setNitFactura(e.target.value)}
+                          placeholder="NIT o CI"
                           className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">
-                            NIT / Carnet{saleType !== "DEPARTAMENTAL" ? " *" : ""}
-                          </label>
-                          <input id="venta-nitfact" type="text" value={nitFactura}
-                            onChange={(e) => setNitFactura(e.target.value)}
-                            placeholder="NIT o CI"
-                            className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                        </div>
-                        <div>
-                          <label htmlFor="venta-celfact" className="block text-xs text-gray-500 mb-1">
-                            Celular{saleType !== "DEPARTAMENTAL" ? " *" : ""}
-                          </label>
-                          <input id="venta-celfact" type="tel" value={celularFactura}
-                            onChange={(e) => setCelularFactura(e.target.value)}
-                            placeholder="Celular"
-                            className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
-                        </div>
+                      <div>
+                        <label htmlFor="venta-celfact" className="block text-xs text-gray-500 mb-1">
+                          Celular{saleType !== "DEPARTAMENTAL" ? " *" : ""}
+                        </label>
+                        <input id="venta-celfact" type="tel" value={celularFactura}
+                          onChange={(e) => setCelularFactura(e.target.value)}
+                          placeholder="Celular"
+                          className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
-
-              {/* En local el cliente solo se pide si lleva factura. */}
-              {saleType !== "DEPARTAMENTAL" && (
-                <div className="border-t border-dark-700/50 pt-5">
-                  <button onClick={() => setRequiereFactura(!requiereFactura)} aria-expanded={requiereFactura}
-                    className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
-                      requiereFactura
-                        ? "bg-primary-600/10 border-primary-600/30 text-primary-300"
-                        : "bg-dark-900/50 border-dark-700/30 text-gray-400 hover:border-primary-500/30"
-                    }`}>
-                    <div className="flex items-center gap-2">
-                      <FileText size={16} />
-                      <span className="text-sm font-medium">Requiere Factura</span>
-                    </div>
-                    <ChevronDown size={16} className={`transition-transform ${requiereFactura ? "rotate-180" : ""}`} />
-                  </button>
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
 
               {/* Nota / Recordatorio */}
               <div className="border-t border-dark-700/50 pt-5">
