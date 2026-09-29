@@ -755,8 +755,42 @@ return [...prev, {
   const cartItemCount = cart.reduce((sum, c) => sum + c.quantity, 0);
 
   // ==================== PAYMENTS ====================
-  const openPayment = () => {
+  const [checkingStock, setCheckingStock] = useState(false);
+
+  // El carrito se queda viejo: si el stock de la tienda bajo despues de
+  // agregar, el cobro falla al final con un error generico y no se sabe
+  // que producto es el que no tiene. Se revisa antes de abrir el cobro.
+  const openPayment = async () => {
     if (cart.length === 0) { toast.error("Agrega productos al carrito primero"); return; }
+    if (!selectedLocationId) { toast.error("Selecciona la tienda de la venta"); return; }
+
+    setCheckingStock(true);
+    try {
+      const faltantes: { name: string; hay: number; pides: number }[] = [];
+      for (const item of cart) {
+        const res = await api.get(`/inventory/product/${item.productId}`);
+        const loc = (res.data?.locations || []).find((l: any) => l.locationId === Number(selectedLocationId));
+        const available = Number(loc?.stock) || 0;
+        if (available < item.quantity) {
+          faltantes.push({ name: item.name, hay: available, pides: item.quantity });
+        }
+      }
+      if (faltantes.length > 0) {
+        const tienda = locations.find((l) => l.id === selectedLocationId)?.name || "la tienda";
+        toast.error(
+          `Sin stock en ${tienda}: ${faltantes.map((f) => `${f.name} (hay ${f.hay}, pides ${f.pides})`).join(", ")}. ` +
+            `Quitalo del carrito o solicitalo.`,
+          { duration: 7000 }
+        );
+        return;
+      }
+    } catch {
+      // Si la consulta falla no se bloquea la venta: el backend vuelve a
+      // validar al confirmar.
+    } finally {
+      setCheckingStock(false);
+    }
+
     setPayments([{ method: "EFECTIVO", amount: String(cartTotal.toFixed(2)) }]);
     setRequiereFactura(false);
     setCustomerData({ name: "", nit: "", phone: "" });
@@ -780,7 +814,7 @@ return [...prev, {
 
   // ==================== CONFIRM SALE ====================
   const confirmSale = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0) { toast.error("Agrega productos al carrito primero"); return; }
 
     // Departamental: el pedido se arma durante el dia y el cliente paga al
     // final, asi que se admite deudar. Local se cobra en el momento y exige
@@ -1579,10 +1613,10 @@ return [...prev, {
                     className="flex-1 bg-blue-600/10 border border-blue-600/25 text-blue-400 hover:bg-blue-600 hover:text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2">
                     <Printer size={16} /> Imprimir Cotización
                   </button>
-                  <button onClick={openPayment}
-                    className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20">
-                    <CreditCard size={18} /> Cobrar · {formatBs(cartTotal)}
-                  </button>
+              <button onClick={openPayment} disabled={checkingStock}
+                className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 disabled:opacity-60">
+                <CreditCard size={18} /> {checkingStock ? "Verificando stock..." : `Cobrar · ${formatBs(cartTotal)}`}
+              </button>
                 </div>
               </div>
             </>
