@@ -1086,8 +1086,10 @@ return [...prev, {
         );
       case "Nota":
         return (
-          <td className="px-4 py-3 text-gray-400 text-xs max-w-[15rem]">
-            {s.note ? <span title={s.note} className="line-clamp-2">{s.note}</span> : <span className="text-gray-600">—</span>}
+          <td className="px-4 py-3 text-gray-400 text-xs max-w-[20rem]">
+            {s.note
+              ? <span title={s.note} className="whitespace-normal break-words">{s.note}</span>
+              : <span className="text-gray-600">-</span>}
           </td>
         );
       default:
