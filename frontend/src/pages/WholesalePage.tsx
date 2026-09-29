@@ -405,16 +405,42 @@ export default function WholesalePage() {
   const formatDate = (d: string) => new Date(d).toLocaleDateString("es-BO", { day: "2-digit", month: "short", year: "numeric" });
 
   const downloadPDF = async () => {
-    const el = document.getElementById(showReceipt ? "wholesale-receipt-modal" : "wholesale-confirm-modal");
+    const modalId = showReceipt ? "wholesale-receipt-modal" : "wholesale-confirm-modal";
+    const el = document.getElementById(modalId);
     if (!el) return;
     toast.loading("Generando PDF...", { id: "wpdf" });
     try {
-      const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#151a22" });
+      // El modal del comprobante tiene alto maximo y scroll. html2canvas solo
+      // captura lo que se ve, asi que con muchos productos dejaba un bloque
+      // negro del alto del fondo donde deberian salir los de abajo. En la copia
+      // que se captura se quitan el alto maximo y el scroll para que entre
+      // todo el contenido.
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        backgroundColor: "#151a22",
+        windowHeight: el.scrollHeight,
+        onclone: (doc) => {
+          const c = doc.getElementById(modalId);
+          if (c) {
+            c.style.maxHeight = "none";
+            c.style.overflow = "visible";
+          }
+        },
+      });
       const img = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
       const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
       const imgHeight = (canvas.height * pageWidth) / canvas.width;
+      // Un comprobante con muchos productos no se estira en una sola hoja:
+      // se va cortando en varias.
       pdf.addImage(img, "PNG", 0, 0, pageWidth, imgHeight);
+      let heightLeft = imgHeight - pageHeight;
+      while (heightLeft > 0) {
+        pdf.addPage();
+        pdf.addImage(img, "PNG", 0, heightLeft - imgHeight, pageWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
       pdf.save(`venta-mayorista-${lastWholesaleSale?.id || "cotizacion"}.pdf`);
       toast.success("PDF descargado", { id: "wpdf" });
     } catch {
