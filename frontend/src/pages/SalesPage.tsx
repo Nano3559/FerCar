@@ -670,13 +670,20 @@ return [...prev, {
       <td key={column} className="px-3 py-2">
         <div className="flex items-center justify-center gap-1.5">
           {p.stock <= 0 ? (
-            <button
-              onClick={() => openRequestProduct(p)}
-              title="Solicitar al almacén"
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-600/10 border border-amber-600/25 text-amber-400 hover:bg-amber-600 hover:text-white transition-all text-xs font-medium"
-            >
-              <Send size={14} /> Solicitar
-            </button>
+            // En local no se pide stock al almacen: la venta se cobra en el
+            // momento, asi que sin stock no se puede hacer nada. En
+            // departamental si, porque el pedido se arma durante el dia.
+            saleType === "DEPARTAMENTAL" ? (
+              <button
+                onClick={() => openRequestProduct(p)}
+                title="Solicitar al almacén"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-600/10 border border-amber-600/25 text-amber-400 hover:bg-amber-600 hover:text-white transition-all text-xs font-medium"
+              >
+                <Send size={14} /> Solicitar
+              </button>
+            ) : (
+              <span className="text-xs text-gray-600 px-2.5 py-1.5" title="Sin stock en esta tienda">Sin stock</span>
+            )
           ) : (
             <button
               onClick={() => openAddToCart(p)}
