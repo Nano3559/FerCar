@@ -410,11 +410,11 @@ export default function WholesalePage() {
     if (!el) return;
     toast.loading("Generando PDF...", { id: "wpdf" });
     try {
-      // El modal del comprobante tiene alto maximo y scroll. html2canvas solo
-      // captura lo que se ve, asi que con muchos productos dejaba un bloque
-      // negro del alto del fondo donde deberian salir los de abajo. En la copia
-      // que se captura se quitan el alto maximo y el scroll para que entre
-      // todo el contenido.
+      // html2canvas no dibuja bien dos cosas que usa este modal: el alto
+      // maximo con scroll, que dejaba solo la parte visible y el resto como un
+      // bloque negro, y la sombra con borde redondeado. En la copia que captura
+      // se quitan las dos y se fija el fondo, para que salga todo el
+      // contenido y limpio.
       const canvas = await html2canvas(el, {
         scale: 2,
         backgroundColor: "#151a22",
@@ -424,6 +424,8 @@ export default function WholesalePage() {
           if (c) {
             c.style.maxHeight = "none";
             c.style.overflow = "visible";
+            c.style.boxShadow = "none";
+            c.style.backgroundColor = "#151a22";
           }
         },
       });
