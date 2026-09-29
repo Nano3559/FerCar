@@ -352,9 +352,32 @@ router.post("/import", authorize("ADMIN"), upload.single("file"), async (req: Au
   }
 });
 
+// Los Excel que envian los proveedores cambian como escriben el encabezado:
+// CODIGO FABRICA, Codigo Fabrica, Codigo de Fabrica o Cod. Fabrica. Se
+// comparan normalizados (sin mayusculas, sin acentos, sin espacios ni
+// puntos) para que el archivo lea igual sin importar como lo armaron.
+const normHeader = (value: string): string =>
+  value
+    .toString()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+// Devuelve el primer valor no vacio entre los alias indicados.
+const pickField = (row: any, aliases: string[]): string => {
+  const wanted = aliases.map(normHeader);
+  for (const key of Object.keys(row)) {
+    if (!wanted.includes(normHeader(key))) continue;
+    const value = row[key];
+    if (value !== undefined && value !== null && value !== "") return value.toString().trim();
+  }
+  return "";
+};
+
 // POST /import-order — Importar un pedido mayorista desde Excel
-// Columnas: Codigo Item / Codigo OEM / Codigo Fabrica / QTY. Resuelve los productos,
-// autocompleta el Precio Mayor y devuelve los ítems listos para la venta.
+// Columnas: Codigo Item / Codigo OEM / Codigo Fabrica y Cantidad. Resuelve los
+// productos, autocompleta el Precio Mayor y devuelve los ítems para la venta.
 router.post("/import-order", authorize("ADMIN", "TIENDA"), upload.single("file"), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.file) {
@@ -374,10 +397,11 @@ router.post("/import-order", authorize("ADMIN", "TIENDA"), upload.single("file")
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] as any;
-      const itemCode = (row["Codigo Item"] || row["Código Item"] || row["CodigoItem"] || row["Item Code"] || row["Codigo"] || row["Código"] || "").toString().trim();
-      const oemCode = (row["Codigo OEM"] || row["Código OEM"] || row["Cod.OEM"] || row["OEM"] || "").toString().trim();
-      const factoryCode = (row["Codigo Fabrica"] || row["Código Fabrica"] || row["Cod. Fabrica"] || "").toString().trim();
-      const qty = parseInt(row["QTY"] || row["Qty"] || row["Cantidad"] || row["Cant"] || "0", 10) || 0;
+      const itemCode = pickField(row, ["Codigo Item", "Item Code", "Codigo", "Cod"]);
+      const oemCode = pickField(row, ["Codigo OEM", "Cod. OEM", "OEM"]);
+      const factoryCode = pickField(row, ["Codigo Fabrica", "Codigo de Fabrica", "Cod. Fabrica", "Factory Code"]);
+      // El ejemplo de "EJEMPLO VENTA X MAYOR" trae CANTIDAD en mayusculas.
+      const qty = parseInt(pickField(row, ["CANTIDAD", "Cantidad", "QTY", "Qty", "Cant", "Quantity"]), 10) || 0;
 
       if (!itemCode && !oemCode && !factoryCode) {
         errors.push(`Fila ${i + 2}: Falta el código del producto`);
@@ -390,8 +414,14 @@ router.post("/import-order", authorize("ADMIN", "TIENDA"), upload.single("file")
 
       let product: any = null;
       if (itemCode) product = await prisma.product.findUnique({ where: { itemCode } });
-      if (!product && oemCode) product = await prisma.product.findFirst({ where: { oemCode } });
-      if (!product && factoryCode) product = await prisma.product.findFirst({ where: { factoryCode } });
+      // OEM y Fabrica son codigos de terceros: llegan con distinta caja segun
+      // el archivo, asi que se buscan sin distinguir mayusculas.
+      if (!product && oemCode) {
+        product = await prisma.product.findFirst({ where: { oemCode: { equals: oemCode, mode: "insensitive" } } });
+      }
+      if (!product && factoryCode) {
+        product = await prisma.product.findFirst({ where: { factoryCode: { equals: factoryCode, mode: "insensitive" } } });
+      }
 
       if (!product) {
         errors.push(`Fila ${i + 2}: Producto no encontrado (${itemCode || oemCode || factoryCode})`);

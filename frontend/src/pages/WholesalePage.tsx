@@ -11,6 +11,7 @@ import Autocomplete from "../components/ui/Autocomplete";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
+import * as XLSX from "xlsx";
 import { saleCode } from "../utils/documentCodes";
 
 interface WholesaleItem {
@@ -331,6 +332,19 @@ export default function WholesalePage() {
     setImportResult(null);
     setImportFile(null);
     setActiveTab("carrito");
+  };
+
+  // Plantilla con el formato de "EJEMPLO VENTA X MAYOR": solo CODIGO FABRICA
+  // y CANTIDAD. Se puede escribir con tildes o sin ellas, en mayusculas o no.
+  const downloadPlantilla = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["CODIGO FABRICA", "CANTIDAD"],
+      ["212-2610N", 10],
+      ["AM07012HCR", 2],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Pedido");
+    XLSX.writeFile(wb, "EJEMPLO VENTA X MAYOR.xlsx");
   };
 
   const handleImportExcel = async () => {
@@ -1035,7 +1049,14 @@ export default function WholesalePage() {
             <div className="p-5 space-y-4">
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
                 <p className="text-blue-400 text-xs font-medium mb-1">El Excel debe contener las columnas: CODIGO FABRICA y CANTIDAD</p>
-                <p className="text-gray-400 text-xs">Los productos se agregan al pedido con el Precio Mayor autocompletado.</p>
+                <p className="text-gray-400 text-xs">
+                  Se puede escribir el encabezado con o sin tildes y en mayusculas o minusculas. Los productos se agregan
+                  al pedido con el Precio Mayor autocompletado.
+                </p>
+                <button type="button" onClick={downloadPlantilla}
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 underline underline-offset-2">
+                  <FileSpreadsheet size={14} /> Descargar plantilla de ejemplo
+                </button>
               </div>
               {!importResult ? (
                 <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-dark-600/50 rounded-xl cursor-pointer hover:border-primary-500/50 transition-colors bg-dark-900/30">
