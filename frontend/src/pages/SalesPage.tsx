@@ -104,13 +104,27 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<number | "">("");
 
+  // La tienda de la venta tiene que estar fijada ANTES de buscar productos.
+  // Si el catalogo se pide sin ubicacion, el backend devuelve la suma de
+  // todas las tiendas y el vendedor ve stock que no tiene en la suya: agrego
+  // 56 al carrito creyendo que habia, y al cobrar el backend valida contra
+  // 0 de su tienda y dice stock insuficiente.
+  useEffect(() => {
+    if (isTienda && user?.locationId) setSelectedLocationId(user.locationId);
+  }, [isTienda, user?.locationId]);
+
   useEffect(() => {
     api.get("/locations").then((r) => {
       const locationList = Array.isArray(r.data) ? r.data : r.data.locations || [];
       setLocations(locationList);
-      if (isTienda && user?.locationId) {
-        setSelectedLocationId(user.locationId);
-      }
+      // Si aun no hay tienda fijada se toma la del usuario, o la primera
+      // tienda: la venta siempre se registra en alguna tienda, asi que el
+      // catalogo tiene que mostrar el stock de esa misma.
+      setSelectedLocationId((prev) => {
+        if (prev) return prev;
+        if (isTienda && user?.locationId) return user.locationId;
+        return locationList.find((l: Location) => l.type === "TIENDA")?.id ?? "";
+      });
     }).catch(() => {});
   }, [isTienda, user?.locationId]);
 
@@ -192,6 +206,13 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     if (activeTab !== "venta") return;
     const controller = new AbortController();
     const t = setTimeout(() => {
+      // Sin tienda fijada no se busca: el catalogo volveria el stock de todas
+      // las tiendas junto y el vendedor venderia lo que no tiene.
+      if (!selectedLocationId) {
+        setSearchResults([]);
+        setSearchTotal(0);
+        return;
+      }
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (brand) params.set("brand", brand);
@@ -555,7 +576,13 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       const existing = prev.find((c) => c.productId === p.id);
       if (existing) {
         if (existing.quantity + qty > p.stock) {
-          toast.error(`Stock insuficiente (disponible: ${p.stock})`);
+          const tienda = locations.find((l) => l.id === selectedLocationId)?.name;
+          toast.error(
+            `Stock insuficiente${tienda ? ` en ${tienda}` : ""}: quedan ${p.stock}` +
+              (typeof p.stockTotal === "number" && p.stockTotal > p.stock
+                ? `. Hay ${p.stockTotal} en otras ubicaciones, se puede solicitar`
+                : "")
+          );
           return prev;
         }
         return prev.map((c) =>
@@ -666,8 +693,8 @@ return [...prev, {
       <td key={column} className="px-3 py-2 text-center">
         <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span>
         {typeof p.stockTotal === "number" && p.stockTotal !== p.stock && (
-          <p className="text-[10px] text-gray-500 mt-0.5 whitespace-nowrap" title="Suma de todas las tiendas">
-            {p.stockTotal} en total
+          <p className="text-[10px] text-gray-500 mt-0.5 whitespace-nowrap" title="Suma de todas las tiendas. No se puede vender: hay que moverlo primero.">
+            {p.stockTotal} en otras ubicaciones
           </p>
         )}
       </td>
