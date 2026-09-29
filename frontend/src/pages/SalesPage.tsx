@@ -27,7 +27,7 @@ const SEARCH_COLUMNS = [
 interface Product {
   id: number; itemCode: string; manufacturer: string; name: string;
   brand: string; model: string; year: string; price1: string; price2: string;
-  wholesalePrice: string | null; stock: number; category: string | null;
+  wholesalePrice: string | null; stock: number; stockTotal?: number; category: string | null;
   image: string | null; oemCode: string | null; factoryCode: string | null;
   detail: string | null; detalles: string | null;
 }
@@ -664,6 +664,11 @@ return [...prev, {
     if (column === "Stock") return (
       <td key={column} className="px-3 py-2 text-center">
         <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span>
+        {typeof p.stockTotal === "number" && p.stockTotal !== p.stock && (
+          <p className="text-[10px] text-gray-500 mt-0.5 whitespace-nowrap" title="Suma de todas las tiendas">
+            {p.stockTotal} en total
+          </p>
+        )}
       </td>
     );
     if (column === "Acciones") return (

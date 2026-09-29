@@ -166,9 +166,13 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
     const isAuth = !!req.user;
 
     const result = products.map((p) => {
+      // stock: lo que hay en la tienda elegida (o la suma si no se filtro).
+      // stockTotal: la suma de todas las tiendas, para saber si el repuesto
+      // existe en otro local cuando aqui no hay.
+      const stockTotal = p.inventories.reduce((sum, inv) => sum + inv.stock, 0);
       const stock = filterLocationId
         ? (p.inventories.find((inv) => inv.locationId === filterLocationId)?.stock || 0)
-        : p.inventories.reduce((sum, inv) => sum + inv.stock, 0);
+        : stockTotal;
       const item: any = {
         id: p.id,
         itemCode: p.itemCode,
@@ -186,6 +190,7 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
         categoryId: p.categoryId,
         category: p.category?.name || null,
         stock,
+        stockTotal,
       };
       if (isAuth) {
         item.price1 = p.price1;
