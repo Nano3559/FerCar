@@ -320,6 +320,9 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [requestNote, setRequestNote] = useState("");
   const [requestSaving, setRequestSaving] = useState(false);
   const [requestSources, setRequestSources] = useState<{ locationId: number; locationName: string; locationType: string; stock: number }[]>([]);
+  // Cuando la solicitud sale del modal Ampliar, el destino es la tienda de
+  // esa venta y no la del selector de arriba.
+  const [requestDestino, setRequestDestino] = useState<{ id: number; name: string } | null>(null);
   const [requestFrom, setRequestFrom] = useState<number | null>(null);
   const [requestSourcesLoading, setRequestSourcesLoading] = useState(false);
   const requestPanelRef = useDialogBehavior(showRequest, () => { setShowRequest(false); setRequestTarget(null); });
@@ -353,7 +356,8 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   // dejo filtrado ahi.
   const [openSaleFilters, setOpenSaleFilters] = useState<OpenSaleFilters>(EMPTY_OPEN_SALE_FILTERS);
   const [showOpenSaleFilters, setShowOpenSaleFilters] = useState(false);
-  const [openSalePending, setOpenSalePending] = useState<{ productId: number; quantity: number; unitPrice: number; priceTier: 1 | 2; name: string; itemCode: string }[]>([]);
+  // stock: cuanto hay en la tienda de la venta, para saber cuanto falta pedir.
+  const [openSalePending, setOpenSalePending] = useState<{ productId: number; quantity: number; unitPrice: number; priceTier: 1 | 2; name: string; itemCode: string; stock: number }[]>([]);
   const [openSalePayMethod, setOpenSalePayMethod] = useState("EFECTIVO");
   const [openSalePayAmount, setOpenSalePayAmount] = useState("");
   const [openSaleBusy, setOpenSaleBusy] = useState(false);
@@ -379,8 +383,9 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     setOpenSaleFilters((prev) => ({ ...prev, [key]: value }));
 
   // Busca con texto y filtros, con debounce y cancelando la peticion anterior
-  // (mismo patron que el catalogo). Sin includeZeroStock solo salen productos
-  // que hay en la tienda de la venta: offering algo sin stock no se puede.
+  // (mismo patron que el catalogo). Con includeZeroStock salen tambien los
+  // productos que no hay en la tienda de la venta: el pedido se arma durante
+  // el dia, asi que lo que falta se pide a otra ubicacion.
   useEffect(() => {
     if (!openSale) return;
     const controller = new AbortController();
@@ -397,6 +402,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       if (openSaleFilters.factoryCode) params.set("factoryCode", openSaleFilters.factoryCode);
       if (openSaleFilters.categoryId) params.set("categoryId", openSaleFilters.categoryId);
       params.set("locationId", String(openSale.location.id));
+      params.set("includeZeroStock", "true");
       setOpenSaleSearching(true);
       api.get(`/products?${params.toString()}`, { signal: controller.signal })
         .then((res) => setOpenSaleResults(res.data.products || []))
@@ -412,12 +418,26 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       toast.error(`"${p.name}" no tiene precio ${tier === 1 ? "1" : "2"}`);
       return;
     }
+    // El pedido se arma durante el dia, asi que se puede agregar aunque la
+    // tienda no tenga: lo que falte se pide a otra ubicacion. Si el stock se
+    // queda corto se dice cuanto, para que se pida solo ese tanto.
+    const yaEnPedido = openSalePending.find((c) => c.productId === p.id && c.priceTier === tier)?.quantity || 0;
+    if (yaEnPedido + 1 > p.stock) {
+      const falta = yaEnPedido + 1 - p.stock;
+      toast(
+        `"${p.name}": en ${openSale?.location?.name || "la tienda"} hay ${p.stock} y el pedido pide ${yaEnPedido + 1}. ` +
+          (p.stock > 0
+            ? `Se agrega igual y faltan ${falta} por pedir.`
+            : `Faltan ${falta} por pedir a otra ubicación.`),
+        { icon: "⚠️", duration: 6000 }
+      );
+    }
     setOpenSalePending((prev) => {
       const found = prev.find((c) => c.productId === p.id && c.priceTier === tier);
       if (found) {
         return prev.map((c) => (c === found ? { ...c, quantity: c.quantity + 1 } : c));
       }
-      return [...prev, { productId: p.id, quantity: 1, unitPrice: precio, priceTier: tier, name: p.name, itemCode: p.itemCode }];
+      return [...prev, { productId: p.id, quantity: 1, unitPrice: precio, priceTier: tier, name: p.name, itemCode: p.itemCode, stock: p.stock }];
     });
     setOpenSaleSearch("");
     setOpenSaleResults([]);
@@ -984,31 +1004,36 @@ return [...prev, {
   // A donde se pide: el almacen o cualquier otra tienda que tenga el
   // repuesto. El backend ya guardaba el origen (fromLocationId), antes solo
   // se usaba el primer almacen; ahora se elige.
-  const requestDestinoId = isTienda
-    ? user?.locationId
-    : selectedLocationId
-      ? Number(selectedLocationId)
-      : locations.find((l) => l.type === "TIENDA")?.id;
+  const requestDestinoId = requestDestino
+    ? requestDestino.id
+    : isTienda
+      ? user?.locationId
+      : selectedLocationId
+        ? Number(selectedLocationId)
+        : locations.find((l: Location) => l.type === "TIENDA")?.id;
 
-  const openRequestProduct = async (p: Product) => {
+  const openRequestProduct = async (p: Product, destino?: { id: number; name: string }, cantidad?: number) => {
     setRequestTarget(p);
-    setRequestQty(1);
+    setRequestQty(cantidad && cantidad > 0 ? cantidad : 1);
     setRequestNote("");
     setRequestSources([]);
     setRequestFrom(null);
+    setRequestDestino(destino ?? null);
     setShowRequest(true);
     setRequestSourcesLoading(true);
     try {
       const res = await api.get(`/inventory/product/${p.id}`);
-      const destino = isTienda
-        ? user?.locationId
-        : selectedLocationId
-          ? Number(selectedLocationId)
-          : locations.find((l) => l.type === "TIENDA")?.id;
+      const destinoId = destino
+        ? destino.id
+        : isTienda
+          ? user?.locationId
+          : selectedLocationId
+            ? Number(selectedLocationId)
+            : locations.find((l: Location) => l.type === "TIENDA")?.id;
       // No se puede pedir a la misma tienda que pide.
       const candidatas = (res.data?.locations || [])
         .map((l: any) => ({ locationId: l.locationId, locationName: l.locationName, locationType: l.locationType, stock: Number(l.stock) || 0 }))
-        .filter((l: any) => l.locationId !== destino);
+        .filter((l: any) => l.locationId !== destinoId);
       setRequestSources(candidatas);
       // Por defecto se pide a una tienda con stock: hay mas stock antes en
       // otra tienda que en el almacen. Si no hay ninguna, al almacen.
@@ -2228,8 +2253,10 @@ return [...prev, {
       )}
 
       {/* ============ REQUEST MODAL (solicitar a otra tienda/almacén) ============ */}
+      {/* z-[60] para que quede por encima del modal Ampliar, que se queda
+          abierto mientras se pide lo que falta. */}
       {showRequest && requestTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div ref={requestPanelRef} role="dialog" aria-modal="true" aria-label="Solicitar producto" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md overflow-hidden">
             <div className="flex items-start justify-between px-5 py-4 border-b border-dark-700/50">
               <div className="min-w-0 flex-1">
@@ -2491,15 +2518,27 @@ return [...prev, {
                             {SEARCH_COLUMNS.map((col) =>
                               col === "Acciones" ? (
                                 <td key={col} className="px-3 py-2">
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    <button onClick={() => addToOpenSale(p, 1)}
-                                      className="px-2 py-1 rounded-lg text-xs bg-primary-600/15 text-primary-400 hover:bg-primary-600/25 transition-colors whitespace-nowrap">
-                                      P1 {formatBs(Number(p.price1))}
-                                    </button>
-                                    <button onClick={() => addToOpenSale(p, 2)}
-                                      className="px-2 py-1 rounded-lg text-xs bg-dark-700/60 text-gray-300 hover:bg-dark-700 transition-colors whitespace-nowrap">
-                                      P2 {formatBs(Number(p.price2))}
-                                    </button>
+                                  <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                    {p.stock <= 0 ? (
+                                      // Sin stock en la tienda de la venta: se pide
+                                      // a otra ubicacion sin aggregarlo al pedido.
+                                      <button onClick={() => openRequestProduct(p, { id: openSale!.location.id, name: openSale!.location.name })}
+                                        title="Pedir a almacén u otra tienda"
+                                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs bg-amber-600/15 text-amber-400 hover:bg-amber-600 hover:text-white transition-colors whitespace-nowrap">
+                                        <Send size={12} /> Solicitar
+                                      </button>
+                                    ) : (
+                                      <>
+                                        <button onClick={() => addToOpenSale(p, 1)}
+                                          className="px-2 py-1 rounded-lg text-xs bg-primary-600/15 text-primary-400 hover:bg-primary-600/25 transition-colors whitespace-nowrap">
+                                          P1 {formatBs(Number(p.price1))}
+                                        </button>
+                                        <button onClick={() => addToOpenSale(p, 2)}
+                                          className="px-2 py-1 rounded-lg text-xs bg-dark-700/60 text-gray-300 hover:bg-dark-700 transition-colors whitespace-nowrap">
+                                          P2 {formatBs(Number(p.price2))}
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 </td>
                               ) : (
@@ -2538,6 +2577,23 @@ return [...prev, {
                           <Plus size={13} />
                         </button>
                         <span className="text-xs text-gray-300 w-20 text-right">{formatBs(c.quantity * c.unitPrice)}</span>
+                        {c.stock < c.quantity && (
+                          <button onClick={() => openRequestProduct(
+                            {
+                              id: c.productId, name: c.name, itemCode: c.itemCode, stock: c.stock,
+                              manufacturer: "", brand: "", model: "", year: null, detail: null,
+                              oemCode: null, factoryCode: null, categoryId: null, category: null,
+                              price1: c.unitPrice, price2: 0, wholesalePrice: null, cost: null, unitPrice: c.unitPrice,
+                              image: null, detalles: null,
+                            } as unknown as Product,
+                            { id: openSale!.location.id, name: openSale!.location.name },
+                            c.quantity - c.stock
+                          )}
+                            title="Pedir a almacén u otra tienda lo que falta"
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs bg-amber-600/15 text-amber-400 hover:bg-amber-600 hover:text-white transition-colors whitespace-nowrap">
+                            <Send size={12} /> Pedir {c.quantity - c.stock}
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
