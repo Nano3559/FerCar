@@ -56,7 +56,61 @@ export async function ensureRestockRequest(db: Db, args: RestockArgs): Promise<n
   const open = await db.productRequest.findFirst({
     where: { productId, locationId: destinationId, status: { in: OPEN_STATUSES } },
   });
-  if (open) return null;
+
+  if (open) {
+    // Ya hay una solicitud abierta porque el producto esta en camino. Si el
+    // motivo es una venta, la cantidad nueva se SUMA a la de esa solicitud: si
+    // no, se perdia en silencio y el almacen llevaba de menos. Por ejemplo, si
+    // se venden 1 y luego 3 con stock 0, la solicitud queda 1 y 4, no 1 y 1.
+    //
+    // El job de stock minimo NO suma: corre todos los dias y sin este tope
+    // inflaria la cantidad sin limite.
+    if (source !== "VENTA") return null;
+
+    const nuevaCantidad = open.quantity + quantity;
+    const [product, destination] = await Promise.all([
+      db.product.findUnique({ where: { id: productId }, select: { name: true } }),
+      db.location.findUnique({ where: { id: destinationId }, select: { name: true } }),
+    ]);
+
+    await db.productRequest.update({
+      where: { id: open.id },
+      data: {
+        quantity: nuevaCantidad,
+        history: {
+          create: {
+            previousStatus: open.status,
+            newStatus: open.status,
+            userId: requestedById,
+            userRole: "AUTOMATICO",
+          },
+        },
+      },
+    });
+
+    const nombre = product?.name || "Producto";
+    const destinoNombre = destination?.name || "la tienda";
+    const inventarioUsers = await db.user.findMany({ where: { role: { name: "INVENTARIO" } } });
+    const recipients = inventarioUsers.length > 0 ? inventarioUsers : [{ id: requestedById }];
+
+    for (const u of recipients) {
+      await db.notification.create({
+        data: {
+          userId: u.id,
+          title: "Reposición automática",
+          message: `La solicitud #${open.id} de "${nombre}" para ${destinoNombre} subió de ${open.quantity} a ${nuevaCantidad} unidades: otra venta volvió a consumir lo que había.`,
+          type: "WARNING",
+          linkUrl: "/panel/solicitudes",
+        },
+      });
+    }
+
+    console.log(
+      `[replenish] Solicitud #${open.id} (${source}) ${product?.name} -> ${destination?.name}: ${open.quantity} + ${quantity} = ${nuevaCantidad}`
+    );
+
+    return open.id;
+  }
 
   // Origen: el almacen desde donde se envia la mercaderia.
   const origin = await db.location.findFirst({

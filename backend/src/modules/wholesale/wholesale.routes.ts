@@ -181,22 +181,42 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         }
       }
 
-      // Solicitud automática al almacén por lo que falte en la tienda de venta.
-      // Si el producto está en la tienda, no se crea solicitud.
-      for (const req of supplyRequests) {
-        await ensureRestockRequest(tx, {
-          productId: req.productId,
-          destinationId: userLocationId,
-          requestedById: user.userId,
-          quantity: req.quantity,
-          source: "VENTA",
-          note: "Reposición automática: la venta superó el stock disponible",
-        });
-      }
+  // Solicitud automática al almacén por lo que falte en la tienda de venta.
+  // Si el producto está en la tienda, no se crea solicitud.
+  for (const req of supplyRequests) {
+    await ensureRestockRequest(tx, {
+      productId: req.productId,
+      destinationId: userLocationId,
+      requestedById: user.userId,
+      quantity: req.quantity,
+      source: "VENTA",
+      note: "Reposición automática: la venta superó el stock disponible",
+    });
+  }
+
+  // Se devuelve qué productos se vendieron sin stock y cuánto se pidió, para
+  // que la pantalla avise en vez de dejar pasar la venta en silencio.
+  const surtos = await tx.product.findMany({
+    where: { id: { in: supplyRequests.map((r) => r.productId) } },
+    select: { id: true, name: true, itemCode: true },
+  });
+  const nombrePorId = new Map(surtos.map((p) => [p.id, p]));
+  const faltantes = supplyRequests
+    .map((r) => {
+      const p = nombrePorId.get(r.productId);
+      return {
+        productId: r.productId,
+        nombre: p ? `${p.name} (${p.itemCode})` : `Producto ${r.productId}`,
+        cantidad: r.quantity,
+      };
+    })
+    .sort((a, b) => b.cantidad - a.cantidad);
+
 
       return {
         ...sale,
         total: Number(sale.total),
+        faltantes,
         items: sale.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
         payments: sale.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
       };

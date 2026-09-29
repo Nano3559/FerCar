@@ -273,7 +273,15 @@ export default function WholesalePage() {
       if (selectedStoreId) payload.locationId = selectedStoreId;
       const response = await api.post("/wholesale", payload);
       setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, paraDonde, nit, nitName, payments: [...validPayments], status: resultingStatus });
-      toast.success("Venta por mayor registrada");
+      // La venta se registra aunque la tienda no tenga: lo que falto se pidio
+      // solo. Se avisa que quedo pendiente para que no parezca que salio todo.
+      const faltantes: { nombre: string; cantidad: number }[] = response.data.faltantes || [];
+      if (faltantes.length > 0) {
+        const detalle = faltantes.map((f) => `${f.cantidad} ud de ${f.nombre}`).join(", ");
+        toast(`Venta registrada, pero se pidio al almacen lo que no habia: ${detalle}`, { icon: "⚠️", duration: 8000 });
+      } else {
+        toast.success("Venta por mayor registrada");
+      }
       setShowConfirm(false);
       setShowReceipt(true);
       resetForm();
