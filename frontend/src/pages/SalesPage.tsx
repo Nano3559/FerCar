@@ -779,9 +779,21 @@ return [...prev, {
         toast.error("Ingresa el nombre a facturar");
         return;
       }
-    } else if (requiereFactura && !customerData.name.trim()) {
-      toast.error("Ingresa el nombre del cliente para la factura");
-      return;
+    } else if (requiereFactura) {
+      // En local la factura se emite en el momento, asi que sin NIT y sin
+      // celular el comprobante no sale: se piden los dos.
+      if (!customerData.name.trim()) {
+        toast.error("Ingresa el nombre del cliente para la factura");
+        return;
+      }
+      if (!nitFactura.trim()) {
+        toast.error("Ingresa el NIT o carnet para la factura");
+        return;
+      }
+      if (!celularFactura.trim()) {
+        toast.error("Ingresa el celular para la factura");
+        return;
+      }
     }
 
     try {
@@ -1882,7 +1894,9 @@ return [...prev, {
                         Datos de factura
                       </h4>
                       <div>
-                        <label htmlFor="venta-nombrefact" className="block text-xs text-gray-500 mb-1">Nombre / Razón social *</label>
+                        <label htmlFor="venta-nombrefact" className="block text-xs text-gray-500 mb-1">
+                          Nombre / Razón social{saleType === "DEPARTAMENTAL" ? " *" : ""}
+                        </label>
                         <input id="venta-nombrefact" type="text" value={nombreFactura}
                           onChange={(e) => setNombreFactura(e.target.value)}
                           placeholder="Nombre a facturar"
@@ -1890,14 +1904,18 @@ return [...prev, {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">NIT / Carnet</label>
+                          <label htmlFor="venta-nitfact" className="block text-xs text-gray-500 mb-1">
+                            NIT / Carnet{saleType !== "DEPARTAMENTAL" ? " *" : ""}
+                          </label>
                           <input id="venta-nitfact" type="text" value={nitFactura}
                             onChange={(e) => setNitFactura(e.target.value)}
                             placeholder="NIT o CI"
                             className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                         </div>
                         <div>
-                          <label htmlFor="venta-celfact" className="block text-xs text-gray-500 mb-1">Celular</label>
+                          <label htmlFor="venta-celfact" className="block text-xs text-gray-500 mb-1">
+                            Celular{saleType !== "DEPARTAMENTAL" ? " *" : ""}
+                          </label>
                           <input id="venta-celfact" type="tel" value={celularFactura}
                             onChange={(e) => setCelularFactura(e.target.value)}
                             placeholder="Celular"
