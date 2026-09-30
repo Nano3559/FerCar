@@ -6,6 +6,12 @@ import { createWorker } from "tesseract.js";
 import path from "path";
 import { yearRangesOverlap } from "../../utils/yearRanges";
 import { classifyProductName } from "../../utils/productClassifier";
+import {
+  resolverColumnaUbicacion,
+  esColumnaCantidad,
+  leerCantidad,
+  normalizeHeader as normalize,
+} from "../../utils/locationColumns";
 import { authenticate, authorize, optionalAuth } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
 
@@ -729,9 +735,11 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const requestedLocationId = 0;
 
     // Mapa de ubicaciones por nombre normalizado (con/sin tildes) para
-    // distribuir stock usando columnas tipo "Tienda 1", "Almacén 1", etc.
+    // distribuir stock. Cada archivo del proveedor trae su propio formato, asi
+    // que una columna se reconoce por el nombre exacto, por el nombre escondido
+    // en el encabezado ("STOCK TUMUSLA", "TUMUSLA (TIENDA)") o por el numero
+    // que siga a TIENDA/ALMACEN ("TIENDA 1", "ALMACEN 2").
     const allLocations = await prisma.location.findMany();
-    const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const locByName: Record<string, number> = {};
     allLocations.forEach((l) => { locByName[normalize(l.name)] = l.id; });
     const locTypeById: Record<number, "TIENDA" | "ALMACEN"> = {};
@@ -740,17 +748,40 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const defaultLocation = allLocations.find((l) => normalize(l.name) === "chiquicollo");
     const defaultLocationId = defaultLocation?.id ?? null;
 
+    // Se resuelve una sola vez por archivo, no fila por fila.
+    const mapaColumnas = new Map<string, number>();
+    const comoSeResolvieron: string[] = [];
+    for (const key of Object.keys((rows[0] as any) || {})) {
+      const r = resolverColumnaUbicacion(key, allLocations);
+      if (r) {
+        mapaColumnas.set(key, r.locationId);
+        const nombre = allLocations.find((l) => l.id === r.locationId)?.name || r.locationId;
+        comoSeResolvieron.push(`"${key}" -> ${nombre} (${r.como})`);
+      }
+    }
+    const ubicacionesConColumna = new Set(mapaColumnas.values());
+    const ubicacionesSinColumna = allLocations.filter((l) => !ubicacionesConColumna.has(l.id));
+    const columnaCantidad = Object.keys((rows[0] as any) || {}).find((k) => esColumnaCantidad(k));
+    // Celdas que no traen un numero (por ejemplo "?") se cuentan aparte para
+    // avisar, en vez de perderlas como 0 sin decir nada.
+    const sinCantidadPorUbicacion = new Map<number, number>();
+    const stockPorUbicacion = new Map<number, number>();
+
     const suppliers = await prisma.supplier.findMany();
     const supplierByName: Record<string, number> = {};
     suppliers.forEach((s) => { supplierByName[normalize(s.name)] = s.id; });
 
     const getPerLocationStock = (row: any): { locationId: number; stock: number }[] => {
       const result: { locationId: number; stock: number }[] = [];
-      for (const key of Object.keys(row)) {
-        const locId = locByName[normalize(String(key).trim())];
-        if (!locId) continue;
-        const val = parseInt(row[key], 10) || 0;
-        if (val > 0) result.push({ locationId: locId, stock: val });
+      for (const [key, locationId] of mapaColumnas) {
+        const leido = leerCantidad(row[key]);
+        if (leido.sinDato) {
+          sinCantidadPorUbicacion.set(locationId, (sinCantidadPorUbicacion.get(locationId) || 0) + 1);
+        }
+        if (leido.valor > 0) {
+          result.push({ locationId, stock: leido.valor });
+          stockPorUbicacion.set(locationId, (stockPorUbicacion.get(locationId) || 0) + leido.valor);
+        }
       }
       return result;
     };
@@ -832,7 +863,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       price2 = numA(cellA(["PRECIO 2", "Precio 2", "Precio Mayoreo"]));
       wholesalePrice = numA(cellA(["PRECIO MAYOR", "Precio Mayor", "Precio mayor", "Precio Mayoreo", "XMAYOR"]));
       imagenUrls = cellA(["IMAGEN", "Imagen", "Image", "URL Imagen"]).split(",").map((u) => u.trim()).filter(Boolean);
-      rowStock = numA(cellA(["STOCK", "Stock", "CANTIDAD", "Cantidad", "Quantity"]));
+      rowStock = leerCantidad(columnaCantidad ? row[columnaCantidad] : "").valor;
       calidad = "";
       itemCode = itemCode || factoryCode || oemCode;
 
@@ -1025,12 +1056,46 @@ if (!name) {
       }
     }
 
+    // Resumen de lo que se subio y de lo que se quedo sin leer, para que el
+    // que importa no tenga que estar abriendo el archivo para comprobarlo.
+    for (const [locationId, cantidad] of stockPorUbicacion) {
+      const l = allLocations.find((x) => x.id === locationId);
+      if (l) warnings.push(`Stock subido a ${l.name} (${l.type}): ${cantidad} unidades en total`);
+    }
+    for (const [locationId, cantidad] of sinCantidadPorUbicacion) {
+      const l = allLocations.find((x) => x.id === locationId);
+      if (l) warnings.push(`${l.name}: ${cantidad} productos vinieron sin cantidad (celdas vacías o con "?") — hay que contarlos a mano`);
+    }
+    if (ubicacionesSinColumna.length > 0) {
+      warnings.push(
+        `El archivo NO trae columnas para: ${ubicacionesSinColumna.map((l) => `${l.name} (${l.type})`).join(", ")} — esas ubicaciones quedan como estaban`
+      );
+    }
+    if (columnaCantidad && mapaColumnas.size > 0) {
+      warnings.push(`La columna "${columnaCantidad}" se ignoró porque el archivo ya trae columnas por ubicación`);
+    }
+    if (mapaColumnas.size > 0) {
+      warnings.push(`Columnas de ubicación reconocidas: ${comoSeResolvieron.join("; ")}`);
+    }
+
     res.json({
       total: rows.length,
       imported: imported.length,
       updated: updated.length,
       errors: errors.length,
       warnings: warnings.length,
+      detalles: {
+        ubicacionesReconocidas: comoSeResolvieron,
+        ubicacionesSinColumna: ubicacionesSinColumna.map((l) => l.name),
+        stockPorUbicacion: [...stockPorUbicacion.entries()].map(([locationId, total]) => ({
+          ubicacion: allLocations.find((l) => l.id === locationId)?.name || locationId,
+          total,
+        })),
+        celdasSinCantidad: [...sinCantidadPorUbicacion.entries()].map(([locationId, n]) => ({
+          ubicacion: allLocations.find((l) => l.id === locationId)?.name || locationId,
+          productos: n,
+        })),
+      },
       details: { imported, updated, errors, warnings },
     });
   } catch (error: any) {

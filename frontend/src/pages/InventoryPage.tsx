@@ -562,6 +562,21 @@ const handleImportExcel = async () => {
     rows.push(`Total filas: ${r.total ?? 0}`);
     rows.push(`Creados: ${r.imported} | Actualizados: ${r.updated} | Errores: ${r.errors} | Advertencias: ${r.warnings ?? 0}`);
     rows.push("");
+    const det0 = r.detalles;
+    if (det0?.stockPorUbicacion?.length > 0) {
+      rows.push("=== STOCK LEÍDO DEL ARCHIVO POR UBICACIÓN ===");
+      det0.stockPorUbicacion.forEach((s: any) => rows.push(`- ${s.ubicacion}: ${s.total} unidades`));
+      if (det0.ubicacionesSinColumna?.length > 0) {
+        rows.push(`- SIN columna en el archivo (quedan como estaban): ${det0.ubicacionesSinColumna.join(", ")}`);
+      }
+      rows.push("");
+    }
+    if (det0?.celdasSinCantidad?.length > 0) {
+      rows.push("=== PRODUCTOS QUE HAY QUE CONTAR A MANO ===");
+      rows.push("(celdas vacías o con «?»: no se subió stock para ellas)");
+      det0.celdasSinCantidad.forEach((s: any) => rows.push(`- ${s.ubicacion}: ${s.productos} productos`));
+      rows.push("");
+    }
     const det = r.details ?? {};
     const list = (title: string, subtitle: string, items: any[]) => {
       rows.push(`=== ${title} (${items.length}) ===`);
@@ -1310,13 +1325,53 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
                       <p className="text-xs text-gray-400">Advertencias</p>
                     </div>
                   </div>
-                  {importResult.details?.warnings?.length > 0 && (
-                    <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 max-h-32 overflow-y-auto">
-                      <p className="text-xs text-amber-400 font-medium mb-1">Campos vacíos (editar manualmente):</p>
-                      {importResult.details.warnings.map((w: string, i: number) => (
-                        <p key={i} className="text-xs text-amber-300/90">{w}</p>
+                  {importResult.detalles?.stockPorUbicacion?.length > 0 && (
+                    <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-3">
+                      <p className="text-xs text-green-400 font-medium mb-2">
+                        Stock leído del archivo por ubicación
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {importResult.detalles.stockPorUbicacion.map((s: any) => (
+                          <div key={s.ubicacion} className="flex items-baseline justify-between gap-2 bg-dark-800/60 rounded-lg px-2 py-1">
+                            <span className="text-xs text-gray-300">{s.ubicacion}</span>
+                            <span className="text-sm font-semibold text-green-300">{s.total}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {importResult.detalles.ubicacionesSinColumna?.length > 0 && (
+                        <p className="text-xs text-amber-400/90 mt-2">
+                          Sin columna en el archivo (quedan como estaban):{" "}
+                          {importResult.detalles.ubicacionesSinColumna.join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {importResult.detalles?.celdasSinCantidad?.length > 0 && (
+                    <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3">
+                      <p className="text-xs text-amber-400 font-medium mb-1">
+                        Productos que hay que contar a mano
+                      </p>
+                      <p className="text-xs text-gray-400 mb-2">
+                        Estas celdas venían vacías o con «?»; no se subió nada para ellas.
+                      </p>
+                      {importResult.detalles.celdasSinCantidad.map((s: any) => (
+                        <p key={s.ubicacion} className="text-xs text-amber-300/90">
+                          {s.ubicacion}: <span className="font-semibold">{s.productos}</span> productos
+                        </p>
                       ))}
                     </div>
+                  )}
+                  {importResult.details?.warnings?.length > 0 && (
+                    <details className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
+                      <summary className="text-xs text-amber-400 font-medium cursor-pointer select-none">
+                        Avisos por producto ({importResult.details.warnings.length}) — desplegar
+                      </summary>
+                      <div className="max-h-32 overflow-y-auto mt-2">
+                        {importResult.details.warnings.map((w: string, i: number) => (
+                          <p key={i} className="text-xs text-amber-300/90">{w}</p>
+                        ))}
+                      </div>
+                    </details>
                   )}
                   {importResult.details?.errors?.length > 0 && (
                     <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3 max-h-32 overflow-y-auto">
