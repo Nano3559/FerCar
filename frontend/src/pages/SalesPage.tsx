@@ -286,6 +286,9 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [showPayment, setShowPayment] = useState(false);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
   const [requiereFactura, setRequiereFactura] = useState(false);
+  // El boton de factura solo habilita los datos de la factura. Los del cliente
+  // son opcionales y se piden aparte con esta marca.
+  const [incluirDatosCliente, setIncluirDatosCliente] = useState(false);
   const [customerData, setCustomerData] = useState<CustomerData>({ name: "", nit: "", phone: "" });
   const [saleNote, setSaleNote] = useState("");
   // Departamental: son tres personas distintas y a veces no coinciden.
@@ -813,6 +816,7 @@ return [...prev, {
 
     setPayments([{ method: "EFECTIVO", amount: String(cartTotal.toFixed(2)) }]);
     setRequiereFactura(false);
+    setIncluirDatosCliente(false);
     setCustomerData({ name: "", nit: "", phone: "" });
     setSaleNote("");
     setParaDonde(""); setParaQuien(""); setCelularEnvio("");
@@ -862,9 +866,10 @@ return [...prev, {
       }
     } else if (requiereFactura) {
       // En local la factura se emite en el momento, asi que sin NIT y sin
-      // celular el comprobante no sale: se piden los dos.
-      if (!customerData.name.trim()) {
-        toast.error("Ingresa el nombre del cliente para la factura");
+      // celular el comprobante no sale: se piden los dos. El cliente es
+      // opcional y solo se exige si se marco que se registre.
+      if (!nombreFactura.trim()) {
+        toast.error("Ingresa el nombre a facturar");
         return;
       }
       if (!nitFactura.trim()) {
@@ -873,6 +878,10 @@ return [...prev, {
       }
       if (!celularFactura.trim()) {
         toast.error("Ingresa el celular para la factura");
+        return;
+      }
+      if (incluirDatosCliente && !customerData.name.trim()) {
+        toast.error("Ingresa el nombre del cliente o desmarca sus datos");
         return;
       }
     }
@@ -902,9 +911,9 @@ return [...prev, {
         }
       }
 
-      // El cliente se guarda siempre en departamental, sea con factura o sin
-      // ella. En local solo cuando se pidio factura, como antes.
-      if (customerData.name.trim() && (saleType === "DEPARTAMENTAL" || requiereFactura)) {
+      // El cliente se guarda siempre en departamental. En local y mayorista solo
+      // cuando se pidio registrarlo, que es opcional.
+      if (customerData.name.trim() && (saleType === "DEPARTAMENTAL" || incluirDatosCliente)) {
         payload.customerData = {
           name: customerData.name.trim(),
           nit: customerData.nit.trim() || null,
@@ -912,16 +921,20 @@ return [...prev, {
         };
       }
 
+      // La factura no es solo de departamental: el boton tambien la pide en local
+      // y mayorista, y el backend la guarda para cualquier tipo de venta.
+      payload.requiereFactura = requiereFactura;
+      if (requiereFactura) {
+        payload.datosFactura = nitFactura.trim() || null;
+        payload.nitName = nombreFactura.trim() || null;
+        payload.telefonoFactura = celularFactura.trim() || null;
+      }
+
       if (saleType === "DEPARTAMENTAL") {
-        payload.requiereFactura = requiereFactura;
         // Envio: quien recoge, normalmente distinto al cliente.
         payload.paraQuien = paraQuien.trim() || null;
         payload.lugarEntrega = paraDonde.trim() || null;
         payload.telefono = celularEnvio.trim() || null;
-        // Factura: se llena aparte. El backend la ignora si no se pidio.
-        payload.datosFactura = nitFactura.trim() || null;
-        payload.nitName = nombreFactura.trim() || null;
-        payload.telefonoFactura = celularFactura.trim() || null;
       }
 
       if (selectedLocationId) {
@@ -1908,8 +1921,9 @@ return [...prev, {
               </div>
 
               {/* 1. Cliente: quien compra. En departamental siempre se pide,
-                  porque la venta se cobra al final del dia. */}
-              {(saleType === "DEPARTAMENTAL" || requiereFactura) && (
+                  porque la venta se cobra al final del dia. Pedir factura no
+                  lo activa: en local y mayorista es opcional y va aparte. */}
+              {saleType === "DEPARTAMENTAL" && (
                 <div className="border-t border-dark-700/50 pt-5 space-y-3">
                   <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide">
                     Datos de Cliente
@@ -1962,7 +1976,8 @@ return [...prev, {
                   comprobante se emite en el momento de la venta, asi que sin
                   NIT ni celular no sale. */}
               <div className="border-t border-dark-700/50 pt-5 space-y-3">
-                <button onClick={() => setRequiereFactura(!requiereFactura)} aria-expanded={requiereFactura}
+                <button onClick={() => { setRequiereFactura(!requiereFactura); if (requiereFactura) setIncluirDatosCliente(false); }}
+                  aria-expanded={requiereFactura}
                   className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
                     requiereFactura
                       ? "bg-primary-600/10 border-primary-600/30 text-primary-300"
@@ -2009,6 +2024,33 @@ return [...prev, {
                           className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
                       </div>
                     </div>
+                    {saleType !== "DEPARTAMENTAL" && (
+                      <div className="border-t border-dark-700/50 pt-3">
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            id="venta-incluir-cliente"
+                            checked={incluirDatosCliente}
+                            onChange={(e) => setIncluirDatosCliente(e.target.checked)}
+                            className="w-4 h-4 rounded accent-primary-500"
+                          />
+                          <span className="text-xs text-gray-400">
+                            Registrar también los datos del cliente (opcional)
+                          </span>
+                        </label>
+                        {incluirDatosCliente && (
+                          <div className="mt-3">
+                            <label htmlFor="venta-nombre-cliente-fact" className="block text-xs text-gray-500 mb-1">
+                              Nombre del cliente
+                            </label>
+                            <input id="venta-nombre-cliente-fact" type="text" value={customerData.name}
+                              onChange={(e) => setCustomerData((prev) => ({ ...prev, name: e.target.value }))}
+                              placeholder="Nombre del cliente"
+                              className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600" />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
