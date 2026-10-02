@@ -17,7 +17,7 @@ import { saleCode } from "../utils/documentCodes";
 import { downloadElementAsPdf } from "../utils/quotePdf";
 import QuoteDocument from "../components/quotes/QuoteDocument";
 
-const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Celular", "Datos de envío", "Datos de factura", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos", "Nota"];
+const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Datos de envío", "Datos de factura", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos", "Nota"];
 const CART_COLUMNS = ["Producto", "Precio", "Cantidad", "Subtotal", "Eliminar"];
 const SEARCH_COLUMNS = [
   "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
@@ -1157,10 +1157,10 @@ return [...prev, {
             )}
           </td>
         );
-      case "Celular":
-        return <td className="px-4 py-3 text-gray-300 text-xs whitespace-nowrap">{s.customer?.phone || "—"}</td>;
       // Envio y factura van como bloques aparte, igual que en el formulario:
       // son tres personas distintas y el cliente ya esta en su propia columna.
+      // El celular del cliente entra dentro de la factura, etiquetado, para no
+      // dejar una columna suelta solo con el telefono.
       case "Datos de envío":
         return (
           <td className="px-4 py-3">
@@ -1178,11 +1178,12 @@ return [...prev, {
       case "Datos de factura":
         return (
           <td className="px-4 py-3">
-            {s.nitName || s.datosFactura || s.telefonoFactura ? (
+            {s.nitName || s.datosFactura || s.telefonoFactura || s.customer?.phone ? (
               <div className="space-y-0.5">
                 {s.nitName && <p className="text-gray-200 text-sm">{s.nitName}</p>}
                 {s.datosFactura && <p className="text-xs text-gray-500">NIT: {s.datosFactura}</p>}
                 {s.telefonoFactura && <p className="text-xs text-gray-500">Tel: {s.telefonoFactura}</p>}
+                {s.customer?.phone && <p className="text-xs text-gray-500">Cliente: {s.customer.phone}</p>}
               </div>
             ) : (
               <span className="text-gray-600 text-xs">—</span>

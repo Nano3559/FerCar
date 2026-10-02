@@ -161,13 +161,21 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
   </div>
   ` : ""}
 
-  ${(sale.type === "MAYOR" && (sale.paraQuien || sale.lugarEntrega || sale.datosFactura || sale.formaPago)) ? `
+  ${(sale.type === "MAYOR" && (sale.paraQuien || sale.lugarEntrega || sale.formaPago)) ? `
   <div class="customer">
     <strong>Datos de entrega:</strong><br>
     ${sale.paraQuien ? `<span>Para: ${sale.paraQuien}</span><br>` : ""}
     ${sale.lugarEntrega ? `<span>Lugar: ${sale.lugarEntrega}</span><br>` : ""}
-    ${sale.datosFactura ? `<span>Factura: ${sale.datosFactura}</span><br>` : ""}
     ${sale.formaPago ? `<span>Forma de pago: ${sale.formaPago}</span><br>` : ""}
+  </div>
+  ` : ""}
+
+  ${(sale.nitName || sale.datosFactura || sale.telefonoFactura) ? `
+  <div class="customer">
+    <strong>Datos de factura:</strong><br>
+    ${sale.nitName ? `<span>Nombre / Razón social: ${sale.nitName}</span><br>` : ""}
+    ${sale.datosFactura ? `<span>NIT / Carnet: ${sale.datosFactura}</span><br>` : ""}
+    ${sale.telefonoFactura ? `<span>Celular: ${sale.telefonoFactura}</span><br>` : ""}
   </div>
   ` : ""}
 
