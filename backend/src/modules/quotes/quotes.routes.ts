@@ -142,7 +142,9 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       include: { items: true },
     });
 
-    res.status(201).json({ quote, code: quoteCode(quote.id, quote.date) });
+    // El codigo va tambien dentro de quote: es lo que hacen el listado, el
+// detalle y la actualizacion de estado, y es como lo espera el frontend.
+res.status(201).json({ quote: { ...quote, code: quoteCode(quote.id, quote.date) }, code: quoteCode(quote.id, quote.date) });
   } catch (error: any) {
     if (error.message && !error.message.includes("Prisma")) {
       return res.status(400).json({ message: error.message });

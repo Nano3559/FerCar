@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { authenticate, authorize, requireTiendaLocation } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
 import { ensureRestockRequest } from "../../utils/restockRequest";
-import { validateAndMergeItems } from "../../utils/saleItems";
+import { validateAndMergeItems, demandByProduct } from "../../utils/saleItems";
 import { saleCode } from "../../shared/documentCodes";
 
 const router = Router();
@@ -406,7 +406,10 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     const result = await prisma.$transaction(async (tx) => {
       const stockUpdates: { productId: number; quantity: number }[] = [];
 
-      for (const item of validItems) {
+      // El stock se valida por producto sumando todas sus lineas: un mismo
+      // producto puede aparecer en P1 y P2 y validar linea por linea dejaria
+      // pasar una venta que juntas superan el stock disponible.
+      for (const item of demandByProduct(validItems)) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
         if (!product) {
           throw new Error(`Producto con ID ${item.productId} no encontrado`);
@@ -483,7 +486,16 @@ router.post("/", async (req: AuthRequest, res: Response) => {
             })),
           },
         },
-        include: { items: true, payments: true },
+        include: {
+          items: true,
+          payments: true,
+          // El resumen de venta recien cobrada muestra los datos de factura del
+          // cliente. Sin incluirlos nunca se renderizaban, porque el frontend
+          // arma ese bloque desde la respuesta de esta misma llamada.
+          customer: { select: { id: true, name: true, nit: true, phone: true } },
+          location: { select: { id: true, name: true } },
+          user: { select: { id: true, name: true } },
+        },
       });
 
       // Si la venta viene de una cotizacion, se marca como convertida para que
@@ -572,7 +584,7 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
       if (!fresh) throw new Error("Venta no encontrada");
 
       const stockUpdates: { productId: number; quantity: number }[] = [];
-      for (const item of validItems) {
+      for (const item of demandByProduct(validItems)) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
         if (!product) throw new Error(`Producto con ID ${item.productId} no encontrado`);
 
@@ -586,39 +598,55 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
         stockUpdates.push({ productId: item.productId, quantity: item.quantity });
       }
 
-      // Si el mismo producto ya estaba en la venta se acumula la cantidad en
-      // una sola linea, igual que al crear la venta.
-      const byProduct = new Map<number, { quantity: number; unitPrice: number }>();
+      // Cada linea conserva su precio. Si al ampliar se agrega el mismo producto
+      // a otro precio (P1 vs P2) se crea una linea nueva: antes se reescribia el
+      // precio de las unidades ya vendidas y el total acababa por debajo de lo
+      // que ya se habia cobrado.
+      const lineKey = (productId: number, unitPrice: number) => `${productId}:${unitPrice}`;
+      const byLine = new Map<
+        string,
+        { id?: number; productId: number; quantity: number; unitPrice: number }
+      >();
       for (const existing of fresh.items) {
-        byProduct.set(existing.productId, {
+        const unitPrice = Number(existing.unitPrice);
+        byLine.set(lineKey(existing.productId, unitPrice), {
+          id: existing.id,
+          productId: existing.productId,
           quantity: existing.quantity,
-          unitPrice: Number(existing.unitPrice),
+          unitPrice,
         });
       }
       let added = 0;
       for (const item of validItems) {
-        const prev = byProduct.get(item.productId);
-        const quantity = (prev?.quantity || 0) + item.quantity;
-        const unitPrice = item.unitPrice;
-        byProduct.set(item.productId, { quantity, unitPrice });
-        added += item.quantity * unitPrice;
+        const key = lineKey(item.productId, item.unitPrice);
+        const prev = byLine.get(key);
+        if (prev) {
+          prev.quantity += item.quantity;
+        } else {
+          byLine.set(key, {
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+          });
+        }
+        added += item.quantity * item.unitPrice;
       }
 
-      for (const [productId, data] of byProduct) {
-        const before = fresh.items.find((i) => i.productId === productId);
-        if (before) {
+      for (const data of byLine.values()) {
+        const subtotal = data.quantity * data.unitPrice;
+        if (data.id) {
           await tx.saleItem.update({
-            where: { id: before.id },
-            data: { quantity: data.quantity, unitPrice: data.unitPrice, subtotal: data.quantity * data.unitPrice },
+            where: { id: data.id },
+            data: { quantity: data.quantity, subtotal },
           });
         } else {
           await tx.saleItem.create({
             data: {
               saleId,
-              productId,
+              productId: data.productId,
               quantity: data.quantity,
               unitPrice: data.unitPrice,
-              subtotal: data.quantity * data.unitPrice,
+              subtotal,
             },
           });
         }

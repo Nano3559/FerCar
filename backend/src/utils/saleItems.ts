@@ -13,16 +13,21 @@ export interface ValidatedSaleItem {
 
 /**
  * Valida y deduplica los ítems de una venta.
- * Combina cantidades del mismo producto (evita sobreventa con ítems repetidos)
- * y rechaza cantidades/precios no positivos. Lanza Error con mensajes claros
- * (los handlers lo convierten en respuesta 400).
+ * Combina cantidades del mismo producto **con el mismo precio** y rechaza
+ * cantidades/precios no positivos. Lanza Error con mensajes claros (los
+ * handlers lo convierten en respuesta 400).
+ *
+ * Un mismo producto puede legitimately aparecer en dos líneas con precios
+ * distintos (P1 y P2). Antes se fusionaban conservando el primer precio y el
+ * total cobrado no coincidía con el que el vendedor veía en pantalla, así que
+ * esas líneas se conservan separadas.
  */
 export function validateAndMergeItems(items: RawSaleItem[]): ValidatedSaleItem[] {
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error("Debe enviar al menos un ítem (items)");
   }
 
-  const totals = new Map<number, { quantity: number; unitPrice: number }>();
+  const totals = new Map<string, { productId: number; quantity: number; unitPrice: number }>();
   for (const it of items) {
     const productId = Number(it.productId);
     const quantity = Number(it.quantity);
@@ -38,17 +43,33 @@ export function validateAndMergeItems(items: RawSaleItem[]): ValidatedSaleItem[]
       throw new Error(`El precio unitario del producto ${productId} debe ser mayor a 0`);
     }
 
-    const prev = totals.get(productId);
+    const key = `${productId}:${unitPrice}`;
+    const prev = totals.get(key);
     if (prev) {
       prev.quantity += quantity;
     } else {
-      totals.set(productId, { quantity, unitPrice });
+      totals.set(key, { productId, quantity, unitPrice });
     }
   }
 
-  return Array.from(totals.entries()).map(([productId, v]) => ({
+  return Array.from(totals.values()).map(({ productId, quantity, unitPrice }) => ({
     productId,
-    quantity: v.quantity,
-    unitPrice: v.unitPrice,
+    quantity,
+    unitPrice,
   }));
+}
+
+/**
+ * Cantidad total que se pide de cada producto, sumando todas sus líneas.
+ * El stock se descuenta una sola vez por producto: validar línea por línea
+ * dejaría pasar dos líneas del mismo producto que juntas superan el stock.
+ */
+export function demandByProduct(
+  items: ValidatedSaleItem[],
+): { productId: number; quantity: number }[] {
+  const totals = new Map<number, number>();
+  for (const it of items) {
+    totals.set(it.productId, (totals.get(it.productId) ?? 0) + it.quantity);
+  }
+  return Array.from(totals.entries()).map(([productId, quantity]) => ({ productId, quantity }));
 }

@@ -18,7 +18,7 @@ import { saleCode } from "../utils/documentCodes";
 import { downloadElementAsPdf } from "../utils/quotePdf";
 import QuoteDocument from "../components/quotes/QuoteDocument";
 
-const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Datos de envío", "Datos de factura", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Pagos", "Nota"];
+const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Datos de envío", "Datos de factura", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Estado", "Pagos", "Nota"];
 const CART_COLUMNS = ["Producto", "Precio", "Cantidad", "Subtotal", "Eliminar"];
 const SEARCH_COLUMNS = [
   "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
@@ -79,6 +79,12 @@ interface SaleRecord {
   payments: { id: number; method: string; amount: number }[];
 }
 
+/** Lo que efectivamente se cobro de una venta. Un pago en credito no cuenta
+ *  como cobrado: es la misma regla que aplica el backend para marcar PENDIENTE,
+ *  y si aqui se calculara distinto el saldo mostrado no cuadraria con el estado. */
+const paidWithoutCredit = (s: SaleRecord) =>
+  s.payments.reduce((sum, p) => (p.method === "CREDITO" ? sum : sum + Number(p.amount || 0)), 0);
+
 interface OpenSaleFilters {
   manufacturer: string; supplierId: string; brand: string; model: string; year: string;
   detail: string; oemCode: string; factoryCode: string; categoryId: string;
@@ -96,10 +102,9 @@ interface SalesPageProps {
 }
 
 export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales" }: SalesPageProps = {}) {
-  const { user, allowedCategories } = useAuthStore();
+  const { user } = useAuthStore();
   const isAdmin = user?.role === "ADMIN";
   const isTienda = user?.role === "TIENDA";
-  const isVendedor = isTienda;
 
   // --- Locations ---
   const [locations, setLocations] = useState<Location[]>([]);
@@ -212,6 +217,8 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       if (!selectedLocationId) {
         setSearchResults([]);
         setSearchTotal(0);
+        setSearchPages(1);
+        setSearching(false);
         return;
       }
       const params = new URLSearchParams();
@@ -231,16 +238,27 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       params.set("limit", String(PAGE_SIZE));
       api.get(`/products?${params.toString()}`, { signal: controller.signal })
         .then((res) => {
-          setSearchResults((res.data.products || []).filter((p: Product) => !isVendedor || allowedCategories.length === 0 || allowedCategories.includes(p.category || "")));
+          // Sin volver a filtrar por categorias: el backend ya lo hizo antes de
+          // paginar (y deja pasar los productos sin categoria). Filtrar aqui
+          // descartaba filas de la pagina ya paginada, dejando la tabla corta y
+          // el contador sin cuadrar.
+          setSearchResults(res.data.products || []);
           setSearchTotal(res.data.pagination?.total || 0);
           setSearchPages(res.data.pagination?.pages || 1);
+          const lastPage = Math.max(1, res.data.pagination?.pages || 1);
+          if (searchPage > lastPage) setSearchPage(lastPage);
         })
         .catch((err) => { if (err.code !== "ERR_CANCELED" && !axios.isCancel(err)) toast.error("Error al buscar productos"); })
-        .finally(() => setSearching(false));
+        .finally(() => {
+          // Solo la peticion vigente apaga el spinner: si lo apagara tambien la
+          // cancelada, la tabla mostraria los resultados anteriores como
+          // definitivos mientras la nueva sigue en vuelo.
+          if (!controller.signal.aborted) setSearching(false);
+        });
     }, 300);
     setSearching(true);
     return () => { controller.abort(); clearTimeout(t); };
-  }, [search, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId, searchPage, isVendedor, allowedCategories, activeTab]);
+  }, [search, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId, searchPage, activeTab]);
 
   useEffect(() => { setSearchPage(1); }, [search, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId]);
 
@@ -915,6 +933,18 @@ return [...prev, {
   const confirmSale = async () => {
     if (cart.length === 0) { toast.error("Agrega productos al carrito primero"); return; }
 
+    // Una fila de pago en blanco se enviaria como 0 y quedaria registrada como
+    // un pago de Bs 0 en la venta. Se avisa en vez de dejarla pasar en silencio.
+    const pagosVacios = payments.filter((p) => (parseFloat(p.amount) || 0) <= 0);
+    if (pagosVacios.length > 0) {
+      toast.error(`Completa el monto de los pagos: ${pagosVacios.length === 1 ? "hay una fila vacía" : `hay ${pagosVacios.length} filas vacías`}`);
+      return;
+    }
+    if (payments.some((p) => (parseFloat(p.amount) || 0) < 0)) {
+      toast.error("Los montos de pago no pueden ser negativos");
+      return;
+    }
+
     // Departamental: el pedido se arma durante el dia y el cliente paga al
     // final, asi que se admite deudar. Local se cobra en el momento y exige
     // pago completo. El backend valida lo mismo.
@@ -1169,7 +1199,13 @@ return [...prev, {
   // venta: ese elige donde se cobra, este solo acota que ventas se miran.
   const [histLocation, setHistLocation] = useState("");
 
+  // Al cambiar un filtro se disparan dos peticiones: una con la pagina vieja y
+  // otra al volver a la pagina 1. Sin este numero, si la primera llega tarde
+  // deja la tabla mostrando la pagina anterior con los filtros nuevos.
+  const histReqRef = useRef(0);
+
   const fetchHistory = useCallback(async () => {
+    const reqId = ++histReqRef.current;
     try {
       setHistLoading(true);
       const params = new URLSearchParams({ page: String(histPage), limit: String(PAGE_SIZE) });
@@ -1186,11 +1222,17 @@ return [...prev, {
       else if (histLocation) params.set("locationId", histLocation);
 
       const res = await api.get(`/sales?${params.toString()}`);
+      if (reqId !== histReqRef.current) return;
       setSales(res.data.sales);
       setHistTotal(res.data.pagination.total);
       setHistPages(res.data.pagination.pages);
-    } catch { toast.error("Error al cargar historial"); }
-    finally { setHistLoading(false); }
+      const lastPage = Math.max(1, res.data.pagination.pages || 1);
+      if (histPage > lastPage) setHistPage(lastPage);
+    } catch {
+      if (reqId === histReqRef.current) toast.error("Error al cargar historial");
+    } finally {
+      if (reqId === histReqRef.current) setHistLoading(false);
+    }
   }, [histPage, histDateFrom, histDateTo, histSeller, histLocation, saleType, isTienda, user?.locationId]);
 
   useEffect(() => {
@@ -1279,10 +1321,33 @@ return [...prev, {
         return (
           <td className="px-4 py-3 text-center">
             <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-              s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : s.type === "DEPARTAMENTAL" ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"
+              s.type === "DEPARTAMENTAL" ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"
             }`}>
-              {s.type === "MAYOR" ? "Mayor" : s.type === "DEPARTAMENTAL" ? "Departamental" : "Normal"}
+              {s.type === "DEPARTAMENTAL" ? "Departamental" : "Normal"}
             </span>
+          </td>
+        );
+      case "Estado":
+        // El estado era invisible: una venta departamental con Bs 3.000 de
+        // deuda se veia igual que una pagada y la deuda solo aparecia abriendo
+        // venta por venta. El saldo se calcula igual que el backend: un pago en
+        // credito no cuenta como cobrado.
+        return (
+          <td className="px-4 py-3">
+            {s.status === "PENDIENTE" ? (
+              <div className="space-y-0.5">
+                <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/10 text-amber-400">
+                  Pendiente
+                </span>
+                <p className="text-xs text-amber-400/90">
+                  debe {formatBs(s.total - paidWithoutCredit(s))}
+                </p>
+              </div>
+            ) : (
+              <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-500/10 text-emerald-400">
+                Pagada
+              </span>
+            )}
           </td>
         );
       case "Total":
@@ -2371,10 +2436,11 @@ return [...prev, {
       )}
 
       {/* ============ REQUEST MODAL (solicitar a otra tienda/almacén) ============ */}
-      {/* z-[60] para que quede por encima del modal Ampliar, que se queda
-          abierto mientras se pide lo que falta. */}
+      {/* Se abre desde dentro del modal Ampliar, asi que necesita un z-index
+          mayor al de este (z-[80]): con z-[60] quedaba tapado por el overlay
+          oscuro de Ampliar y el pedido de lo que falta era inusable. */}
       {showRequest && requestTarget && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div ref={requestPanelRef} role="dialog" aria-modal="true" aria-label="Solicitar producto" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md overflow-hidden">
             <div className="flex items-start justify-between px-5 py-4 border-b border-dark-700/50">
               <div className="min-w-0 flex-1">

@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 import { authenticate, authorize, requireTiendaLocation } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
 import { ensureRestockRequest } from "../../utils/restockRequest";
-import { validateAndMergeItems } from "../../utils/saleItems";
+import { validateAndMergeItems, demandByProduct } from "../../utils/saleItems";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -93,7 +93,10 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       const stockUpdates: { productId: number; quantity: number }[] = [];
       const supplyRequests: { productId: number; quantity: number }[] = [];
 
-      for (const item of validItems) {
+      // Se recorre por producto y no por linea: si el mismo producto aparece en
+      // P1 y en P2, calcular el descuento linea por linea podria descontar del
+      // stock mas unidades de las que realmente hay.
+      for (const item of demandByProduct(validItems)) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
         if (!product) {
           throw new Error(`Producto con ID ${item.productId} no encontrado`);
