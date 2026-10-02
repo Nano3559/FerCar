@@ -11,8 +11,11 @@ const PAGE_SIZE = 15;
 
 /** Una cotizacion departamental tiene que caer en el carrito de ventas
  *  departamentales: no en el de ventas locales, que es otra pantalla con sus
- *  propias reglas de cliente. El resto va a ventas. */
-const salesRouteFor = (type: string) => (type === "DEPARTAMENTAL" ? "/ventas-departamental" : "/ventas");
+ *  propias reglas de cliente. El resto va a ventas.
+ *  Las rutas cuelgan de /panel: sin ese prefijo no existe ninguna ruta y la
+ *  pantalla queda en blanco. */
+const salesRouteFor = (type: string) =>
+  type === "DEPARTAMENTAL" ? "/panel/ventas-departamental" : "/panel/ventas";
 
 interface QuoteSummary {
   id: number;
@@ -157,6 +160,9 @@ export default function QuotesPage() {
   const loadIntoCart = (qt: { id: number; type: string }) => {
     setOpeningCart(qt.id);
     navigate(salesRouteFor(qt.type), { state: { quoteId: qt.id } });
+    // El boton queda deshabilitado mientras dura la navegacion. Si por lo que sea
+    // la pantalla no cambia, se reactiva para que no quede muerto.
+    setTimeout(() => setOpeningCart((id) => (id === qt.id ? null : id)), 1500);
   };
 
   const clearFilters = () => {

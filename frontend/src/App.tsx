@@ -4,6 +4,7 @@ import { useAuthStore } from "./stores/authStore";
 import MainLayout from "./components/layout/MainLayout";
 import PublicLayout from "./components/public/PublicLayout";
 import RoleRoute from "./components/RoleRoute";
+import RouteNotFound from "./components/RouteNotFound";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import ContactPage from "./pages/ContactPage";
@@ -171,6 +172,9 @@ export default function App() {
               <SettingsPage />
             </RoleRoute>
           } />
+        {/* Cualquier ruta mal escrita caia en un panel vacio sin explicar nada.
+              Esto hace que se vea el error y de donde sePuede volver. */}
+          <Route path="*" element={<RouteNotFound />} />
         </Route>
       </Routes>
       </ErrorBoundary>
