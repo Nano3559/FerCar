@@ -262,7 +262,13 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
     const sellerId = toNum(req.query.userId);
     const userWhere: any = sellerId ? { userId: sellerId } : {};
 
-    const totalProducts = await prisma.product.count();
+    // "Total Productos" tiene que contar lo mismo que los KPIs que lo rodean.
+    // Si se filtra por tienda, son los productos que existen en esa tienda, no
+    // todo el catalogo: si no, el tablero mezcla una cifra global con el resto
+    // de numeros de una sola tienda.
+    const totalProducts = await prisma.product.count({
+      where: scopeId ? { inventories: { some: invWhere } } : {},
+    });
 
     const productsWithInventory = await prisma.product.findMany({
       where: scopeId ? { inventories: { some: invWhere } } : { inventories: { some: {} } },
