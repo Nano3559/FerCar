@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+﻿import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search, Plus, Filter, ChevronDown, Eye, Pencil, Trash2,
@@ -26,7 +26,8 @@ interface Product {
   unitPrice: string | null; priceHermana: string | null;
   price20: number | null; price30: number | null; price40: number | null;
   price50: number | null; price60: number | null; price70: number | null; price80: number | null;
-  categoryId: number | null; category: string | null; supplierName?: string | null; stock: number;
+  categoryId: number | null; category: string | null;
+  supplierId?: number | null; supplierName?: string | null; stock: number;
 }
 
 interface Filters {
@@ -36,7 +37,6 @@ interface Filters {
   models?: string[];
   years?: string[];
   names?: string[];
-  itemCodes?: string[];
   oemCodes?: string[];
   factoryCodes?: string[];
   detalles?: string[];
@@ -72,7 +72,7 @@ const inlineRawValue = (p: Product, column: string): string => {
     case "Marca": return p.brand ?? "";
     case "Modelo": return p.model ?? "";
     case "Año": return p.year ?? "";
-    case "Detalles": return p.detalles || p.detail || "";
+    case "Detalles": return p.detail || "—";
     case "Cód. OEM": return p.oemCode || "";
     case "Cód. Fábrica": return p.factoryCode || "";
     default: {
@@ -125,9 +125,8 @@ const normalizeImageUrl = (u: string) => {
 
 export default function InventoryPage() {
   const navigate = useNavigate();
-  const { user, allowedCategories } = useAuthStore();
+  const { user } = useAuthStore();
   const canEdit = user?.role === "ADMIN";
-  const hasCategoryRestriction = user?.role === "TIENDA" && allowedCategories.length > 0;
   const [products, setProducts] = useState<Product[]>([]);
   const [filters, setFilters] = useState<Filters>({ brands: [], manufacturers: [], categories: [] });
   const [locations, setLocations] = useState<Location[]>([]);
@@ -249,9 +248,18 @@ export default function InventoryPage() {
           setProducts(res.data.products);
           setTotal(res.data.pagination.total);
           setPages(res.data.pagination.pages);
+          // Si se borraron productos o se importo y la pagina actual quedo
+          // mas alla del final, se vuelve a la ultima que existe. Sin esto la
+          // lista se queda vacia sin opcion de volver.
+          const lastPage = Math.max(1, res.data.pagination.pages);
+          if (page > lastPage) setPage(lastPage);
         })
         .catch((err) => { if (err.code !== "ERR_CANCELED" && !axios.isCancel(err)) toast.error("Error al cargar productos"); })
-        .finally(() => setLoading(false));
+        .finally(() => {
+          // Solo la peticion vigente apaga el spinner: si se apaga tambien la
+          // cancelada, durante el debounce se ve la pagina vieja sin spinner.
+          if (!controller.signal.aborted) setLoading(false);
+        });
     }, 300);
     setLoading(true);
     return () => { controller.abort(); clearTimeout(t); };
@@ -309,9 +317,12 @@ export default function InventoryPage() {
       cost: p.cost ? String(p.cost) : "",
       unitPrice: p.unitPrice ? String(p.unitPrice) : "",
       priceHermana: p.priceHermana ? String(p.priceHermana) : "",
-      proveedorId: "",
+      // El backend guarda image = images[0], asi que la principal ya viene en
+    // images. Si se antepone otra vez, la foto aparece duplicada en el editor y
+    // el duplicado se vuelve a persistir al guardar.
+    proveedorId: p.supplierId ? String(p.supplierId) : "",
       categoryId: p.categoryId ? String(p.categoryId) : "",
-      image: [p.image, ...(p.images || [])].filter((x): x is string => !!x).map(normalizeImageUrl).join("\n"), stock: "", locationId: "",
+      image: (p.images?.length ? p.images : [p.image]).filter((x): x is string => !!x).map(normalizeImageUrl).join("\n"), stock: "", locationId: "",
     });
     setShowModal(true);
   };
@@ -377,6 +388,16 @@ export default function InventoryPage() {
         return;
       }
       value = n;
+    }
+    // La edicion en linea del Año pasa por la misma validacion que el formulario
+    // largo: si no, se podian guardar rangos invertidos como "2020-1990".
+    if (field.key === "year") {
+      const yearError = validateYearRanges(trimmed);
+      if (yearError) {
+        setInlineEdit(null);
+        toast.error(yearError);
+        return;
+      }
     }
     setInlineSaving(true);
     try {
@@ -608,10 +629,9 @@ const handleImportExcel = async () => {
 
 const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ ...prev, [field]: value }));
 
-  const visibleProducts = hasCategoryRestriction
-    ? products.filter((p) => allowedCategories.includes(p.category || "") || !p.category)
-    : products;
-
+  // El filtro de categorias por rol ya lo aplica el backend antes de paginar
+  // (products.routes.ts). Filtrar aqui de nuevo dejaba paginas a medias y un
+  // "Pagina X de Y" que no cuadraba, porque total ya venia filtrado.
   const allVisibleCount = total;
 
   const renderInventoryCell = (p: Product, column: string) => {
@@ -654,13 +674,12 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
       );
 
     switch (column) {
-      case "ID": return <td key={column} className="px-4 py-3 text-gray-400">{p.id}</td>;
       case "Fabricante": return editableTd("px-4 py-3 text-gray-300", p.manufacturer);
       case "Producto": return editableTd("px-4 py-3 text-foreground font-medium max-w-[200px] truncate", p.name);
       case "Marca": return editableTd("px-4 py-3 text-gray-300", p.brand);
       case "Modelo": return editableTd("px-4 py-3 text-gray-300", p.model);
       case "Año": return editableTd("px-4 py-3 text-gray-400", p.year);
-      case "Detalles": return editableTd("px-4 py-3 text-gray-400 text-xs", p.detalles || p.detail || "—");
+      case "Detalles": return editableTd("px-4 py-3 text-gray-400 text-xs", p.detail || "—");
       case "Cód. OEM": return editableTd("px-4 py-3 text-gray-400 text-xs", p.oemCode || "—");
       case "Cód. Fábrica": return editableTd("px-4 py-3 text-gray-400 text-xs", p.factoryCode || "—");
       case "Proveedor": return <td key={column} className="px-4 py-3 text-gray-300 text-xs">{p.supplierName || "—"}</td>;
@@ -837,7 +856,7 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
           <div className="flex items-center justify-center h-64">
             <RefreshCw size={32} className="text-primary-400 animate-spin" />
           </div>
-        ) : visibleProducts.length === 0 ? (
+        ) : products.length === 0 ? (
           <EmptyState
             title="Sin productos registrados"
             description="Crea un producto o importa un archivo Excel para comenzar."
@@ -859,7 +878,7 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleProducts.map((p) => (
+                  {products.map((p) => (
                     <tr key={p.id} className="border-b border-dark-700/30 last:border-0 hover:bg-dark-900/30 transition-colors">
                       {visibleColumns.map((column) => renderInventoryCell(p, column))}
                     </tr>
@@ -870,7 +889,7 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
 
             {/* Mobile cards */}
             <div className="md:hidden divide-y divide-dark-700/30">
-              {visibleProducts.map((p) => (
+              {products.map((p) => (
                 <div key={p.id} className="p-4 space-y-2">
                   <div className="flex items-start gap-3">
                     <ImagePreview image={p.image} category={p.category} name={p.name} onClick={() => setImageModal(p)} className="w-12 h-12 rounded-xl" />
@@ -982,7 +1001,7 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
                     <option value="">Sin proveedor</option>
                     {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
-                  <p className="text-[11px] text-gray-600 mt-1">Asocia el Costo (Bs.) a este proveedor (aparece en sus costos). Si guardas sin Costo, solo queda el vínculo del producto.</p>
+                  <p className="text-[11px] text-gray-600 mt-1">El costo se registra en la ficha del proveedor. Para que se guarde, elige un proveedor y escribe el Costo (Bs.).</p>
                 </div>
               </div>
               <div className="relative">
@@ -1404,9 +1423,9 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
   );
 }
 
-function Field({ label, value, onChange, type = "text", placeholder, disabled, className = "" }: {
+function Field({ label, value, onChange, type = "text", placeholder, className = "" }: {
   label: string; value: string; onChange: (v: string) => void;
-  type?: string; placeholder?: string; disabled?: boolean; className?: string;
+  type?: string; placeholder?: string; className?: string;
 }) {
   const inputId = `inv-field-${label.replace(/[^a-zA-Z0-9]+/g, "-")}`;
   return (
@@ -1415,7 +1434,7 @@ function Field({ label, value, onChange, type = "text", placeholder, disabled, c
       <input
         id={inputId}
         type={type} value={value} onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder} disabled={disabled}
+        placeholder={placeholder}
         className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none placeholder-gray-600 disabled:opacity-50"
       />
     </div>

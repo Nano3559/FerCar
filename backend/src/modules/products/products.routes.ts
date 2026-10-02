@@ -207,6 +207,9 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
         item.priceHermana = p.priceHermana;
         Object.assign(item, priceLadder(Number(p.cost) || null));
         item.supplierName = p.costs[0]?.supplier?.name || null;
+        // Sin el id, el formulario de edicion abria siempre en "Sin proveedor"
+        // aunque el producto ya tuviera uno, y al guardar se perdia el vinculo.
+        item.supplierId = p.costs[0]?.supplierId ?? null;
       }
       return item;
     });
