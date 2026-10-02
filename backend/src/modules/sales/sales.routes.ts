@@ -406,32 +406,18 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // Entrega parcial: lo que hay en la tienda se entrega de inmediato, lo que
-      // hay en los almacenes queda pendiente y se pide, y lo que no existe en
-      // ningun lado se recorta de la venta. Cobrar de mas dejaria pedidos que
-      // nunca se van a poder completar.
+      // Entrega parcial: se usa primero la tienda donde se cobra, luego las
+      // demas tiendas (la mercaderia ya existe, solo esta en otro punto) y lo
+      // que no hay en ninguna se pide al almacen y queda pendiente. Si no
+      // existe en ninguna parte, la venta se recorta a lo que hay.
       const stock = await loadStockSnapshot(tx, validItems.map((i) => i.productId), userLocationId);
-      const plan = planFulfillment(validItems, stock);
+      const plan = planFulfillment(validItems, stock, userLocationId);
 
       const productos = await tx.product.findMany({
         where: { id: { in: validItems.map((i) => i.productId) } },
         select: { id: true, name: true, itemCode: true },
       });
       const nombrePorId = new Map(productos.map((p) => [p.id, p]));
-
-      // Si hay que recortar, no se cobra una cifra distinta a la que el vendedor
-      // acaba de contar frente al cliente. La venta departamental no valida el
-      // pago contra el total, asi que un recorte silencioso terminaria cobrando
-      // de mas. Se corta aqui con el detalle exacto para que ajuste y listo.
-      if (plan.capped.length > 0) {
-        const detalle = plan.capped
-          .map((c) => {
-            const p = nombrePorId.get(c.productId);
-            return `"${p ? `${p.name} (${p.itemCode})` : `Producto ${c.productId}`}": pediste ${c.requested}, existen ${c.sellable}`;
-          })
-          .join("; ");
-        throw new Error(`No hay existencias suficientes. ${detalle}. Ajusta la cantidad antes de cobrar.`);
-      }
 
       for (const productId of new Set(validItems.map((i) => i.productId))) {
         const product = await tx.product.findUnique({ where: { id: productId } });
@@ -453,22 +439,39 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         };
       });
 
-      // Solo lo entregado descuenta stock de la tienda ahora.
-      const stockUpdates = plan.lines
-        .filter((l) => l.delivered > 0)
-        .map((l) => ({ productId: l.productId, quantity: l.delivered }));
+      // Descuenta de la ubicacion que realmente aporto cada unidad: la tienda
+      // donde se cobra primero y, si no alcanza, las otras tiendas. Lo que sale
+      // del almacen no se descuenta aqui: se descuenta cuando la solicitud se
+      // marca recibida, para no contarlo dos veces.
+      const stockUpdates = plan.deductions.map((d) => ({
+        productId: d.productId,
+        locationId: d.locationId,
+        quantity: d.units,
+      }));
 
       const totalPaid = (payments || []).reduce((sum: number, p: any) => sum + Number(p.amount), 0);
 
+      // Si hubo recorte, el total de la venta bajo respecto a lo que el vendedor
+      // iba a cobrar. El dinero no se ajusta solo: el vendedor tiene que cobrar
+      // lo que realmente se vendio, asi que el mensaje dice cuanto quedo.
+      const ajusteCobro = plan.capped.length
+        ? ` Se vendio solo lo existente: ${plan.capped
+            .map((c) => {
+              const p = nombrePorId.get(c.productId);
+              return `${p ? `${p.name} (${p.itemCode})` : `Producto ${c.productId}`} ${c.sellable} de ${c.requested}`;
+            })
+            .join("; ")}.`
+        : "";
+
       if (!esDepartamental && Math.abs(totalPaid - totalSale) > 0.01) {
-        throw new Error(`El total pagado (Bs. ${totalPaid}) no coincide con el total de la venta (Bs. ${totalSale})`);
+        throw new Error(`El total pagado (Bs. ${totalPaid}) no coincide con el total de la venta (Bs. ${totalSale}).${ajusteCobro}`);
       }
 
       // En departamental el pago puede ir por debajo: la venta queda PENDIENTE
       // y se completa con POST /sales/:id/payments cuando el cliente pague al
       // final del dia. Nunca por encima del total.
       if (esDepartamental && totalPaid - totalSale > 0.01) {
-        throw new Error(`El total pagado (Bs. ${totalPaid}) supera el total de la venta (Bs. ${totalSale})`);
+        throw new Error(`El total pagado (Bs. ${totalPaid}) supera el total de la venta (Bs. ${totalSale}).${ajusteCobro}`);
       }
 
       const paidSinCredito = (payments || [])
@@ -528,7 +531,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
       for (const update of stockUpdates) {
         const inv = await tx.inventory.findUnique({
-          where: { productId_locationId: { productId: update.productId, locationId: userLocationId } },
+          where: { productId_locationId: { productId: update.productId, locationId: update.locationId } },
         });
 
         if (inv) {
@@ -539,10 +542,11 @@ router.post("/", async (req: AuthRequest, res: Response) => {
           });
 
           // La venta dejo el stock en cero o por debajo del minimo: se genera
-          // sola la solicitud de reposicion desde el almacen.
+          // sola la solicitud de reposicion desde el almacen. La solicitud va
+          // a la ubicacion que realmente vendio, no a la tienda que cobró.
           await ensureRestockRequest(tx, {
             productId: update.productId,
-            destinationId: userLocationId,
+            destinationId: update.locationId,
             requestedById: user.userId,
             source: "VENTA",
             note: "Reposición automática: la venta dejó el stock bajo el mínimo",
@@ -645,20 +649,31 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
       const fresh = await tx.sale.findUnique({ where: { id: saleId }, include: { items: true } });
       if (!fresh) throw new Error("Venta no encontrada");
 
-      const stockUpdates: { productId: number; quantity: number }[] = [];
+      // Ampliar una venta ya registrada es distinto a cobrarla: aqui ya hay dinero
+      // registrado y pagos parciales, asi que no se recorta nada en silencio.
+      // Se avisa cuanto existe en total (tienda + otras tiendas + almacenes)
+      // para que el error no diga "no hay" cuando si hay en otro lado.
+      const stockAmpliar = await loadStockSnapshot(
+        tx,
+        validItems.map((i) => i.productId),
+        sale.locationId,
+      );
       for (const item of demandByProduct(validItems)) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
         if (!product) throw new Error(`Producto con ID ${item.productId} no encontrado`);
 
-        const inventory = await tx.inventory.findUnique({
-          where: { productId_locationId: { productId: item.productId, locationId: sale.locationId } },
-        });
-        const currentStock = inventory?.stock || 0;
-        if (currentStock < item.quantity) {
-          throw new Error(`Stock insuficiente para "${product.name}". Disponible: ${currentStock}, solicitado: ${item.quantity}`);
+        const snap = stockAmpliar[item.productId];
+        const total =
+          (snap?.store ?? 0) + (snap?.otherStores ?? 0) + (snap?.warehouses ?? 0);
+        if (total < item.quantity) {
+          throw new Error(
+            `Stock insuficiente para "${product.name}". Disponible: ${total} (en tienda ${snap?.store ?? 0}, ` +
+            `otras tiendas ${snap?.otherStores ?? 0}, almacenes ${snap?.warehouses ?? 0}), solicitado: ${item.quantity}`,
+          );
         }
-        stockUpdates.push({ productId: item.productId, quantity: item.quantity });
       }
+      const stockUpdates: { productId: number; quantity: number }[] =
+        demandByProduct(validItems).map((i) => ({ productId: i.productId, quantity: i.quantity }));
 
       // Cada linea conserva su precio. Si al ampliar se agrega el mismo producto
       // a otro precio (P1 vs P2) se crea una linea nueva: antes se reescribia el

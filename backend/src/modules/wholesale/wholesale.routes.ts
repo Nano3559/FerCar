@@ -87,13 +87,13 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // Mismo reparto que en ventas locales y departamentales: lo que hay en
-      // tienda se entrega, lo que hay en los almacenes queda pendiente y se
-      // pide, y lo que no existe en ningun lado se recorta de la venta.
-      // La mayorista a diferencia de las otras no se detiene ante el recorte:
-      // el pedido diferido es parte del negocio, pero el recorta se avisa.
+      // Mismo reparto que en ventas locales y departamentales: primero la tienda
+      // donde se cobra, luego las demas tiendas, y lo que no hay en ninguna se
+      // pide al almacen y queda pendiente. Lo que no existe en ninguna parte se
+      // recorta de la venta. La mayorista, a diferencia de las otras, no se
+      // detiene ante el recorte: el pedido diferido es parte del negocio.
       const stock = await loadStockSnapshot(tx, validItems.map((i) => i.productId), userLocationId);
-      const plan = planFulfillment(validItems, stock);
+      const plan = planFulfillment(validItems, stock, userLocationId);
 
       for (const productId of new Set(validItems.map((i) => i.productId))) {
         const product = await tx.product.findUnique({ where: { id: productId } });
@@ -102,12 +102,14 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         }
       }
 
-      const stockUpdates = plan.lines
-        .filter((l) => l.delivered > 0)
-        .map((l) => ({ productId: l.productId, quantity: l.delivered }));
+      const stockUpdates = plan.deductions.map((d) => ({
+        productId: d.productId,
+        locationId: d.locationId,
+        quantity: d.units,
+      }));
 
       if (plan.lines.length === 0) {
-        throw new Error("Ninguno de los productos tiene existencias en esta tienda ni en los almacenes");
+        throw new Error("Ninguno de los productos tiene existencias en esta tienda, en las otras tiendas ni en los almacenes");
       }
 
       let totalSale = 0;
@@ -168,7 +170,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
       for (const update of stockUpdates) {
         const inv = await tx.inventory.findUnique({
-          where: { productId_locationId: { productId: update.productId, locationId: userLocationId } },
+          where: { productId_locationId: { productId: update.productId, locationId: update.locationId } },
         });
 
         if (inv) {

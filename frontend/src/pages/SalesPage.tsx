@@ -410,6 +410,19 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
 
   // --- Add-to-cart modal ---
   const [showAddCart, setShowAddCart] = useState(false);
+
+  /**
+   * Reparto antes de cobrar. El backend reparte en este orden: tienda donde se
+   * cobra, luego las otras tiendas, y lo que no hay en ninguna se pide al
+   * almacen. Aqui solo hace falta saber cuanto se va a vender de verdad y si
+   * eso baja el total, porque al vendedor hay que cobrarle al cliente el
+   * importe real y no el que estaba contando.
+   */
+  const [ajusteStock, setAjusteStock] = useState<{
+    ajustes: { productId: number; name: string; pides: number; seVende: number; enTienda: number }[];
+    totalAntes: number;
+    totalDespues: number;
+  } | null>(null);
   const [addTarget, setAddTarget] = useState<Product | null>(null);
   const [addQty, setAddQty] = useState(1);
   const [addTier, setAddTier] = useState<1 | 2>(2);
@@ -698,23 +711,16 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const addToCart = (p: Product, tier: 1 | 2 = 2, qty: number = 1) => {
     const price = tier === 2 && Number(p.price2) > 0 ? Number(p.price2) : Number(p.price1);
     const disponible = typeof p.stockTotal === "number" ? p.stockTotal : p.stock;
+    // No se bloquea agregar mas de lo que hay en la tienda: el reparto usa
+    // primero la tienda, luego las otras tiendas y por ultimo el almacen, y lo
+    // que no existe en ninguna parte se recorta al cobrar. Cortar aqui impedia
+    // vender lo que si existe y avisar de lo que no.
     updateActiveCart((prev) => {
       const existing = prev.find((c) => c.productId === p.id);
       if (existing) {
-        // Ya no se bloquea el stock de la tienda: lo que no hay aqui se pide al
-        // almacen y queda pendiente hasta que llegue. Solo se rechaza cuando no
-        // hay existencias en ninguna parte.
-        if (existing.quantity + qty > disponible) {
-          toast.error(`Solo existen ${disponible} unidad(es) entre todas las ubicaciones`);
-          return prev;
-        }
         return prev.map((c) =>
           c.productId === p.id ? { ...c, quantity: c.quantity + qty, priceTier: tier, unitPrice: price } : c
         );
-      }
-      if (qty > disponible) {
-        toast.error(`Solo existen ${disponible} unidad(es) entre todas las ubicaciones`);
-        return prev;
       }
       return [...prev, {
         productId: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
@@ -723,9 +729,15 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       }];
     });
 
-    if (qty > p.stock) {
+    if (qty > disponible) {
       toast(
-        `Solo hay ${p.stock} en esta tienda. Las ${qty - p.stock} restantes se pediran al almacen y quedaran pendientes hasta que lleguen.`,
+        `Solo existen ${disponible} unidad(es) entre todas las ubicaciones. ` +
+        `Se agregaron ${qty} al carrito: al cobrar se vendera lo que exista y se avisara el faltante.`,
+        { duration: 7000 }
+      );
+    } else if (qty > p.stock) {
+      toast(
+        `Solo hay ${p.stock} en esta tienda. El resto sale de otras tiendas o se pide al almacen y queda pendiente hasta que llegue.`,
         { duration: 7000 }
       );
     }
@@ -892,31 +904,40 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   // ==================== PAYMENTS ====================
   const [checkingStock, setCheckingStock] = useState(false);
 
-  // El carrito se queda viejo: si el stock de la tienda bajo despues de
-  // agregar, el cobro falla al final con un error generico y no se sabe
-  // que producto es el que no tiene. Se revisa antes de abrir el cobro.
+  // El carrito se queda viejo: si el stock bajo despues de agregar, el cobro
+  // falla al final con un error generico y no se sabe que producto es el que no
+  // tiene. Se revisa antes de abrir el cobro.
   const openPayment = async () => {
     if (cart.length === 0) { toast.error("Agrega productos al carrito primero"); return; }
     if (!selectedLocationId) { toast.error("Selecciona la tienda de la venta"); return; }
 
     setCheckingStock(true);
     try {
-      const faltantes: { name: string; hay: number; pides: number }[] = [];
+      // El reparto del backend es: tienda donde se cobra, luego las otras
+      // tiendas y por ultimo el almacen. Si no alcanza en ninguna parte, la
+      // venta se recorta a lo que existe. Antes de cobrar hay que saber cuanto
+      // se vendera de verdad, porque si baja el total el vendedor no puede
+      // cobrarle al cliente la cifra que estaba contando.
+      const ajustes: { productId: number; name: string; pides: number; seVende: number; enTienda: number }[] = [];
       for (const item of cart) {
-        const res = await api.get(`/inventory/product/${item.productId}`);
-        const loc = (res.data?.locations || []).find((l: any) => l.locationId === Number(selectedLocationId));
-        const available = Number(loc?.stock) || 0;
-        if (available < item.quantity) {
-          faltantes.push({ name: item.name, hay: available, pides: item.quantity });
+        const res = await api.get(`/inventory/product/${item.productId}?locationId=${selectedLocationId}`);
+        // El endpoint devuelve el total por tipo sin detallar cada tienda: lo
+        // que el vendedor necesita es saber si alcanza entre todas, no cuanto
+        // tiene cada local.
+        const d = res.data?.disponibilidad;
+        const enTienda = Number(d?.miTienda) || 0;
+        const total = Number(d?.total) || 0;
+        const seVende = Math.min(item.quantity, total);
+        if (seVende < item.quantity) {
+          ajustes.push({ productId: item.productId, name: item.name, pides: item.quantity, seVende, enTienda });
         }
       }
-      if (faltantes.length > 0) {
-        const tienda = locations.find((l) => l.id === selectedLocationId)?.name || "la tienda";
-        toast.error(
-          `Sin stock en ${tienda}: ${faltantes.map((f) => `${f.name} (hay ${f.hay}, pides ${f.pides})`).join(", ")}. ` +
-            `Quitalo del carrito o solicitalo.`,
-          { duration: 7000 }
-        );
+      if (ajustes.length > 0) {
+        const totalDespues = cart.reduce((sum, c) => {
+          const a = ajustes.find((x) => x.productId === c.productId);
+          return sum + c.unitPrice * (a ? a.seVende : c.quantity);
+        }, 0);
+        setAjusteStock({ ajustes, totalAntes: cartTotal, totalDespues });
         return;
       }
     } catch {
@@ -934,6 +955,22 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     setParaDonde(""); setParaQuien(""); setCelularEnvio("");
     setNombreFactura(""); setNitFactura(""); setCelularFactura("");
     setShowPayment(true);
+  };
+
+  /** Confirma el recorte: se cobra lo que existe y el resto sale del aviso. */
+  const aceptarAjusteStock = () => {
+    if (!ajusteStock) return;
+    updateActiveCart((prev) =>
+      prev.flatMap((c) => {
+        const a = ajusteStock.ajustes.find((x) => x.productId === c.productId);
+        if (!a) return [c];
+        if (a.seVende <= 0) return [];
+        return [{ ...c, quantity: a.seVende }];
+      })
+    );
+    setAjusteStock(null);
+    setCheckingStock(false);
+    toast.success(`Se cobrara ${formatBs(ajusteStock.totalDespues)}: ${ajusteStock.ajustes.length} producto(s) ajustado(s) al stock existente`);
   };
 
   const addPaymentMethod = () =>
@@ -2026,6 +2063,73 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ============ AJUSTE DE STOCK ANTES DE COBRAR ============ */}
+      {ajusteStock && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div role="dialog" aria-modal="true" aria-label="Ajuste de stock" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-dark-700/50">
+              <h2 className="text-lg font-bold text-foreground">No hay stock suficiente</h2>
+              <button onClick={() => setAjusteStock(null)} aria-label="Cerrar"
+                className="p-1.5 rounded-lg hover:bg-dark-700 text-gray-400">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-300">
+                Se usa primero el stock de tu tienda; si no alcanza, el de las otras tiendas y,
+                en ultimo caso, se pide al almacen y queda pendiente. Lo que no existe en
+                ninguna parte no se puede vender, asi que el total baja:
+              </p>
+
+              <div className="space-y-2">
+                {ajusteStock.ajustes.map((a) => (
+                  <div key={a.productId} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-dark-700/40 border border-dark-700/50">
+                    <div className="min-w-0">
+                      <p className="text-sm text-gray-200 truncate">{a.name}</p>
+                      <p className="text-xs text-gray-500">
+                        Pediste {a.pides} · en tu tienda {a.enTienda} · existen {a.seVende} en total
+                      </p>
+                    </div>
+                    <span className={`text-sm font-semibold shrink-0 ${a.seVende > 0 ? "text-yellow-400" : "text-red-400"}`}>
+                      {a.seVende > 0 ? `venden ${a.seVende}` : "no hay"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-3 rounded-lg bg-dark-700/40 space-y-1">
+                <div className="flex items-center justify-between text-sm text-gray-400">
+                  <span>Total que estabas contando</span>
+                  <span className="line-through">{formatBs(ajusteStock.totalAntes)}</span>
+                </div>
+                <div className="flex items-center justify-between text-base font-bold">
+                  <span className="text-gray-200">Total a cobrar</span>
+                  <span className="text-green-400">{formatBs(ajusteStock.totalDespues)}</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-500">
+                Lo que no se venda hoy no queda pendiente de entrega: sencillamente no se
+                registra. Si el cliente lo necesita, agregalo a una solicitud desde la pantalla
+                de solicitudes.
+              </p>
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setAjusteStock(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-dark-700 hover:bg-dark-600 text-gray-300 text-sm font-medium transition-colors">
+                  Volver al carrito
+                </button>
+                <button onClick={aceptarAjusteStock}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold transition-colors">
+                  Cobrar {formatBs(ajusteStock.totalDespues)}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

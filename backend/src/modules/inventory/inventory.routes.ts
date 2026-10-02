@@ -71,9 +71,39 @@ router.get("/product/:productId", async (req: AuthRequest, res: Response) => {
 
     const stockTotal = inventories.reduce((sum, inv) => sum + inv.stock, 0);
 
+    // El filtro de arriba es para MOSTRAR el inventario propio, pero el reparto
+    // de una venta necesita la foto real: primero la tienda donde se cobra,
+    // luego las otras tiendas y por ultimo los almacenes. Sin esto, un vendedor
+    // de tienda solo conocia su stock y creia que no habia nada mas, cuando en
+    // realidad la venta se podia completar.
+    //
+    // Se devuelve el total por tipo y no el detalle por tienda: el vendedor
+    // necesita saber si hay en otras tiendas para poder vender, pero no cuanto
+    // tiene cada local.
+    const ventaLocationId = req.query.locationId
+      ? Number(req.query.locationId)
+      : req.user?.locationId ?? null;
+    const todas = await prisma.inventory.findMany({
+      where: { productId },
+      select: { stock: true, locationId: true, location: { select: { type: true } } },
+    });
+    const disponibilidad: { miTienda: number; otrasTiendas: number; almacenes: number; total: number } =
+      todas.reduce(
+        (acc, inv) => {
+          const stock = inv.stock || 0;
+          if (ventaLocationId && inv.locationId === ventaLocationId) acc.miTienda += stock;
+          else if (inv.location?.type === "ALMACEN") acc.almacenes += stock;
+          else if (inv.location?.type === "TIENDA") acc.otrasTiendas += stock;
+          return acc;
+        },
+        { miTienda: 0, otrasTiendas: 0, almacenes: 0, total: 0 },
+      );
+    disponibilidad.total = disponibilidad.miTienda + disponibilidad.otrasTiendas + disponibilidad.almacenes;
+
     res.json({
       productId,
       stockTotal,
+      disponibilidad,
       locations: inventories.map((inv) => ({
         id: inv.id,
         locationId: inv.location.id,
