@@ -156,6 +156,8 @@ model Sale {
   user          User       @relation(fields: [userId], references: [id])
   items         SaleItem[]
   quote         Quote?
+  /// Solicitudes de reposicion que nacieron de stock faltante en esta venta.
+  requests      ProductRequest[]
 }
 
 enum QuoteStatus {
@@ -211,14 +213,22 @@ model QuoteItem {
 }
 
 model SaleItem {
-  id        Int     @id @default(autoincrement())
-  saleId    Int
+  id       Int @id @default(autoincrement())
+  saleId   Int
   productId Int
-  quantity  Int
+  quantity Int
+  /// Unidades entregadas de verdad al cliente. La diferencia con quantity es
+  /// lo que quedo pendiente: se vendio pero aun no hay mercaderia en la tienda
+  /// y esta en camino desde el almacen.
+  deliveredQuantity Int     @default(0)
   unitPrice Decimal
-  subtotal  Decimal
+  subtotal Decimal
   product   Product @relation(fields: [productId], references: [id])
   sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  /// Solicitudes abiertas que estan traeniendo estas unidades faltantes.
+  requests  ProductRequest[]
+
+  @@index([productId])
 }
 
 model Payment {
@@ -271,6 +281,10 @@ model ProductRequest {
   confirmedById  Int?
   confirmedAt    DateTime?
   despatchNoteId Int?
+  /// Venta que origino la solicitud cuando se genero por stock faltante al
+  /// vender. Permite completar la venta cuando la mercaderia llega.
+  saleId        Int?
+  saleItemId    Int?
   source         String           @default("MANUAL")
   status         RequestStatus    @default(PENDIENTE)
   note           String?
@@ -284,8 +298,15 @@ model ProductRequest {
   requestedBy    User             @relation("RequestedBy", fields: [requestedById], references: [id])
   confirmedBy    User?            @relation("RequestConfirmedBy", fields: [confirmedById], references: [id])
   despatchNote   DespatchNote?    @relation(fields: [despatchNoteId], references: [id])
+  sale           Sale?            @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  saleItem       SaleItem?        @relation(fields: [saleItemId], references: [id], onDelete: SetNull)
   history        RequestHistory[]
   movements      Movement[]
+
+  // Se busca por venta para saber que pedido cierra cada solicitud cuando
+  // llega la mercaderia.
+  @@index([saleId])
+  @@index([saleItemId])
 }
 
 model Supplier {

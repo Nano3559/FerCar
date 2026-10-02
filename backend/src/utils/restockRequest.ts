@@ -25,6 +25,10 @@ export interface RestockArgs {
    */
   quantity?: number;
   note?: string;
+  /** Venta que origino la solicitud, si fue por stock faltante al vender. */
+  saleId?: number | null;
+  /** Linea de venta que esta solicitud va a completar. */
+  saleItemId?: number | null;
 }
 
 /**
@@ -57,11 +61,13 @@ export async function ensureRestockRequest(db: Db, args: RestockArgs): Promise<n
     where: { productId, locationId: destinationId, status: { in: OPEN_STATUSES } },
   });
 
-  if (open) {
+// Una solicitud atada a una linea de venta nunca se fusiona con otra abierta:
+  // al llegar la mercaderia hay que poder saber que pedido cierra cada unidad.
+  if (open && !args.saleItemId) {
     // Ya hay una solicitud abierta porque el producto esta en camino. Si el
     // motivo es una venta, la cantidad nueva se SUMA a la de esa solicitud: si
-    // no, se perdia en silencio y el almacen llevaba de menos. Por ejemplo, si
-    // se venden 1 y luego 3 con stock 0, la solicitud queda 1 y 4, no 1 y 1.
+    // no, se perdia en silencio y el almacen llevaba de menos. Por ejemplo,
+    // si se venden 1 y luego 3 con stock 0, la solicitud queda 1 y 4, no 1 y 1.
     //
     // El job de stock minimo NO suma: corre todos los dias y sin este tope
     // inflaria la cantidad sin limite.
@@ -134,6 +140,8 @@ export async function ensureRestockRequest(db: Db, args: RestockArgs): Promise<n
       status: "PENDIENTE",
       expectedDate: nextDayAt8(),
       note: args.note ?? null,
+      saleId: args.saleId ?? null,
+      saleItemId: args.saleItemId ?? null,
       history: {
         create: {
           newStatus: "PENDIENTE",

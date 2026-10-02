@@ -30,7 +30,8 @@ interface WholesaleSale {
   location: { name: string } | null;
   user: { name: string } | null;
   payments: { method: string; amount: number }[];
-  items: { productId: number; quantity: number; unitPrice: number; subtotal: number; product: { id: number; name: string; itemCode: string; brand: string; model: string } }[];
+  items: { productId: number; quantity: number; deliveredQuantity?: number; unitPrice: number; subtotal: number; product: { id: number; name: string; itemCode: string; brand: string; model: string } }[];
+  entrega?: { pendientes: number; pedidas: number; entregadas: number; completa: boolean };
 }
 
 const PAGO_METHODS = [
@@ -86,7 +87,7 @@ export default function WholesalePage() {
   const [activeTab, setActiveTab] = useState<"venta" | "carrito" | "historial">("venta");
   const [showConfirm, setShowConfirm] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
-  const [lastWholesaleSale, setLastWholesaleSale] = useState<{ id: number; saleDate: string; total: number; items: WholesaleItem[]; clientName: string; paraQuien: string; paraDonde: string; telefonoEnvio: string; nit: string; nitName: string; celularFactura: string; payments: { method: string; amount: number }[]; status: string } | null>(null);
+  const [lastWholesaleSale, setLastWholesaleSale] = useState<{ id: number; saleDate: string; total: number; items: WholesaleItem[]; clientName: string; paraQuien: string; paraDonde: string; telefonoEnvio: string; nit: string; nitName: string; celularFactura: string; payments: { method: string; amount: number }[]; status: string; faltantes?: { productId: number; nombre: string; cantidad: number }[]; recortados?: { productId: number; nombre: string; pedido: number; vendido: number; faltante: number }[] } | null>(null);
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -295,16 +296,23 @@ export default function WholesalePage() {
       };
       if (selectedStoreId) payload.locationId = selectedStoreId;
       const response = await api.post("/wholesale", payload);
-      setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, paraQuien, paraDonde, telefonoEnvio, nit, nitName, celularFactura, payments: [...validPayments], status: resultingStatus });
-      // La venta se registra aunque la tienda no tenga: lo que falto se pidio
-      // solo. Se avisa que quedo pendiente para que no parezca que salio todo.
-      const faltantes: { nombre: string; cantidad: number }[] = response.data.faltantes || [];
-      if (faltantes.length > 0) {
+      const faltantes: { productId: number; nombre: string; cantidad: number }[] = response.data.faltantes || [];
+      const recortados: { productId: number; nombre: string; pedido: number; vendido: number; faltante: number }[] = response.data.recortados || [];
+
+      // Lo recortado es distinto de lo pendiente: lo pendiente se va a entregar
+      // cuando llegue, lo recortado no existe en ninguna parte. Cobrar por
+      // unidades que no van a llegar sin avisar es peor que el faltante.
+      if (recortados.length > 0) {
+        const detalle = recortados.map((r) => `${r.nombre}: se pidieron ${r.pedido}, se vendieron ${r.vendido}`).join(", ");
+        toast(`Se vendio solo lo que existe. ${detalle}`, { icon: "⛔", duration: 12000 });
+      } else if (faltantes.length > 0) {
         const detalle = faltantes.map((f) => `${f.cantidad} ud de ${f.nombre}`).join(", ");
         toast(`Venta registrada, pero se pidio al almacen lo que no habia: ${detalle}`, { icon: "⚠️", duration: 8000 });
       } else {
         toast.success("Venta por mayor registrada");
       }
+
+      setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, paraQuien, paraDonde, telefonoEnvio, nit, nitName, celularFactura, payments: [...validPayments], status: resultingStatus, faltantes, recortados });
       setShowConfirm(false);
       setShowReceipt(true);
       resetForm();
@@ -608,6 +616,11 @@ export default function WholesalePage() {
                         <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${s.status === "PAGADO" ? "bg-emerald-500/10 text-emerald-400" : "bg-yellow-500/10 text-yellow-400"}`}>
                           {s.status || "PENDIENTE"}
                         </span>
+                        {(s.entrega?.pendientes ?? 0) > 0 && (
+                          <p className="text-xs text-amber-400/90 mt-0.5">
+                            {s.entrega!.pendientes} ud por entregar
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-300 text-right">
                         {formatBs(paid)}
@@ -1121,6 +1134,34 @@ export default function WholesalePage() {
                   </div>
                 ))}
               </div>
+
+              {(lastWholesaleSale.faltantes?.length ?? 0) > 0 && (
+                <div className="border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 mt-3 text-left">
+                  <p className="text-xs text-amber-300 font-semibold">Entrega parcial</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Estas unidades se pidieron al almacen. Se entregan cuando lleguen.
+                  </p>
+                  {lastWholesaleSale.faltantes!.map((f) => (
+                    <p key={f.productId} className="text-[11px] text-gray-300 mt-1">
+                      · {f.nombre}: <b>{f.cantidad}</b> pendiente(s)
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              {(lastWholesaleSale.recortados?.length ?? 0) > 0 && (
+                <div className="border border-red-500/30 bg-red-500/10 rounded-xl p-3 mt-3 text-left">
+                  <p className="text-xs text-red-300 font-semibold">Pedido recortado</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    No existen en ninguna ubicacion, asi que no se vendieron.
+                  </p>
+                  {lastWholesaleSale.recortados!.map((r) => (
+                    <p key={r.productId} className="text-[11px] text-gray-300 mt-1">
+                      · {r.nombre}: se pidieron <b>{r.pedido}</b>, se vendieron <b>{r.vendido}</b>
+                    </p>
+                  ))}
+                </div>
+              )}
               <div className="border-t border-dark-700/50 pt-3 space-y-1">
                 {lastWholesaleSale.payments.map((p, i) => (
                   <div key={i} className="flex justify-between gap-3 text-xs">

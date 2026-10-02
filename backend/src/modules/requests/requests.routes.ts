@@ -282,8 +282,8 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       CANCELADO: "Cancelado",
     };
 
-    const [updated] = await prisma.$transaction([
-      prisma.productRequest.update({
+    const updated = await prisma.$transaction(async (tx) => {
+      const solicitud = await tx.productRequest.update({
         where: { id },
         data: {
           status,
@@ -298,8 +298,9 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
           requestedBy: { select: { name: true } },
           confirmedBy: { select: { name: true } },
         },
-      }),
-      prisma.requestHistory.create({
+      });
+
+      await tx.requestHistory.create({
         data: {
           requestId: id,
           previousStatus: existing.status,
@@ -307,8 +308,41 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
           userId: req.user?.userId || 0,
           userRole: role,
         },
-      }),
-    ]);
+      });
+
+      // Si la solicitud nació de una venta, la mercadería que acaba de llegar
+      // ES la parte de esa venta que estaba pendiente. Se suma a lo entregado
+      // para que el pedido figure completo, sin tocar el estado de pago: una
+      // venta pagada y aun no entregada sigue pagada.
+      if (status === "RECIBIDO_POR_TIENDA" && existing.saleItemId) {
+        const item = await tx.saleItem.findUnique({ where: { id: existing.saleItemId } });
+        if (item) {
+          const porEntregar = Math.max(item.quantity - item.deliveredQuantity, 0);
+          const ahoraEntregado = Math.min(existing.quantity, porEntregar);
+          if (ahoraEntregado > 0) {
+            await tx.saleItem.update({
+              where: { id: item.id },
+              data: { deliveredQuantity: item.deliveredQuantity + ahoraEntregado },
+            });
+
+            const completa = item.deliveredQuantity + ahoraEntregado >= item.quantity;
+            await tx.notification.create({
+              data: {
+                userId: existing.requestedById,
+                title: `Venta #${existing.saleId} ${completa ? "completada" : "avanzada"}`,
+                message: completa
+                  ? `Llegó todo lo pendiente de "${solicitud.product?.name}". La venta #${existing.saleId} queda completa.`
+                  : `Llegaron ${ahoraEntregado} de las ${item.quantity - item.deliveredQuantity} unidades que faltaban de "${solicitud.product?.name}" (venta #${existing.saleId}).`,
+                type: "INFO",
+                linkUrl: "/panel/ventas",
+              },
+            });
+          }
+        }
+      }
+
+      return solicitud;
+    });
 
     // Notify the requester about status change
     if (existing.requestedById && existing.requestedById !== req.user?.userId) {

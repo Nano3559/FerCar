@@ -74,9 +74,18 @@ interface SaleRecord {
   nitName?: string | null;
   telefono?: string | null;
   telefonoFactura?: string | null;
-  items: { id: number; quantity: number; unitPrice: number; subtotal: number;
+  items: { id: number; quantity: number; deliveredQuantity?: number; unitPrice: number; subtotal: number;
     product: { id: number; name: string; itemCode: string; brand?: string; manufacturer?: string | null } }[];
   payments: { id: number; method: string; amount: number }[];
+  entrega?: {
+    pendientes: number;
+    pedidas: number;
+    entregadas: number;
+    completa: boolean;
+    lineas?: { saleItemId: number; productId: number; quantity: number; deliveredQuantity: number; pending: number }[];
+    detalle?: { productId: number; nombre: string; entregadas: number; pendientes: number }[];
+    recortados: { productId: number; nombre: string; pedido: number; vendido: number; faltante: number }[];
+  };
 }
 
 /** Lo que efectivamente se cobro de una venta. Un pago en credito no cuenta
@@ -688,34 +697,44 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   // ==================== CART ====================
   const addToCart = (p: Product, tier: 1 | 2 = 2, qty: number = 1) => {
     const price = tier === 2 && Number(p.price2) > 0 ? Number(p.price2) : Number(p.price1);
+    const disponible = typeof p.stockTotal === "number" ? p.stockTotal : p.stock;
     updateActiveCart((prev) => {
       const existing = prev.find((c) => c.productId === p.id);
       if (existing) {
-        if (existing.quantity + qty > p.stock) {
-          const tienda = locations.find((l) => l.id === selectedLocationId)?.name;
-          toast.error(
-            `Stock insuficiente${tienda ? ` en ${tienda}` : ""}: quedan ${p.stock}` +
-              (typeof p.stockTotal === "number" && p.stockTotal > p.stock
-                ? `. Hay ${p.stockTotal} en otras ubicaciones, se puede solicitar`
-                : "")
-          );
+        // Ya no se bloquea el stock de la tienda: lo que no hay aqui se pide al
+        // almacen y queda pendiente hasta que llegue. Solo se rechaza cuando no
+        // hay existencias en ninguna parte.
+        if (existing.quantity + qty > disponible) {
+          toast.error(`Solo existen ${disponible} unidad(es) entre todas las ubicaciones`);
           return prev;
         }
         return prev.map((c) =>
           c.productId === p.id ? { ...c, quantity: c.quantity + qty, priceTier: tier, unitPrice: price } : c
         );
       }
-return [...prev, {
+      if (qty > disponible) {
+        toast.error(`Solo existen ${disponible} unidad(es) entre todas las ubicaciones`);
+        return prev;
+      }
+      return [...prev, {
         productId: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
         unitPrice: price, priceTier: tier, price1: Number(p.price1), price2: Number(p.price2),
         quantity: qty, availableStock: p.stock,
       }];
     });
+
+    if (qty > p.stock) {
+      toast(
+        `Solo hay ${p.stock} en esta tienda. Las ${qty - p.stock} restantes se pediran al almacen y quedaran pendientes hasta que lleguen.`,
+        { duration: 7000 }
+      );
+    }
   };
 
   // ACCIONES: abrir modal para elegir cantidad y precio (1 o 2)
   const openAddToCart = (p: Product) => {
-    if (p.stock <= 0) { toast.error("Sin stock en esta tienda"); return; }
+    const disponible = typeof p.stockTotal === "number" ? p.stockTotal : p.stock;
+    if (disponible <= 0) { toast.error("Sin stock en esta tienda ni en los almacenes"); return; }
     const hasTwoPrices = Number(p.price2) > 0 && Number(p.price2) !== Number(p.price1);
     setAddTarget(p);
     setAddQty(1);
@@ -1070,6 +1089,16 @@ return [...prev, {
       setSavedQuote(null);
       setActiveTab("venta");
       toast.success("¡Venta registrada exitosamente!");
+
+      // Lo que no habia en la tienda queda pedido al almacen. El vendedor ya
+      // cobro, asi que se le dice de entrada para que no lo olvide al entregar.
+      const pendientes = res.data.entrega?.detalle || [];
+      if (pendientes.length > 0) {
+        const detalle = pendientes
+          .map((p: any) => `${p.nombre} (${p.entregadas} entregadas, ${p.pendientes} pendientes)`)
+          .join("; ");
+        toast(`Entrega parcial: se pidio al almacen. ${detalle}`, { duration: 9000 });
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Error al registrar la venta");
     } finally {
@@ -1332,6 +1361,10 @@ return [...prev, {
         // deuda se veia igual que una pagada y la deuda solo aparecia abriendo
         // venta por venta. El saldo se calcula igual que el backend: un pago en
         // credito no cuenta como cobrado.
+        // Cobrar y entregar son cosas distintas: una venta PAGADA puede seguir
+        // con unidades en camino, asi que el pendiente de entrega va aparte y
+        // no cambia la etiqueta de estado.
+        const unidadesPendientes = s.entrega?.pendientes ?? 0;
         return (
           <td className="px-4 py-3">
             {s.status === "PENDIENTE" ? (
@@ -1344,9 +1377,16 @@ return [...prev, {
                 </p>
               </div>
             ) : (
-              <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-500/10 text-emerald-400">
-                Pagada
-              </span>
+              <div className="space-y-0.5">
+                <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-500/10 text-emerald-400">
+                  Pagada
+                </span>
+                {unidadesPendientes > 0 && (
+                  <p className="text-xs text-amber-400/90">
+                    {unidadesPendientes} ud por entregar
+                  </p>
+                )}
+              </div>
             )}
           </td>
         );
@@ -2255,14 +2295,39 @@ return [...prev, {
             <div className="bg-dark-900/50 border border-dark-700/30 rounded-xl p-3 mb-5 text-left">
               <p className="text-xs text-gray-500 mb-2">Productos</p>
               <div className="space-y-1.5">
-                {lastSale.items.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-300 truncate flex-1 mr-2">{item.product.name}</span>
-                    <span className="text-gray-500 shrink-0">x{item.quantity} · {formatBs(item.subtotal)}</span>
-                  </div>
-                ))}
+                {lastSale.items.map((item) => {
+                  const pendiente = Math.max((item.quantity || 0) - (item.deliveredQuantity ?? item.quantity), 0);
+                  return (
+                    <div key={item.id} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-300 truncate flex-1 mr-2">{item.product.name}</span>
+                      <span className="text-gray-500 shrink-0">x{item.quantity} · {formatBs(item.subtotal)}</span>
+                      {pendiente > 0 && (
+                        <span className="ml-2 shrink-0 text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded px-1.5 py-0.5">
+                          {pendiente} pendiente
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
+
+            {(lastSale.entrega?.detalle?.length ?? 0) > 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-5 text-left">
+                <p className="text-xs text-amber-300 mb-1">Entrega parcial</p>
+                <p className="text-xs text-gray-400">
+                  Ya se cobro la venta completa. Estas unidades se pidieron al almacen y se
+                  entregan cuando lleguen:
+                </p>
+                <div className="space-y-1 mt-1.5">
+                  {lastSale.entrega?.detalle?.map((p: any) => (
+                    <p key={p.productId} className="text-xs text-gray-300">
+                      · {p.nombre}: <b>{p.entregadas}</b> entregadas, <b>{p.pendientes}</b> pendientes
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="bg-dark-900/50 border border-dark-700/30 rounded-xl p-3 mb-5 text-left">
               <p className="text-xs text-gray-500 mb-2">Pagos</p>

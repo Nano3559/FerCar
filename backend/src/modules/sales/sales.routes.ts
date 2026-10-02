@@ -4,6 +4,7 @@ import { authenticate, authorize, requireTiendaLocation } from "../../shared/mid
 import { AuthRequest } from "../../shared/types";
 import { ensureRestockRequest } from "../../utils/restockRequest";
 import { validateAndMergeItems, demandByProduct } from "../../utils/saleItems";
+import { planFulfillment, loadStockSnapshot, summarizeFulfillment } from "../../utils/fulfillment";
 import { saleCode } from "../../shared/documentCodes";
 
 const router = Router();
@@ -69,6 +70,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         total: Number(s.total),
         items: s.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
         payments: s.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
+        entrega: summarizeFulfillment(s.items),
       })),
       pagination: { total, page: Number(page), limit: take, pages: Math.ceil(total / take) },
     });
@@ -404,40 +406,57 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const stockUpdates: { productId: number; quantity: number }[] = [];
+      // Entrega parcial: lo que hay en la tienda se entrega de inmediato, lo que
+      // hay en los almacenes queda pendiente y se pide, y lo que no existe en
+      // ningun lado se recorta de la venta. Cobrar de mas dejaria pedidos que
+      // nunca se van a poder completar.
+      const stock = await loadStockSnapshot(tx, validItems.map((i) => i.productId), userLocationId);
+      const plan = planFulfillment(validItems, stock);
 
-      // El stock se valida por producto sumando todas sus lineas: un mismo
-      // producto puede aparecer en P1 y P2 y validar linea por linea dejaria
-      // pasar una venta que juntas superan el stock disponible.
-      for (const item of demandByProduct(validItems)) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product) {
-          throw new Error(`Producto con ID ${item.productId} no encontrado`);
-        }
+      const productos = await tx.product.findMany({
+        where: { id: { in: validItems.map((i) => i.productId) } },
+        select: { id: true, name: true, itemCode: true },
+      });
+      const nombrePorId = new Map(productos.map((p) => [p.id, p]));
 
-        const inventory = await tx.inventory.findUnique({
-          where: { productId_locationId: { productId: item.productId, locationId: userLocationId } },
-        });
+      // Si hay que recortar, no se cobra una cifra distinta a la que el vendedor
+      // acaba de contar frente al cliente. La venta departamental no valida el
+      // pago contra el total, asi que un recorte silencioso terminaria cobrando
+      // de mas. Se corta aqui con el detalle exacto para que ajuste y listo.
+      if (plan.capped.length > 0) {
+        const detalle = plan.capped
+          .map((c) => {
+            const p = nombrePorId.get(c.productId);
+            return `"${p ? `${p.name} (${p.itemCode})` : `Producto ${c.productId}`}": pediste ${c.requested}, existen ${c.sellable}`;
+          })
+          .join("; ");
+        throw new Error(`No hay existencias suficientes. ${detalle}. Ajusta la cantidad antes de cobrar.`);
+      }
 
-        const currentStock = inventory?.stock || 0;
-        if (currentStock < item.quantity) {
-          throw new Error(`Stock insuficiente para "${product.name}". Disponible: ${currentStock}, solicitado: ${item.quantity}`);
-        }
-
-        stockUpdates.push({ productId: item.productId, quantity: item.quantity });
+      for (const productId of new Set(validItems.map((i) => i.productId))) {
+        const product = await tx.product.findUnique({ where: { id: productId } });
+        if (!product) throw new Error(`Producto con ID ${productId} no encontrado`);
       }
 
       let totalSale = 0;
-      const saleItemsData = validItems.map((item: any) => {
-        const subtotal = item.quantity * item.unitPrice;
+      const saleItemsData = plan.lines.map((line) => {
+        // El precio es el que envio el vendedor para ESA linea.
+        const unitPrice = validItems[line.index].unitPrice;
+        const subtotal = line.sellable * unitPrice;
         totalSale += subtotal;
         return {
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
+          productId: line.productId,
+          quantity: line.sellable,
+          deliveredQuantity: line.delivered,
+          unitPrice,
           subtotal,
         };
       });
+
+      // Solo lo entregado descuenta stock de la tienda ahora.
+      const stockUpdates = plan.lines
+        .filter((l) => l.delivered > 0)
+        .map((l) => ({ productId: l.productId, quantity: l.delivered }));
 
       const totalPaid = (payments || []).reduce((sum: number, p: any) => sum + Number(p.amount), 0);
 
@@ -531,11 +550,54 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         }
       }
 
+      // Lo que quedo pendiente se pide al almacen. Cada solicitud queda
+      // enlazada a la linea de venta que va a completar, para que al llegar la
+      // mercaderia se sepa que pedido se cierra.
+      for (const line of plan.lines) {
+        if (line.pending <= 0) continue;
+        const saleItem = sale.items.find((i) => i.productId === line.productId && i.quantity === line.sellable);
+        await ensureRestockRequest(tx, {
+          productId: line.productId,
+          destinationId: userLocationId,
+          requestedById: user.userId,
+          quantity: line.pending,
+          source: "VENTA",
+          saleId: sale.id,
+          saleItemId: saleItem?.id,
+          note: `Venta #${sale.id}: ${line.pending} unidad(es) pendientes de llegar`,
+        });
+      }
+
+      const etiqueta = (productId: number) => {
+        const p = nombrePorId.get(productId);
+        return p ? `${p.name} (${p.itemCode})` : `Producto ${productId}`;
+      };
+
       return {
         ...sale,
         total: Number(sale.total),
         items: sale.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
         payments: sale.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
+        entrega: {
+          // Misma forma que devuelve el listado, mas el detalle con nombres y lo
+          // que se descarto. Si difieren, el frontend tiene que adivinar.
+          ...summarizeFulfillment(sale.items),
+          detalle: plan.lines
+            .filter((l) => l.pending > 0)
+            .map((l) => ({
+              productId: l.productId,
+              nombre: etiqueta(l.productId),
+              entregadas: l.delivered,
+              pendientes: l.pending,
+            })),
+          recortados: plan.capped.map((c) => ({
+            productId: c.productId,
+            nombre: etiqueta(c.productId),
+            pedido: c.requested,
+            vendido: c.sellable,
+            faltante: c.missing,
+          })),
+        },
       };
     });
 
@@ -690,6 +752,7 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
         total: Number(updated!.total),
         items: updated!.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
         payments: updated!.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
+        entrega: summarizeFulfillment(updated!.items),
       };
     });
 
@@ -766,6 +829,7 @@ router.post("/:id/payments", async (req: AuthRequest, res: Response) => {
       total: Number(result!.total),
       items: result!.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
       payments: result!.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
+      entrega: summarizeFulfillment(result!.items),
     });
   } catch (error: any) {
     console.error("Error al registrar pago:", error);

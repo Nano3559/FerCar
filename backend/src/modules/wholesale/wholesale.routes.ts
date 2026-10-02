@@ -5,7 +5,8 @@ import * as XLSX from "xlsx";
 import { authenticate, authorize, requireTiendaLocation } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
 import { ensureRestockRequest } from "../../utils/restockRequest";
-import { validateAndMergeItems, demandByProduct } from "../../utils/saleItems";
+import { validateAndMergeItems } from "../../utils/saleItems";
+import { planFulfillment, loadStockSnapshot, summarizeFulfillment } from "../../utils/fulfillment";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -86,45 +87,39 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // Venta mayorista: se registra aunque la mercadería no esté aún en la
-      // tienda. Se descuenta solo el stock disponible y se solicita al almacén
-      // (o a otra tienda) lo que falte. Si el producto está en la tienda de
-      // venta, no se crea solicitud.
-      const stockUpdates: { productId: number; quantity: number }[] = [];
-      const supplyRequests: { productId: number; quantity: number }[] = [];
+      // Mismo reparto que en ventas locales y departamentales: lo que hay en
+      // tienda se entrega, lo que hay en los almacenes queda pendiente y se
+      // pide, y lo que no existe en ningun lado se recorta de la venta.
+      // La mayorista a diferencia de las otras no se detiene ante el recorte:
+      // el pedido diferido es parte del negocio, pero el recorta se avisa.
+      const stock = await loadStockSnapshot(tx, validItems.map((i) => i.productId), userLocationId);
+      const plan = planFulfillment(validItems, stock);
 
-      // Se recorre por producto y no por linea: si el mismo producto aparece en
-      // P1 y en P2, calcular el descuento linea por linea podria descontar del
-      // stock mas unidades de las que realmente hay.
-      for (const item of demandByProduct(validItems)) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
+      for (const productId of new Set(validItems.map((i) => i.productId))) {
+        const product = await tx.product.findUnique({ where: { id: productId } });
         if (!product) {
-          throw new Error(`Producto con ID ${item.productId} no encontrado`);
-        }
-
-        const inventory = await tx.inventory.findUnique({
-          where: { productId_locationId: { productId: item.productId, locationId: userLocationId } },
-        });
-
-        const currentStock = inventory?.stock || 0;
-        const availableNow = Math.min(currentStock, item.quantity);
-        if (availableNow > 0) {
-          stockUpdates.push({ productId: item.productId, quantity: availableNow });
-        }
-        const shortfall = item.quantity - availableNow;
-        if (shortfall > 0) {
-          supplyRequests.push({ productId: item.productId, quantity: shortfall });
+          throw new Error(`Producto con ID ${productId} no encontrado`);
         }
       }
 
+      const stockUpdates = plan.lines
+        .filter((l) => l.delivered > 0)
+        .map((l) => ({ productId: l.productId, quantity: l.delivered }));
+
+      if (plan.lines.length === 0) {
+        throw new Error("Ninguno de los productos tiene existencias en esta tienda ni en los almacenes");
+      }
+
       let totalSale = 0;
-      const saleItemsData = validItems.map((item: any) => {
-        const unitPrice = item.unitPrice || item.wholesalePrice || 0;
-        const subtotal = item.quantity * unitPrice;
+      const saleItemsData = plan.lines.map((line) => {
+        const original: any = validItems[line.index];
+        const unitPrice = Number(original.unitPrice || original.wholesalePrice || 0);
+        const subtotal = line.sellable * unitPrice;
         totalSale += subtotal;
         return {
-          productId: item.productId,
-          quantity: item.quantity,
+          productId: line.productId,
+          quantity: line.sellable,
+          deliveredQuantity: line.delivered,
           unitPrice,
           subtotal,
         };
@@ -185,42 +180,59 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         }
       }
 
-  // Solicitud automática al almacén por lo que falte en la tienda de venta.
-  // Si el producto está en la tienda, no se crea solicitud.
-  for (const req of supplyRequests) {
+  // Solicitud al almacén por lo que quedó pendiente de llegar. Cada una queda
+  // atada a su línea de venta para poder cerrar el pedido cuando llegue.
+  for (const line of plan.lines) {
+    if (line.pending <= 0) continue;
+    const saleItem = sale.items.find((i) => i.productId === line.productId && i.quantity === line.sellable);
     await ensureRestockRequest(tx, {
-      productId: req.productId,
+      productId: line.productId,
       destinationId: userLocationId,
       requestedById: user.userId,
-      quantity: req.quantity,
+      quantity: line.pending,
       source: "VENTA",
-      note: "Reposición automática: la venta superó el stock disponible",
+      saleId: sale.id,
+      saleItemId: saleItem?.id,
+      note: `Venta #${sale.id}: ${line.pending} unidad(es) pendientes de llegar`,
     });
   }
 
-  // Se devuelve qué productos se vendieron sin stock y cuánto se pidió, para
+  // Se devuelve qué productos quedaron pendientes y cuánto se pidió, para
   // que la pantalla avise en vez de dejar pasar la venta en silencio.
   const surtos = await tx.product.findMany({
-    where: { id: { in: supplyRequests.map((r) => r.productId) } },
+    where: { id: { in: plan.lines.filter((l) => l.pending > 0).map((l) => l.productId) } },
     select: { id: true, name: true, itemCode: true },
   });
   const nombrePorId = new Map(surtos.map((p) => [p.id, p]));
-  const faltantes = supplyRequests
-    .map((r) => {
-      const p = nombrePorId.get(r.productId);
+  const faltantes = plan.lines
+    .filter((l) => l.pending > 0)
+    .map((l) => {
+      const p = nombrePorId.get(l.productId);
       return {
-        productId: r.productId,
-        nombre: p ? `${p.name} (${p.itemCode})` : `Producto ${r.productId}`,
-        cantidad: r.quantity,
+        productId: l.productId,
+        nombre: p ? `${p.name} (${p.itemCode})` : `Producto ${l.productId}`,
+        cantidad: l.pending,
       };
     })
     .sort((a, b) => b.cantidad - a.cantidad);
+
+  const recortados = plan.capped.map((c) => {
+    const p = nombrePorId.get(c.productId);
+    return {
+      productId: c.productId,
+      nombre: p ? `${p.name} (${p.itemCode})` : `Producto ${c.productId}`,
+      pedido: c.requested,
+      vendido: c.sellable,
+      faltante: c.missing,
+    };
+  });
 
 
       return {
         ...sale,
         total: Number(sale.total),
         faltantes,
+        recortados,
         items: sale.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
         payments: sale.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
       };
@@ -501,6 +513,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         total: Number(s.total),
         items: s.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
         payments: s.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
+        entrega: summarizeFulfillment(s.items),
       })),
       pagination: { total, page: pg, limit: take, pages: Math.ceil(total / take) },
     });
