@@ -486,7 +486,7 @@ export default function SettingsPage() {
   // existen, para que la configuracion no se pudra con el tiempo.
 
   const getRoleCols = (role: Role, module: string): string[] =>
-    migrateCols((role.columnConfig?.[module] as string[]) || []);
+    migrateCols((role.columnConfig?.[module] as string[]) || [], MODULE_COLUMNS[module]);
 
   const saveRoleCols = async (role: Role, module: string, next: string[]) => {
     const disponibles = MODULE_COLUMNS[module] || [];

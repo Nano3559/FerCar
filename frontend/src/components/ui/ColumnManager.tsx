@@ -23,15 +23,25 @@ const RENAMED_COLUMNS: Record<string, string> = {
   Tienda: "Ubicación",
 };
 
-export const migrateCols = (cols: string[]): string[] =>
-  cols.map((c) => RENAMED_COLUMNS[c] || c);
+// Aplica los renombres y descarta los nombres que ya no existen. Sin el
+// recorte, una columna eliminada (ej. "Celular", que paso dentro de "Datos de
+// factura") seguia guardada para siempre: ocupaba un hueco invisible en la
+// lista y el usuario veia menos columnas de las que creia tener, sin aviso.
+export const migrateCols = (cols: string[], valid?: string[]): string[] => {
+  const mapped = cols.map((c) => RENAMED_COLUMNS[c] || c);
+  const validSet = valid ? new Set(valid) : null;
+  return validSet ? mapped.filter((c) => validSet.has(c)) : mapped;
+};
 
 // Columnas incorporadas despues de que un equipo guardara su lista. Si no
 // estan en lo guardado es porque no existian todavia, no porque ese usuario
 // las haya ocultado a proposito: se agregan visibles. Las que ya estaban en
 // su lista y no aparecen, esas si se respetan.
+//
+// Al agregar o renombrar una columna hay que sumar aqui su nombre: esta lista
+// es la que evita que un usuario se quede sin verla en silencio.
 const ADDED_COLUMNS: Record<string, string[]> = {
-  ventas: ["Nota"],
+  ventas: ["Datos de envío", "Usuario", "Estado", "Nota"],
 };
 
 export const withAddedCols = (module: string, stored: string[], available: string[]): string[] => {
@@ -54,12 +64,12 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
     if (!open) return;
     let cancelled = false;
     const loadPreferences = async () => {
-      const roleCols = columnConfig?.[module] ? migrateCols(columnConfig[module]) : undefined;
+      const roleCols = columnConfig?.[module] ? migrateCols(columnConfig[module], columns) : undefined;
       const allowed = roleCols && roleCols.length ? columns.filter((c) => roleCols.includes(c)) : columns;
-      let stored = migrateCols(getStored(module) || []);
+      let stored = migrateCols(getStored(module) || [], columns);
       try {
         const response = await api.get("/users/me/preferences");
-        const remote = migrateCols(response.data.columnPrefs?.[module] || []);
+        const remote = migrateCols(response.data.columnPrefs?.[module] || [], columns);
         // Lo guardado en el navegador es la fuente de verdad más reciente:
         // las preferencias remotas solo se usan si no existe configuración local.
         if ((!stored || stored.length === 0) && Array.isArray(remote) && remote.length) stored = remote;
