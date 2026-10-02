@@ -259,6 +259,102 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * GET /:id/carrito — Lineas de la cotizacion listas para cargar en el carrito
+ * de Ventas, para no tener que elegir producto por producto otra vez.
+ *
+ * Los precios que vuelven son los de hoy, no los cotizados: si el precio cambio
+ * entre la cotizacion y la venta, el carrito arranca con el precio actual y el
+ * vendedor ve la diferencia antes de cobrar. El stock tambien es el actual, para
+ * poder avisar de lineas que ya no se pueden vender en esa tienda.
+ */
+router.get("/:id/carrito", async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseId(req.params.id);
+    const user = req.user!;
+    const quote = await prisma.quote.findUnique({ where: { id }, include: { items: true } });
+    if (!quote) return res.status(404).json({ message: "Cotización no encontrada" });
+    if (user.role === "TIENDA" && quote.locationId !== user.locationId) {
+      return res.status(403).json({ message: "No tiene acceso a esta cotización" });
+    }
+
+    const ids = Array.from(new Set(quote.items.map((i) => i.productId)));
+    const [products, stocks, location] = await Promise.all([
+      prisma.product.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, itemCode: true, name: true, brand: true, price1: true, price2: true },
+      }),
+      prisma.inventory.findMany({
+        where: { productId: { in: ids }, locationId: quote.locationId },
+        select: { productId: true, stock: true },
+      }),
+      prisma.location.findUnique({ where: { id: quote.locationId }, select: { id: true, name: true } }),
+    ]);
+
+    const byId = new Map(products.map((p) => [p.id, p]));
+    const stockById = new Map(stocks.map((s) => [s.productId, s.stock]));
+
+    const lines = quote.items.map((i) => {
+      const p = byId.get(i.productId);
+      if (!p) {
+        // El producto se borro despues de cotizarlo: no hay precio ni stock.
+        return {
+          productId: i.productId,
+          itemCode: i.itemCode,
+          name: i.name,
+          brand: i.brand ?? "",
+          quantity: i.quantity,
+          priceTier: i.priceTier,
+          quotedUnitPrice: Number(i.unitPrice),
+          unitPrice: null,
+          price1: null,
+          price2: null,
+          availableStock: 0,
+          sinStock: true,
+          noDisponible: true,
+        };
+      }
+
+      const availableStock = stockById.get(p.id) ?? 0;
+      const price1 = Number(p.price1);
+      const price2 = Number(p.price2);
+      // Si el producto hoy solo tiene un precio, se vuelve a P1 aunque se haya
+      // cotizado a P2: en el carrito el vendedor puede cambiarlo otra vez.
+      const priceTier = i.priceTier === 2 && price2 > 0 ? 2 : 1;
+
+      return {
+        productId: p.id,
+        itemCode: p.itemCode,
+        name: p.name,
+        brand: p.brand ?? "",
+        quantity: i.quantity,
+        priceTier,
+        quotedUnitPrice: Number(i.unitPrice),
+        unitPrice: priceTier === 2 ? price2 : price1,
+        price1,
+        price2,
+        availableStock,
+        sinStock: availableStock < i.quantity,
+        noDisponible: false,
+      };
+    });
+
+    res.json({
+      quoteId: quote.id,
+      type: quote.type,
+      clientName: quote.clientName,
+      note: quote.note,
+      locationId: quote.locationId,
+      locationName: location?.name ?? null,
+      lines,
+    });
+  } catch (error: any) {
+    if (error.message === "ID inválido") return res.status(400).json({ message: error.message });
+    console.error("Error al preparar el carrito desde la cotización:", error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+});
+
 // PATCH /:id — Anular una cotizacion (no se borra: es el registro de lo que se ofrecio)
 router.patch("/:id", async (req: AuthRequest, res: Response) => {
   try {

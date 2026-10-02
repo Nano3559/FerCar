@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, Printer, Ban, FileText, X, Eye, AlertTriangle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Search, Printer, Ban, FileText, X, Eye, AlertTriangle, ShoppingCart } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
@@ -7,6 +8,11 @@ import { downloadElementAsPdf } from "../utils/quotePdf";
 import QuoteDocument from "../components/quotes/QuoteDocument";
 
 const PAGE_SIZE = 15;
+
+/** Una cotizacion departamental tiene que caer en el carrito de ventas
+ *  departamentales: no en el de ventas locales, que es otra pantalla con sus
+ *  propias reglas de cliente. El resto va a ventas. */
+const salesRouteFor = (type: string) => (type === "DEPARTAMENTAL" ? "/ventas-departamental" : "/ventas");
 
 interface QuoteSummary {
   id: number;
@@ -19,6 +25,7 @@ interface QuoteSummary {
   storeName: string | null;
   saleDate: string;
   saleId: number | null;
+  type: string;
 }
 
 interface QuoteDetail extends QuoteSummary {
@@ -48,6 +55,8 @@ const isSaleTypeLabel = (t: string) =>
 export default function QuotesPage() {
   const user = useAuthStore((s) => s.user);
   const isTienda = user?.role === "TIENDA";
+  const navigate = useNavigate();
+  const [openingCart, setOpeningCart] = useState<number | null>(null);
 
   const [quotes, setQuotes] = useState<QuoteSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,6 +149,16 @@ export default function QuotesPage() {
     }
   };
 
+  /**
+   * Lleva la cotizacion al carrito de Ventas. Solo se pasa el id: la pantalla
+   * de ventas pide las lineas al backend para traer precios y stock de hoy, en
+   * vez de confiar en lo que quedo guardado cuando se cotizo.
+   */
+  const loadIntoCart = (qt: { id: number; type: string }) => {
+    setOpeningCart(qt.id);
+    navigate(salesRouteFor(qt.type), { state: { quoteId: qt.id } });
+  };
+
   const clearFilters = () => {
     setQ(""); setStatus(""); setFrom(""); setTo(""); setStore(""); setPage(1);
   };
@@ -154,7 +173,8 @@ export default function QuotesPage() {
             <FileText size={22} className="text-primary-500" /> Cotizaciones
           </h1>
           <p className="text-sm text-gray-400">
-            Historial de cotizaciones emitidas. Cada una tiene su código y se puede reimprimir tal cual salió.
+            Historial de cotizaciones emitidas. Cada una tiene su código, se puede reimprimir tal como salió y se
+            puede cargar en el carrito de ventas sin volver a elegir los productos.
           </p>
         </div>
         <p className="text-sm text-gray-400">{total} cotización{total === 1 ? "" : "es"}</p>
@@ -226,7 +246,8 @@ export default function QuotesPage() {
             <FileText size={32} className="mx-auto text-gray-600 mb-3" aria-hidden="true" />
             <p className="text-foreground font-medium">Todavía no hay cotizaciones</p>
             <p className="text-gray-500 text-sm mt-1">
-              Las cotizaciones se guardan solas al imprimirlas desde el carrito de Ventas.
+              Las cotizaciones se guardan solas al imprimirlas desde el carrito de Ventas. Después puedes
+              cargarlas de vuelta al carrito para convertirlas en venta.
             </p>
           </div>
         ) : (
@@ -268,11 +289,19 @@ export default function QuotesPage() {
                             <span className="sr-only">Ver detalle de la cotización {qt.code}</span>
                           </button>
                           {qt.status === "PENDIENTE" && (
-                            <button onClick={() => setConfirmAnnul(qt)} title="Anular"
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                              <Ban size={15} />
-                              <span className="sr-only">Anular la cotización {qt.code}</span>
-                            </button>
+                            <>
+                              <button onClick={() => loadIntoCart(qt)} title="Cargar en el carrito de ventas"
+                                disabled={openingCart === qt.id}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 transition-colors disabled:opacity-50">
+                                <ShoppingCart size={15} />
+                                <span className="sr-only">Cargar la cotización {qt.code} en el carrito de ventas</span>
+                              </button>
+                              <button onClick={() => setConfirmAnnul(qt)} title="Anular"
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                                <Ban size={15} />
+                                <span className="sr-only">Anular la cotización {qt.code}</span>
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -387,10 +416,16 @@ export default function QuotesPage() {
 
             <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-2 px-5 py-4 bg-dark-800 border-t border-dark-600/50">
               {detail.status === "PENDIENTE" && (
-                <button onClick={() => setConfirmAnnul(detail)} disabled={printing}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-red-600/20 text-red-300 border border-red-500/40 hover:bg-red-600/30 transition-all disabled:opacity-50">
-                  <Ban size={15} /> Anular
-                </button>
+                <>
+                  <button onClick={() => setConfirmAnnul(detail)} disabled={printing}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-red-600/20 text-red-300 border border-red-500/40 hover:bg-red-600/30 transition-all disabled:opacity-50">
+                    <Ban size={15} /> Anular
+                  </button>
+                  <button onClick={() => loadIntoCart(detail)} disabled={printing || openingCart === detail.id}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-600/30 transition-all disabled:opacity-50">
+                    <ShoppingCart size={15} /> Cargar en el carrito
+                  </button>
+                </>
               )}
               <button onClick={() => reprint(detail)} disabled={printing}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-primary-600 text-white hover:bg-primary-700 transition-all disabled:opacity-50">

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
   FileText, RefreshCw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
@@ -281,6 +282,77 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   };
 
   const allCartItemCount = carts.reduce((sum, c) => sum + c.items.reduce((s, i) => s + i.quantity, 0), 0);
+
+  // --- Cargar una cotización como carrito ---
+  // Desde la pantalla de Cotizaciones se llega acá con el id de la cotización en
+  // el state de la navegación. Las líneas se piden al backend para usar los
+  // precios y el stock de hoy, no los que quedaron guardados al cotizar.
+  const routerLocation = useLocation();
+  const routerNavigate = useNavigate();
+  const quoteIdFromNav = (routerLocation.state as { quoteId?: number } | null)?.quoteId;
+  const appliedQuoteRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!quoteIdFromNav || appliedQuoteRef.current === quoteIdFromNav) return;
+    appliedQuoteRef.current = quoteIdFromNav;
+    // Se limpia el state para que un F5 no vuelva a cargar la misma cotización.
+    routerNavigate(routerLocation.pathname, { replace: true, state: null });
+
+    const spinner = toast.loading("Cargando la cotización al carrito...");
+    api.get(`/quotes/${quoteIdFromNav}/carrito`)
+      .then((res) => {
+        const data = res.data;
+        const lines: any[] = data.lines ?? [];
+        const utilizables = lines.filter((l) => !l.noDisponible);
+        const sinStock = lines.filter((l) => l.sinStock);
+        const borrados = lines.length - utilizables.length;
+        const cambiado = utilizables.filter((l) => Number(l.unitPrice) !== Number(l.quotedUnitPrice)).length;
+
+        if (utilizables.length === 0) {
+          toast.error("Los productos de esa cotización ya no están en el catálogo", { id: spinner });
+          return;
+        }
+
+        updateActiveCart(() =>
+          utilizables.map(
+            (l): CartItem => ({
+              productId: l.productId,
+              itemCode: l.itemCode,
+              name: l.name,
+              brand: l.brand ?? "",
+              unitPrice: Number(l.unitPrice),
+              priceTier: l.priceTier === 2 ? 2 : 1,
+              price1: Number(l.price1),
+              price2: Number(l.price2),
+              quantity: l.quantity,
+              availableStock: l.availableStock,
+            })
+          )
+        );
+        if (data.clientName) {
+          setCustomerData((prev) => (prev.name.trim() ? prev : { ...prev, name: data.clientName }));
+        }
+        // La nota de la cotizacion se ofrece como nota de la venta: el vendedor
+        // decide si la copia o no, no se impone.
+        if (data.note) setSaleNote((prev) => (prev.trim() ? prev : data.note));
+
+        const avisos: string[] = [];
+        if (sinStock.length > 0) {
+          avisos.push(`${sinStock.length} línea(s) sin stock suficiente${data.locationName ? ` en ${data.locationName}` : ""}`);
+        }
+        if (borrados > 0) avisos.push(`${borrados} producto(s) ya no existen`);
+        if (cambiado > 0) avisos.push(`${cambiado} precio(s) cambiaron desde la cotización`);
+
+        if (avisos.length === 0) {
+          toast.success(`Cotización cargada: ${utilizables.length} línea(s)`, { id: spinner });
+        } else {
+          toast(`${utilizables.length} línea(s) cargadas. ${avisos.join(". ")}`, { id: spinner, duration: 7000 });
+        }
+      })
+      .catch((e) => {
+        toast.error(e?.response?.data?.message || "No se pudo cargar la cotización al carrito", { id: spinner });
+      });
+  }, [quoteIdFromNav, routerLocation.pathname, routerNavigate]);
 
   // --- Payment modal ---
   const [showPayment, setShowPayment] = useState(false);
