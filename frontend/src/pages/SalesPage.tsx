@@ -503,7 +503,10 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       // withAddedCols: las columnas nuevas entran solas, porque si faltan en lo
       // guardado es que no existian cuando se guardo, no que esten ocultas.
       const base = withAddedCols("ventas", migrateCols(stored?.length ? stored : roleCols?.length ? roleCols : HISTORY_COLUMNS), HISTORY_COLUMNS);
-      const merged = HISTORY_COLUMNS.filter((c) => base.includes(c));
+      // Se filtra contra HISTORY_COLUMNS para descartar columnas que ya no existen,
+      // pero conservando el orden elegido: filtrar al reves imposedria el orden
+      // original y el reordenado del usuario no serviria de nada.
+      const merged = base.filter((c) => HISTORY_COLUMNS.includes(c));
       return merged.length ? merged : HISTORY_COLUMNS;
     } catch {
       return HISTORY_COLUMNS;

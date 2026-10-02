@@ -19,6 +19,8 @@ const RENAMED_COLUMNS: Record<string, string> = {
   "Unit Price": "Precio USD",
   Hermana: "Costo Tiendas",
   "#": "Código",
+  ID: "Código",
+  Tienda: "Ubicación",
 };
 
 export const migrateCols = (cols: string[]): string[] =>
@@ -29,7 +31,7 @@ export const migrateCols = (cols: string[]): string[] =>
 // las haya ocultado a proposito: se agregan visibles. Las que ya estaban en
 // su lista y no aparecen, esas si se respetan.
 const ADDED_COLUMNS: Record<string, string[]> = {
-  ventas: ["Celular", "Nota"],
+  ventas: ["Nota"],
 };
 
 export const withAddedCols = (module: string, stored: string[], available: string[]): string[] => {
@@ -42,6 +44,10 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("visible");
   const [visible, setVisible] = useState<string[]>([]);
+  // Columnas que el rol del usuario permite ver. Lo que este fuera de aqui se
+  // puede mostrar, pero no activar: si no, el usuario marca una columna, le
+  // aplica, y al recargar desaparece sin explicacion.
+  const [allowedCols, setAllowedCols] = useState<string[]>(columns);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -63,6 +69,7 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
       if (cancelled) return;
       const storedAllowed = stored?.filter((c) => allowed.includes(c)) || [];
       const next = storedAllowed.length ? withAddedCols(module, storedAllowed, allowed) : allowed;
+      setAllowedCols(allowed);
       setVisible(next);
       onVisibleChange(next);
     };
@@ -79,6 +86,9 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
   };
 
   const toggle = (col: string) => {
+    // Una columna fuera del rol no se activa: si se guardara, al recargar se
+    // filtraria y el usuario creeria que el ajuste se perdio.
+    if (!allowedCols.includes(col)) return;
     if (visible.includes(col)) {
       setVisible(visible.filter((c) => c !== col));
     } else {
@@ -98,10 +108,13 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
   const save = async () => {
     setSaving(true);
     try {
-      localStorage.setItem(`columns_${module}`, JSON.stringify(visible));
-      onVisibleChange(visible);
+      // Se guarda intersection con lo permitido, no lo que haya en pantalla:
+      // si el rol cambio despues, lo guardado no debe arrastrar columnas vetadas.
+      const permitted = visible.filter((c) => allowedCols.includes(c));
+      localStorage.setItem(`columns_${module}`, JSON.stringify(permitted));
+      onVisibleChange(permitted);
       const currentPrefs = JSON.parse(localStorage.getItem("columnPrefs") || "{}");
-      currentPrefs[module] = visible;
+      currentPrefs[module] = permitted;
       localStorage.setItem("columnPrefs", JSON.stringify(currentPrefs));
       try {
         await api.put("/users/me/preferences", { columnPrefs: currentPrefs });
@@ -119,7 +132,9 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
 
   const reset = () => {
     const roleCols = columnConfig?.[module] ? migrateCols(columnConfig[module]) : undefined;
-    setVisible(roleCols && roleCols.length ? roleCols : columns);
+    const permitted = roleCols && roleCols.length ? columns.filter((c) => roleCols.includes(c)) : columns;
+    setVisible(permitted);
+    onVisibleChange(permitted);
   };
 
   return (
@@ -191,18 +206,25 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
                 )
               ) : (
                 columns.map((col) => {
+                  const bloqueada = !allowedCols.includes(col);
                   const isVis = visible.includes(col);
                   return (
                     <button
                       key={col}
                       onClick={() => toggle(col)}
+                      disabled={bloqueada}
+                      title={bloqueada ? "Tu rol no permite esta columna" : undefined}
                       className={`flex items-center justify-between w-full px-3 py-1.5 rounded-lg text-sm transition-all ${
-                        isVis ? "text-gray-200 hover:bg-dark-800/50" : "text-gray-500 hover:bg-dark-800/50"
+                        bloqueada
+                          ? "text-gray-600 cursor-not-allowed"
+                          : isVis
+                            ? "text-gray-200 hover:bg-dark-800/50"
+                            : "text-gray-500 hover:bg-dark-800/50"
                       }`}
                     >
                       <span className="truncate">{col}</span>
-                      <span className={`flex items-center gap-1 text-xs ${isVis ? "text-primary-400" : "text-gray-500"}`}>
-                        {isVis ? <><Eye size={12} /> Visible</> : <><EyeOff size={12} /> Oculto</>}
+                      <span className={`flex items-center gap-1 text-xs ${isVis && !bloqueada ? "text-primary-400" : "text-gray-500"}`}>
+                        {bloqueada ? "No disponible para tu rol" : isVis ? <><Eye size={12} /> Visible</> : <><EyeOff size={12} /> Oculto</>}
                       </span>
                     </button>
                   );
