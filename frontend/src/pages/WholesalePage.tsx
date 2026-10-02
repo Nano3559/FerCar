@@ -25,7 +25,8 @@ interface WholesaleSale {
   id: number; saleDate: string; total: number; type: string;
   paraQuien?: string | null; lugarEntrega?: string | null; datosFactura?: string | null; formaPago?: string | null;
   nitName?: string | null; status?: string | null;
-  customer: { name: string; nit: string | null } | null;
+  telefono?: string | null; telefonoFactura?: string | null;
+  customer: { name: string; nit: string | null; phone?: string | null } | null;
   location: { name: string } | null;
   user: { name: string } | null;
   payments: { method: string; amount: number }[];
@@ -85,7 +86,7 @@ export default function WholesalePage() {
   const [activeTab, setActiveTab] = useState<"venta" | "carrito" | "historial">("venta");
   const [showConfirm, setShowConfirm] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
-  const [lastWholesaleSale, setLastWholesaleSale] = useState<{ id: number; saleDate: string; total: number; items: WholesaleItem[]; clientName: string; paraDonde: string; nit: string; nitName: string; payments: { method: string; amount: number }[]; status: string } | null>(null);
+  const [lastWholesaleSale, setLastWholesaleSale] = useState<{ id: number; saleDate: string; total: number; items: WholesaleItem[]; clientName: string; paraQuien: string; paraDonde: string; telefonoEnvio: string; nit: string; nitName: string; celularFactura: string; payments: { method: string; amount: number }[]; status: string } | null>(null);
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -120,10 +121,15 @@ export default function WholesalePage() {
   const [searchPages, setSearchPages] = useState(1);
   const [searchTotal, setSearchTotal] = useState(0);
 
+  //  Los tres bloques son los mismos que en local y departamental, y los tres
+  //  van completos: quien compra, a quien se entrega y a quien se factura.
   const [clientName, setClientName] = useState("");
+  const [paraQuien, setParaQuien] = useState("");
   const [paraDonde, setParaDonde] = useState("");
+  const [telefonoEnvio, setTelefonoEnvio] = useState("");
   const [nit, setNit] = useState("");
   const [nitName, setNitName] = useState("");
+  const [celularFactura, setCelularFactura] = useState("");
   const [payments, setPayments] = useState<{ method: string; amount: number }[]>([{ method: "EFECTIVO", amount: 0 }]);
 
   const [payModalSale, setPayModalSale] = useState<WholesaleSale | null>(null);
@@ -240,7 +246,22 @@ export default function WholesalePage() {
 
   const openConfirm = () => {
     if (!items.length) { toast.error("Agrega al menos un producto"); return; }
-    if (!clientName.trim()) { toast.error("Ingresa a quién se realiza la venta (A QUIEN)"); return; }
+    // Los tres bloques van completos: sin ellos la venta mayorista queda sin
+    // saber a quien se entrega ni a quien se factura.
+    const faltantes: [string, string][] = [
+      [clientName, "el nombre del cliente"],
+      [paraQuien, "a quién se entrega"],
+      [paraDonde, "dónde se entrega"],
+      [telefonoEnvio, "el celular de quien recibe"],
+      [nitName, "el nombre a facturar"],
+      [nit, "el NIT o CI para la factura"],
+      [celularFactura, "el celular para la factura"],
+    ];
+    const vacios = faltantes.filter(([v]) => !v.trim()).map(([, etiqueta]) => etiqueta);
+    if (vacios.length > 0) {
+      toast.error(`Falta completar: ${vacios.join(", ")}`);
+      return;
+    }
     if (validPayments.length === 0) { toast.error("Registra al menos un pago (QR, Efectivo o Crédito)"); return; }
     setShowConfirm(true);
   };
@@ -258,11 +279,13 @@ export default function WholesalePage() {
         return;
       }
       const payload: any = {
-        customerData: { name: clientName, nit: nit || null },
-        paraQuien: clientName,
-        lugarEntrega: paraDonde || null,
-        datosFactura: nit || null,
-        nitName: nitName || null,
+        customerData: { name: clientName.trim() },
+        paraQuien: paraQuien.trim(),
+        lugarEntrega: paraDonde.trim(),
+        telefono: telefonoEnvio.trim(),
+        datosFactura: nit.trim(),
+        nitName: nitName.trim(),
+        telefonoFactura: celularFactura.trim(),
         items: items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -272,7 +295,7 @@ export default function WholesalePage() {
       };
       if (selectedStoreId) payload.locationId = selectedStoreId;
       const response = await api.post("/wholesale", payload);
-      setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, paraDonde, nit, nitName, payments: [...validPayments], status: resultingStatus });
+      setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, paraQuien, paraDonde, telefonoEnvio, nit, nitName, celularFactura, payments: [...validPayments], status: resultingStatus });
       // La venta se registra aunque la tienda no tenga: lo que falto se pidio
       // solo. Se avisa que quedo pendiente para que no parezca que salio todo.
       const faltantes: { nombre: string; cantidad: number }[] = response.data.faltantes || [];
@@ -293,7 +316,7 @@ export default function WholesalePage() {
   };
 
   const resetForm = () => {
-    setItems([]); setClientName(""); setParaDonde(""); setNit(""); setNitName("");
+    setItems([]); setClientName(""); setParaQuien(""); setParaDonde(""); setTelefonoEnvio(""); setNit(""); setNitName(""); setCelularFactura("");
     setPayments([{ method: "EFECTIVO", amount: 0 }]);
   };
 
@@ -385,10 +408,9 @@ export default function WholesalePage() {
       <style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}th{background:#f0f0f0}h1{font-size:18px}.total{font-size:16px;font-weight:bold;text-align:right;margin-top:10px}</style></head><body>
       <h1>Shibumi - Nota de Venta Mayorista</h1>
       <p><b>Fecha:</b> ${new Date(sale.saleDate).toLocaleDateString("es-BO")} | <b>ID:</b> ${saleCode(sale.id, sale.saleDate)}</p>
-       <p><b>Cliente:</b> ${sale.customer?.name || sale.paraQuien || "N/A"} | <b>Lugar:</b> ${sale.lugarEntrega || sale.location?.name || "N/A"}</p>
-       ${sale.paraQuien ? `<p><b>A quién:</b> ${sale.paraQuien}</p>` : ""}
-       ${sale.nitName ? `<p><b>Nombre del NIT:</b> ${sale.nitName}</p>` : ""}
-       ${sale.datosFactura ? `<p><b>NIT:</b> ${sale.datosFactura}</p>` : ""}
+       <p><b>Cliente:</b> ${sale.customer?.name || "N/A"}</p>
+       <p><b>Envío:</b> A quién: ${sale.paraQuien || "N/A"} | A dónde: ${sale.lugarEntrega || sale.location?.name || "N/A"} | Celular: ${sale.telefono || "N/A"}</p>
+       <p><b>Factura:</b> Nombre: ${sale.nitName || "N/A"} | NIT: ${sale.datosFactura || "N/A"} | Celular: ${sale.telefonoFactura || "N/A"}</p>
        <p><b>Estado:</b> ${sale.status || "PENDIENTE"} | <b>Vendedor:</b> ${sale.user?.name || "N/A"}</p>
       <table><thead><tr><th>Código</th><th>Producto</th><th>Marca</th><th>Modelo</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr></thead><tbody>
       ${sale.items.map((i) => `<tr><td>${i.product.itemCode}</td><td>${i.product.name}</td><td>${i.product.brand}</td><td>${i.product.model}</td><td>${i.quantity}</td><td>${formatBs(Number(i.unitPrice))}</td><td>${formatBs(Number(i.subtotal))}</td></tr>`).join("")}
@@ -554,7 +576,8 @@ export default function WholesalePage() {
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Código</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Fecha</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Cliente</th>
-                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Para dónde</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Datos de envío</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Datos de factura</th>
                     <th className="text-center px-4 py-3 text-gray-400 font-medium">Estado</th>
                     <th className="text-right px-4 py-3 text-gray-400 font-medium">Pagado</th>
                     <th className="text-right px-4 py-3 text-gray-400 font-medium">Total</th>
@@ -563,15 +586,24 @@ export default function WholesalePage() {
                 </thead>
                 <tbody>
                   {sales.length === 0 ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No hay ventas mayoristas en los últimos 15 días</td></tr>
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No hay ventas mayoristas en los últimos 15 días</td></tr>
                   ) : sales.map((s) => {
                     const paid = salePaid(s);
                     return (
                     <tr key={s.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
                       <td className="px-4 py-3 text-amber-400/90 font-mono text-xs whitespace-nowrap">{saleCode(s.id, s.saleDate)}</td>
                       <td className="px-4 py-3 text-gray-300">{formatDate(s.saleDate)}</td>
-                      <td className="px-4 py-3 text-foreground font-medium">{s.customer?.name || s.paraQuien || "N/A"}</td>
-                      <td className="px-4 py-3 text-gray-300">{s.lugarEntrega || s.location?.name || "N/A"}</td>
+                      <td className="px-4 py-3 text-foreground font-medium">{s.customer?.name || "N/A"}</td>
+                      <td className="px-4 py-3 text-gray-300">
+                        <div>{s.paraQuien || "N/A"}</div>
+                        <div className="text-xs text-gray-500">{s.lugarEntrega || s.location?.name || "N/A"}</div>
+                        {s.telefono ? <div className="text-xs text-gray-500">{s.telefono}</div> : null}
+                      </td>
+                      <td className="px-4 py-3 text-gray-300">
+                        <div>{s.nitName || "N/A"}</div>
+                        <div className="text-xs text-gray-500">{s.datosFactura || "N/A"}</div>
+                        {s.telefonoFactura ? <div className="text-xs text-gray-500">{s.telefonoFactura}</div> : null}
+                      </td>
                       <td className="px-4 py-3 text-center">
                         <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${s.status === "PAGADO" ? "bg-emerald-500/10 text-emerald-400" : "bg-yellow-500/10 text-yellow-400"}`}>
                           {s.status || "PENDIENTE"}
@@ -883,27 +915,58 @@ export default function WholesalePage() {
                   </table>
                 </div>
 
-                {/* Datos del cliente */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Los tres bloques: cliente, envio y factura. Los mismos que en local y
+                    departamental, y todos obligatorios. */}
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">A QUIEN *</label>
-                    <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nombre del cliente"
-                      className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                    <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide mb-2">Datos de cliente</h4>
+                    <div>
+                      <label htmlFor="wholesale-cliente" className="block text-xs text-gray-400 mb-1">Nombre *</label>
+                      <input id="wholesale-cliente" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nombre del cliente"
+                        className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                    </div>
                   </div>
+
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">PARA DONDE</label>
-                    <input value={paraDonde} onChange={(e) => setParaDonde(e.target.value)} placeholder="Ciudad o dirección de entrega"
-                      className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                    <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide mb-2">Datos de envío</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="wholesale-paraquien" className="block text-xs text-gray-400 mb-1">A quién *</label>
+                        <input id="wholesale-paraquien" value={paraQuien} onChange={(e) => setParaQuien(e.target.value)} placeholder="Nombre de quien recibe"
+                          className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                      </div>
+                      <div>
+                        <label htmlFor="wholesale-paradonde" className="block text-xs text-gray-400 mb-1">A dónde *</label>
+                        <input id="wholesale-paradonde" value={paraDonde} onChange={(e) => setParaDonde(e.target.value)} placeholder="Ciudad o dirección de entrega"
+                          className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                      </div>
+                      <div>
+                        <label htmlFor="wholesale-telenvio" className="block text-xs text-gray-400 mb-1">Celular *</label>
+                        <input id="wholesale-telenvio" type="tel" value={telefonoEnvio} onChange={(e) => setTelefonoEnvio(e.target.value)} placeholder="Celular de quien recibe"
+                          className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                      </div>
+                    </div>
                   </div>
+
                   <div>
-                    <label htmlFor="wholesale-nit" className="block text-xs text-gray-400 mb-1">NIT</label>
-                    <input id="wholesale-nit" value={nit} onChange={(e) => setNit(e.target.value)} placeholder="Número de NIT"
-                      className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
-                  </div>
-                  <div>
-                    <label htmlFor="wholesale-nitname" className="block text-xs text-gray-400 mb-1">NOMBRE DEL NIT</label>
-                    <input id="wholesale-nitname" value={nitName} onChange={(e) => setNitName(e.target.value)} placeholder="Razón social del NIT"
-                      className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                    <h4 className="text-xs font-semibold text-primary-400 uppercase tracking-wide mb-2">Datos de factura</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="wholesale-nitname" className="block text-xs text-gray-400 mb-1">Nombre *</label>
+                        <input id="wholesale-nitname" value={nitName} onChange={(e) => setNitName(e.target.value)} placeholder="Nombre o razón social a facturar"
+                          className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                      </div>
+                      <div>
+                        <label htmlFor="wholesale-nit" className="block text-xs text-gray-400 mb-1">NIT / CI *</label>
+                        <input id="wholesale-nit" value={nit} onChange={(e) => setNit(e.target.value)} placeholder="Número de NIT"
+                          className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                      </div>
+                      <div>
+                        <label htmlFor="wholesale-telfact" className="block text-xs text-gray-400 mb-1">Celular *</label>
+                        <input id="wholesale-telfact" type="tel" value={celularFactura} onChange={(e) => setCelularFactura(e.target.value)} placeholder="Celular para la factura"
+                          className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -974,10 +1037,13 @@ export default function WholesalePage() {
               </button>
             </div>
               <div className="p-6 space-y-3">
-                <div className="flex justify-between text-sm"><span className="text-gray-400">A quién:</span><span className="text-foreground">{clientName}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Para dónde:</span><span className="text-foreground">{paraDonde || "No especificado"}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">NIT:</span><span className="text-foreground">{nit || "No especificado"}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-400">Nombre del NIT:</span><span className="text-foreground">{nitName || "No especificado"}</span></div>
+<div className="flex justify-between text-sm"><span className="text-gray-400">Cliente:</span><span className="text-foreground">{clientName}</span></div>
+        <div className="flex justify-between text-sm"><span className="text-gray-400">A quién:</span><span className="text-foreground">{paraQuien}</span></div>
+        <div className="flex justify-between text-sm"><span className="text-gray-400">Para dónde:</span><span className="text-foreground">{paraDonde}</span></div>
+        <div className="flex justify-between text-sm"><span className="text-gray-400">Celular (envío):</span><span className="text-foreground">{telefonoEnvio}</span></div>
+        <div className="flex justify-between text-sm"><span className="text-gray-400">Factura - Nombre:</span><span className="text-foreground">{nitName}</span></div>
+        <div className="flex justify-between text-sm"><span className="text-gray-400">Factura - NIT:</span><span className="text-foreground">{nit}</span></div>
+        <div className="flex justify-between text-sm"><span className="text-gray-400">Factura - Celular:</span><span className="text-foreground">{celularFactura}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-400">Productos:</span><span className="text-foreground">{items.length}</span></div>
                 <div className="border-t border-dark-700/50 pt-3">
                   <p className="text-xs text-gray-400 font-medium mb-1.5">Pagos</p>
@@ -1039,9 +1105,12 @@ export default function WholesalePage() {
               <div className="grid grid-cols-2 gap-2 text-gray-300">
                 <span>Cliente: <strong className="text-foreground">{lastWholesaleSale.clientName || "Registrado"}</strong></span>
                 <span>Fecha: <strong className="text-foreground">{formatDate(lastWholesaleSale.saleDate)}</strong></span>
-                <span>Para dónde: <strong className="text-foreground">{lastWholesaleSale.paraDonde || "No especificado"}</strong></span>
-                <span>NIT: <strong className="text-foreground">{lastWholesaleSale.nit || "No especificado"}</strong></span>
-                <span>Nombre del NIT: <strong className="text-foreground">{lastWholesaleSale.nitName || "No especificado"}</strong></span>
+<span>Para dónde: <strong className="text-foreground">{lastWholesaleSale.paraDonde || "No especificado"}</strong></span>
+        <span>A quién: <strong className="text-foreground">{lastWholesaleSale.paraQuien || "No especificado"}</strong></span>
+        <span>Celular (envío): <strong className="text-foreground">{lastWholesaleSale.telefonoEnvio || "No especificado"}</strong></span>
+        <span>Factura: <strong className="text-foreground">{lastWholesaleSale.nitName || "No especificado"}</strong></span>
+        <span>NIT: <strong className="text-foreground">{lastWholesaleSale.nit || "No especificado"}</strong></span>
+        <span>Celular (factura): <strong className="text-foreground">{lastWholesaleSale.celularFactura || "No especificado"}</strong></span>
                 <span>Estado: <strong className={`${lastWholesaleSale.status === "PAGADO" ? "text-emerald-400" : "text-yellow-400"}`}>{lastWholesaleSale.status || "PENDIENTE"}</strong></span>
               </div>
               <div className="border-t border-dark-700/50 pt-3 space-y-2">
