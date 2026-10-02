@@ -175,7 +175,6 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
       number,
       { productId: number; name: string; itemCode: string; brand: string; model: string; quantity: number; total: number }
     >();
-    const brandMap = new Map<string, { brand: string; quantity: number; total: number }>();
     for (const it of items) {
       const p = productMap.get(it.product.id) || {
         productId: it.product.id,
@@ -189,14 +188,8 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
       p.quantity += it.quantity;
       p.total += Number(it.subtotal);
       productMap.set(it.product.id, p);
-
-      const b = brandMap.get(it.product.brand) || { brand: it.product.brand, quantity: 0, total: 0 };
-      b.quantity += it.quantity;
-      b.total += Number(it.subtotal);
-      brandMap.set(it.product.brand, b);
     }
     const salesByProduct = Array.from(productMap.values()).sort((a, b) => b.total - a.total).slice(0, 10);
-    const salesByBrand = Array.from(brandMap.values()).sort((a, b) => b.total - a.total).slice(0, 10);
 
     // Formas de pago
     const salesByPayment = payments
@@ -229,7 +222,6 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
       salesByType,
       salesByPayment,
       salesByProduct,
-      salesByBrand,
       recentSales: recentSales.map((sale) => ({
         id: sale.id,
         date: sale.saleDate,
@@ -282,6 +274,7 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
 
     const lowStockItems = await prisma.inventory.findMany({
       where: { stock: { gt: 0 }, minStock: { gt: 0 }, ...locWhere },
+      orderBy: { stock: "asc" },
     });
     const criticalStockItems = lowStockItems.filter((item) => item.stock <= item.minStock);
     const productsWithLowStock = criticalStockItems.length;
@@ -334,45 +327,6 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       })
       .filter((l) => l.type === "TIENDA");
 
-    const saleItems = await prisma.saleItem.findMany({
-      where: { sale: { saleDate: { gte: startOfMonth }, ...locWhere, ...userWhere } },
-      include: { product: { select: { brand: true, model: true } } },
-    });
-
-    const brandMap = new Map<string, { totalQuantity: number; totalAmount: number }>();
-    const vehicleMap = new Map<string, { totalQuantity: number; totalAmount: number }>();
-    for (const item of saleItems) {
-      const brand = item.product.brand;
-      const brandExisting = brandMap.get(brand) || { totalQuantity: 0, totalAmount: 0 };
-      brandExisting.totalQuantity += item.quantity;
-      brandExisting.totalAmount += Number(item.subtotal);
-      brandMap.set(brand, brandExisting);
-
-      const model = item.product.model;
-      const vehicleExisting = vehicleMap.get(model) || { totalQuantity: 0, totalAmount: 0 };
-      vehicleExisting.totalQuantity += item.quantity;
-      vehicleExisting.totalAmount += Number(item.subtotal);
-      vehicleMap.set(model, vehicleExisting);
-    }
-    const salesByBrand = Array.from(brandMap.entries())
-      .map(([brand, v]) => ({ brand, ...v }))
-      .sort((a, b) => b.totalAmount - a.totalAmount);
-    const salesByVehicle = Array.from(vehicleMap.entries())
-      .map(([model, v]) => ({ model, ...v }))
-      .sort((a, b) => b.totalAmount - a.totalAmount);
-
-    const recentSales = await prisma.sale.findMany({
-      where: { ...locWhere, ...userWhere },
-      take: 10,
-      orderBy: { saleDate: "desc" },
-      include: {
-        location: { select: { name: true } },
-        user: { select: { name: true } },
-        customer: { select: { name: true } },
-        items: true,
-      },
-    });
-
     const recentMovements = await prisma.movement.findMany({
       where: movementWhere,
       take: 10,
@@ -396,34 +350,37 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       },
     });
 
-    const criticalStock = criticalStockItems.map((item) => ({
-      product: "",
-      itemCode: "",
-      locationId: item.locationId,
-      location: "",
-      stock: item.stock,
-      minStock: item.minStock,
-      productId: item.productId,
-    }));
+    // La lista de solicitudes viene cortada en 10 para pintar solo lo reciente,
+    // pero el contador tiene que ser el real: si no, el badge miente cuando hay
+    // mas de 10 pendientes.
+    const pendingRequestsCount = await prisma.productRequest.count({
+      where: { status: "PENDIENTE", ...locWhere },
+    });
 
-    const productIds = [...new Set(criticalStock.map((c) => c.productId))];
-    const locationIds = [...new Set(criticalStock.map((c) => c.locationId))];
-    const [products, locs] = await Promise.all([
+    // El stock critico se pinta en una tabla con scroll. Con varios almacenes y
+    // cientos de productos puede haber miles de filas criticas, asi que se
+    // resuelven los nombres solo de las primeras y el total va aparte.
+    const CRITICAL_STOCK_LIMIT = 50;
+    const criticalStockTotal = criticalStockItems.length;
+    const criticalStockSample = criticalStockItems.slice(0, CRITICAL_STOCK_LIMIT);
+    const [sampleProducts, sampleLocations] = await Promise.all([
       prisma.product.findMany({
-        where: { id: { in: productIds } },
+        where: { id: { in: [...new Set(criticalStockSample.map((i) => i.productId))] } },
         select: { id: true, name: true, itemCode: true },
       }),
       prisma.location.findMany({
-        where: { id: { in: locationIds } },
+        where: { id: { in: [...new Set(criticalStockSample.map((i) => i.locationId))] } },
         select: { id: true, name: true },
       }),
     ]);
-    const criticalStockFormatted = criticalStock.map((c) => ({
-      product: products.find((p) => p.id === c.productId)?.name || "",
-      itemCode: products.find((p) => p.id === c.productId)?.itemCode || "",
-      location: locs.find((l) => l.id === c.locationId)?.name || "",
-      stock: c.stock,
-      minStock: c.minStock,
+    const sampleProductById = new Map(sampleProducts.map((p) => [p.id, p]));
+    const sampleLocationName = new Map(sampleLocations.map((l) => [l.id, l.name]));
+    const criticalStock = criticalStockSample.map((item) => ({
+      product: sampleProductById.get(item.productId)?.name || "",
+      itemCode: sampleProductById.get(item.productId)?.itemCode || "",
+      location: sampleLocationName.get(item.locationId) || "",
+      stock: item.stock,
+      minStock: item.minStock,
     }));
 
     res.json({
@@ -435,23 +392,11 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
         salesTodayTotal: Number(salesToday._sum.total || 0),
         salesMonth: salesMonth._count,
         salesMonthTotal: Number(salesMonth._sum.total || 0),
-        pendingRequests: pendingRequests.length,
-        criticalStock: criticalStockFormatted.length,
+        pendingRequests: pendingRequestsCount,
+        criticalStock: criticalStockTotal,
       },
       stockByLocation,
       salesByLocation,
-      salesByBrand,
-      salesByVehicle,
-      recentSales: recentSales.map((sale) => ({
-        id: sale.id,
-        date: sale.saleDate,
-        total: Number(sale.total),
-        type: sale.type,
-        location: sale.location.name,
-        user: sale.user.name,
-        customer: sale.customer?.name || "Cliente general",
-        itemCount: sale.items.length,
-      })),
       recentMovements: recentMovements.map((m) => ({
         id: m.id,
         date: m.date,
@@ -471,7 +416,7 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
         requestedBy: r.requestedBy.name,
         date: r.createdAt,
       })),
-      criticalStock: criticalStockFormatted,
+      criticalStock,
     });
   } catch (error) {
     console.error("Error en dashboard:", error);

@@ -30,7 +30,6 @@ export interface AnalyticsData {
   salesByType: { type: string; count: number; total: number }[];
   salesByPayment: { method: string; count: number; total: number }[];
   salesByProduct: { productId: number; name: string; itemCode: string; brand: string; model: string; quantity: number; total: number }[];
-  salesByBrand: { brand: string; quantity: number; total: number }[];
   recentSales: {
     id: number;
     date: string;

@@ -52,26 +52,6 @@ interface DashboardData {
     count: number;
     total: number;
   }[];
-  salesByBrand: {
-    brand: string;
-    totalQuantity: number;
-    totalAmount: number;
-  }[];
-  salesByVehicle: {
-    model: string;
-    totalQuantity: number;
-    totalAmount: number;
-  }[];
-  recentSales: {
-    id: number;
-    date: string;
-    total: number;
-    type: string;
-    location: string;
-    user: string;
-    customer: string;
-    itemCount: number;
-  }[];
   recentMovements: {
     id: number;
     date: string;
@@ -673,31 +653,39 @@ export default function DashboardPage() {
               )}
             </div>
             {data?.criticalStock.length ? (
-              <div className="max-h-[360px] overflow-y-auto pr-1">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-dark-800/50">
-                    <tr className="text-gray-500 border-b border-dark-700/50">
-                      <th className="text-left pb-2 font-medium">Producto</th>
-                      <th className="text-left pb-2 font-medium">Ubicación</th>
-                      <th className="text-center pb-2 font-medium">Stock</th>
-                      <th className="text-center pb-2 font-medium">Mínimo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.criticalStock.map((item, i) => (
-                      <tr key={`${item.itemCode}-${item.location}-${i}`} className="border-b border-dark-700/30 last:border-0">
-                        <td className="py-2 text-gray-300">
-                          {item.product}
-                          <span className="text-gray-600 ml-1">({item.itemCode})</span>
-                        </td>
-                        <td className="py-2 text-gray-400">{item.location}</td>
-                        <td className="py-2 text-center text-red-400 font-medium">{item.stock}</td>
-                        <td className="py-2 text-center text-gray-500">{item.minStock}</td>
+              <>
+                <div className="max-h-[360px] overflow-y-auto pr-1">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-dark-800/50">
+                      <tr className="text-gray-500 border-b border-dark-700/50">
+                        <th className="text-left pb-2 font-medium">Producto</th>
+                        <th className="text-left pb-2 font-medium">Ubicación</th>
+                        <th className="text-center pb-2 font-medium">Stock</th>
+                        <th className="text-center pb-2 font-medium">Mínimo</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {data.criticalStock.map((item, i) => (
+                        <tr key={`${item.itemCode}-${item.location}-${i}`} className="border-b border-dark-700/30 last:border-0">
+                          <td className="py-2 text-gray-300">
+                            {item.product}
+                            <span className="text-gray-600 ml-1">({item.itemCode})</span>
+                          </td>
+                          <td className="py-2 text-gray-400">{item.location}</td>
+                          <td className="py-2 text-center text-red-400 font-medium">{item.stock}</td>
+                          <td className="py-2 text-center text-gray-500">{item.minStock}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {(summary?.criticalStock ?? 0) > data.criticalStock.length && (
+                  <p className="text-xs text-gray-500 mt-3">
+                    Mostrando las {data.criticalStock.length} con menos stock de {summary?.criticalStock}. El
+                    resto se ve en Inventario.
+                  </p>
+                )}
+              </>
             ) : (
               <EmptyState
                 title="Sin productos con stock crítico"
