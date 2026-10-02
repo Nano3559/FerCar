@@ -6,6 +6,13 @@ import toast from "react-hot-toast";
 import api from "../services/api";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { useAuthStore } from "../stores/authStore";
+import { migrateCols } from "../components/ui/ColumnManager";
+import { MODULE_COLUMNS, MODULE_LABELS } from "../constants/columns";
+
+// Módulos cuyo juego de columnas se puede restringir por rol. Solo estos: son
+// los que pasan una lista real de columnas a <ColumnManager />, asi que son
+// los unicos en los que "ocultar" significa algo.
+const MODULE_COLUMN_MODULES = ["ventas", "carrito", "inventario"];
 
 interface UserRecord {
   id: number; name: string; email: string; role: string; roleId: number;
@@ -50,13 +57,6 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   ADMIN: "Acceso total al sistema",
   INVENTARIO: "Gestión de productos, stock, movimientos, costos, precios",
   TIENDA: "Ventas, devoluciones, solicitudes, reportes (con categorías asignadas)",
-};
-
-const MODULE_LABELS: Record<string, string> = {
-  inventario: "Inventario", ventas: "Ventas", "ventas-mayor": "Ventas por Mayor",
-  devoluciones: "Devoluciones", solicitudes: "Solicitudes", movimientos: "Movimientos",
-  costos: "Costos", precios: "Precios", reportes: "Reportes", configuracion: "Configuración",
-  despachos: "Lista de Despacho", "notas-compra": "Notas de Compra",
 };
 
 // Lista vacía = cualquier rol (ruta con allowedRoles={ALL})
@@ -480,6 +480,38 @@ export default function SettingsPage() {
     return Array.isArray(raw) ? (raw as string[]) : [];
   };
 
+  // --- Columnas por rol ---
+  // Vacio o ausente = el rol puede ver todas las columnas del modulo. Con lista,
+  // solo esas. Se guardan ya migradas (Código, no "#") y sin las que ya no
+  // existen, para que la configuracion no se pudra con el tiempo.
+
+  const getRoleCols = (role: Role, module: string): string[] =>
+    migrateCols((role.columnConfig?.[module] as string[]) || []);
+
+  const saveRoleCols = async (role: Role, module: string, next: string[]) => {
+    const disponibles = MODULE_COLUMNS[module] || [];
+    const limpias = next.filter((c) => disponibles.includes(c));
+    const columnConfig = { ...(role.columnConfig || {}) };
+    if (limpias.length === disponibles.length) delete columnConfig[module];
+    else columnConfig[module] = limpias;
+    try {
+      await api.put(`/permissions/roles/${role.id}/columns`, { columnConfig });
+      setRoles((prev) => prev.map((r) => r.id === role.id ? { ...r, columnConfig } : r));
+      toast.success(`Columnas de ${MODULE_LABELS[module] || module} actualizadas`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error al actualizar columnas");
+    }
+  };
+
+  const toggleRoleCol = (role: Role, module: string, col: string) => {
+    const actuales = getRoleCols(role, module);
+    // Sin configuracion previa se parte de todas las columnas del modulo: si se
+    // quita la ultima, "activar" esa columna debe devolverla, no activarse solo.
+    const base = actuales.length ? actuales : [...(MODULE_COLUMNS[module] || [])];
+    const next = base.includes(col) ? base.filter((c) => c !== col) : [...base, col];
+    saveRoleCols(role, module, next);
+  };
+
   const toggleCategory = async (role: Role, catName: string) => {
     const current = getRoleCategories(role);
     const next = current.includes(catName)
@@ -686,23 +718,40 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              {role.columnConfig && typeof role.columnConfig === "object" && (
-                (() => {
-                  const colEntries = Object.entries(role.columnConfig).filter(([k]) => k !== "__categorias");
-                  return colEntries.length > 0 ? (
-                    <div className="mt-3">
-                      <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Columnas configuradas</p>
-                      <div className="flex flex-wrap gap-1">
-                        {colEntries.map(([module, cols]) => (
-                          <span key={module} className="px-2 py-0.5 bg-dark-700 text-gray-400 rounded text-xs">
-                            {MODULE_LABELS[module] || module}: {(cols as string[]).length} cols
-                          </span>
-                        ))}
+              <div className="mt-3 space-y-3">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">Columnas por rol</p>
+                  <p className="text-xs text-gray-500">
+                    Con todas marcadas el rol ve cada columna del módulo. Si desmarca una,
+                    esa columna queda oculta y ningún usuario del rol podrá activarla.
+                  </p>
+                  {MODULE_COLUMN_MODULES.map((module) => (
+                    <div key={module}>
+                      <p className="text-xs text-gray-400 font-medium mb-1.5">{MODULE_LABELS[module] || module}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(MODULE_COLUMNS[module] || []).map((col) => {
+                          const marcadas = getRoleCols(role, module);
+                          const todas = marcadas.length === 0 || marcadas.includes(col);
+                          return (
+                            <button
+                              key={col}
+                              type="button"
+                              onClick={() => toggleRoleCol(role, module, col)}
+                              className={`px-2 py-0.5 rounded text-xs border transition-colors ${
+                                todas
+                                  ? "bg-primary-600/15 text-primary-300 border-primary-600/30 hover:bg-primary-600/25"
+                                  : "bg-dark-700/60 text-gray-500 border-dark-700 hover:bg-dark-700"
+                              }`}
+                              title={todas ? "Visible para este rol. Clic para ocultarla" : "Oculta para este rol. Clic para habilitarla"}
+                            >
+                              {todas ? <Check size={11} className="inline mr-1 -mt-0.5" /> : null}
+                              {col}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
-                  ) : null;
-                })()
-              )}
+                  ))}
+                </div>
 
               <div className="mt-4 pt-4 border-t border-dark-700/50">
                 <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Categorías visibles</p>

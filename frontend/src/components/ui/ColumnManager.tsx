@@ -87,8 +87,15 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
 
   const toggle = (col: string) => {
     // Una columna fuera del rol no se activa: si se guardara, al recargar se
-    // filtraria y el usuario creeria que el ajuste se perdio.
-    if (!allowedCols.includes(col)) return;
+    // filtraria y el usuario creeria que el ajuste se perdio. Antes de
+    // devolver en silencio habia que explicar por que: el clic parecia roto.
+    if (!allowedCols.includes(col)) {
+      toast.error(
+        `Tu rol no tiene "${col}". Un administrador puede habilitarla en Ajustes → Roles y columnas.`,
+        { duration: 6000 }
+      );
+      return;
+    }
     if (visible.includes(col)) {
       setVisible(visible.filter((c) => c !== col));
     } else {
@@ -212,19 +219,21 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
                     <button
                       key={col}
                       onClick={() => toggle(col)}
-                      disabled={bloqueada}
-                      title={bloqueada ? "Tu rol no permite esta columna" : undefined}
-                      className={`flex items-center justify-between w-full px-3 py-1.5 rounded-lg text-sm transition-all ${
+                      className={`flex items-center justify-between gap-2 w-full px-3 py-1.5 rounded-lg text-sm transition-all text-left ${
                         bloqueada
-                          ? "text-gray-600 cursor-not-allowed"
+                          ? "text-gray-600 hover:bg-dark-800/40"
                           : isVis
                             ? "text-gray-200 hover:bg-dark-800/50"
                             : "text-gray-500 hover:bg-dark-800/50"
                       }`}
                     >
                       <span className="truncate">{col}</span>
-                      <span className={`flex items-center gap-1 text-xs ${isVis && !bloqueada ? "text-primary-400" : "text-gray-500"}`}>
-                        {bloqueada ? "No disponible para tu rol" : isVis ? <><Eye size={12} /> Visible</> : <><EyeOff size={12} /> Oculto</>}
+                      <span className={`flex items-center gap-1 text-xs shrink-0 ${isVis && !bloqueada ? "text-primary-400" : "text-gray-500"}`}>
+                        {bloqueada ? (
+                          <span className="underline decoration-dotted underline-offset-2">
+                            No disponible para tu rol
+                          </span>
+                        ) : isVis ? <><Eye size={12} /> Visible</> : <><EyeOff size={12} /> Oculto</>}
                       </span>
                     </button>
                   );
