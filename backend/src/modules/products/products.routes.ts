@@ -739,7 +739,9 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     // que una columna se reconoce por el nombre exacto, por el nombre escondido
     // en el encabezado ("STOCK TUMUSLA", "TUMUSLA (TIENDA)") o por el numero
     // que siga a TIENDA/ALMACEN ("TIENDA 1", "ALMACEN 2").
-    const allLocations = await prisma.location.findMany();
+    // Orden alfabético explícito: la resolución por número ("TIENDA 1") depende
+    // del orden y no puede quedar a merced del que devuelva la base de datos.
+    const allLocations = await prisma.location.findMany({ orderBy: { name: "asc" } });
     const locByName: Record<string, number> = {};
     allLocations.forEach((l) => { locByName[normalize(l.name)] = l.id; });
     const locTypeById: Record<number, "TIENDA" | "ALMACEN"> = {};

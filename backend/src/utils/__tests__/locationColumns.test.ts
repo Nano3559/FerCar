@@ -8,51 +8,55 @@ import {
   type LocationRef,
 } from "../locationColumns";
 
-// Las 6 ubicaciones reales del sistema.
+// Las 6 ubicaciones reales del sistema, con su tipo real. FALSURI, SILES y
+// TUMUSLA son tiendas; CHIQUICOLLO, MELCHOR y QUIJARRO son almacenes.
 const UBICACIONES: LocationRef[] = [
-  { id: 1, name: "FALSURI", type: "TIENDA" },
-  { id: 2, name: "MELCHOR", type: "TIENDA" },
-  { id: 3, name: "QUIJARRO", type: "TIENDA" },
-  { id: 4, name: "SILES", type: "TIENDA" },
-  { id: 5, name: "CHIQUICOLLO", type: "ALMACEN" },
-  { id: 6, name: "TUMUSLA", type: "ALMACEN" },
+  { id: 24, name: "CHIQUICOLLO", type: "ALMACEN" },
+  { id: 21, name: "FALSURI", type: "TIENDA" },
+  { id: 22, name: "MELCHOR", type: "ALMACEN" },
+  { id: 23, name: "QUIJARRO", type: "ALMACEN" },
+  { id: 20, name: "SILES", type: "TIENDA" },
+  { id: 19, name: "TUMUSLA", type: "TIENDA" },
 ];
 
 const id = (encabezado: string) => resolverColumnaUbicacion(encabezado, UBICACIONES)?.locationId ?? null;
 
 test("reconoce el nombre exacto de la ubicacion", () => {
-  assert.equal(id("TUMUSLA"), 6);
-  assert.equal(id("CHIQUICOLLO"), 5);
-  assert.equal(id("MELCHOR"), 2);
+  assert.equal(id("TUMUSLA"), 19);
+  assert.equal(id("CHIQUICOLLO"), 24);
+  assert.equal(id("MELCHOR"), 22);
 });
 
 test("ignora mayusculas, tildes y espacios sobrantes", () => {
-  assert.equal(id("tumusla"), 6);
-  assert.equal(id("  Tumusla  "), 6);
-  assert.equal(id("CHÍQUICOLLO"), 5);
-  assert.equal(id("MELCHOR "), 2);
+  assert.equal(id("tumusla"), 19);
+  assert.equal(id("  Tumusla  "), 19);
+  assert.equal(id("CHÍQUICOLLO"), 24);
+  assert.equal(id("MELCHOR "), 22);
 });
 
 test("reconoce el nombre escondido dentro del encabezado", () => {
-  assert.equal(id("STOCK TUMUSLA"), 6);
-  assert.equal(id("TUMUSLA (TIENDA)"), 6);
-  assert.equal(id("EXISTENCIA MELCHOR"), 2);
-  assert.equal(id("Stock Chiquicollo Bodega"), 5);
-  assert.equal(id("SILES - Almacén"), 4);
+  assert.equal(id("STOCK TUMUSLA"), 19);
+  assert.equal(id("TUMUSLA (TIENDA)"), 19);
+  assert.equal(id("EXISTENCIA MELCHOR"), 22);
+  assert.equal(id("Stock Chiquicollo Bodega"), 24);
+  assert.equal(id("SILES - Almacén"), 20);
 });
 
 test("prefiere el nombre de ubicacion mas largo contenido en el encabezado", () => {
-  const conDos = [...UBICACIONES, { id: 7, name: "SANTA CRUZ", type: "TIENDA" }];
+  const conDos = [...UBICACIONES, { id: 25, name: "SANTA CRUZ", type: "TIENDA" }];
   const r = resolverColumnaUbicacion("STOCK SANTA CRUZ", conDos);
-  assert.equal(r?.locationId, 7);
+  assert.equal(r?.locationId, 25);
 });
 
-test("reconoce TIENDA n y ALMACEN n por su numero", () => {
-  assert.equal(id("TIENDA 1"), 1);
-  assert.equal(id("TIENDA 2"), 2);
-  assert.equal(id("ALMACEN 1"), 5);
-  assert.equal(id("ALMACEN 2"), 6);
-  assert.equal(id("tienda 4"), 4);
+test("reconoce TIENDA n y ALMACEN n por su numero, en orden alfabetico", () => {
+  // Orden alfabetico: ALMACENes = CHIQUICOLLO, MELCHOR, QUIJARRO.
+  // TIENDAs = FALSURI, SILES, TUMUSLA.
+  assert.equal(id("TIENDA 1"), 21);
+  assert.equal(id("TIENDA 2"), 20);
+  assert.equal(id("TIENDA 3"), 19);
+  assert.equal(id("ALMACEN 1"), 24);
+  assert.equal(id("ALMACEN 2"), 22);
+  assert.equal(id("tienda 4"), null);
 });
 
 test("no confunde columnas de datos con columnas de ubicacion", () => {
