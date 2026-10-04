@@ -10,47 +10,19 @@ interface ColumnManagerProps {
   onVisibleChange: (visible: string[]) => void;
 }
 
+import {
+  applyColumnMigration,
+  resolveVisibleColumns as resolveColumns,
+  migrateCols,
+  latestMigrationVersion,
+} from "./columnMigration";
+
+// La logica de preferencia (renombres, migraciones de columnas nuevas) vive en
+// columnMigration.ts para poder probarla sin montar React ni localStorage.
+
+export { migrateCols, applyColumnMigration };
+
 type Tab = "visible" | "all";
-
-// Renombra columnas cuyo encabezado cambio. Sin esto, quien ya habia
-// configurado sus columnas se quedaria sin la nueva: su lista guardada
-// tiene el nombre viejo y la columna desapareceria en silencio.
-const RENAMED_COLUMNS: Record<string, string> = {
-  "Unit Price": "Precio USD",
-  Hermana: "Costo Tiendas",
-  "#": "Código",
-  ID: "Código",
-  Tienda: "Ubicación",
-};
-
-// Aplica los renombres y descarta los nombres que ya no existen. Sin el
-// recorte, una columna eliminada (ej. "Celular", que paso dentro de "Datos de
-// factura") seguia guardada para siempre: ocupaba un hueco invisible en la
-// lista y el usuario veia menos columnas de las que creia tener, sin aviso.
-export const migrateCols = (cols: string[], valid?: string[]): string[] => {
-  const mapped = cols.map((c) => RENAMED_COLUMNS[c] || c);
-  const validSet = valid ? new Set(valid) : null;
-  return validSet ? mapped.filter((c) => validSet.has(c)) : mapped;
-};
-
-// Columnas incorporadas despues de que un equipo guardara su lista. Si no
-// estan en lo guardado es porque no existian todavia, no porque ese usuario
-// las haya ocultado a proposito: se agregan visibles una unica vez.
-//
-// Al agregar o renombrar una columna hay que sumar aqui su nombre y subir el
-// `version`.
-//
-// El numero de version es lo que hace que esto no sea un bug permanente:
-// antes esta lista se re-aplicaba en cada carga y era imposible ocultar una
-// columna de aqui para siempre, se ocultaba, se guardaba, y al recargar
-// aparecia sola otra vez. Al usuario le parecia que el ajuste no se guardaba.
-// Con la version, la migracion corre una vez y despues manda lo que el usuario
-// dejo elegido.
-const COLUMN_MIGRATIONS: Record<string, { version: number; columns: string[] }> = {
-  ventas: { version: 2, columns: ["Datos de envío", "Usuario", "Estado", "Nota"] },
-};
-
-export type ColumnMigration = { version: number; columns: string[] };
 
 /** Version de migracion ya aplicada a la preferencia de este modulo. */
 export const readMigrationVersion = (module: string): number => {
@@ -62,28 +34,44 @@ export const readMigrationVersion = (module: string): number => {
   }
 };
 
-/**
- * Agrega las columnas nuevas a una preferencia guardada, pero solo la primera
- * vez. Devuelve las columnas a mostrar y si hubo que migrar, para que quien
- * llama persista el resultado junto con la version: si se marcara la version
- * sin guardar la lista, al recargar las columnas nuevas desaparecerian.
- */
-export const applyColumnMigration = (
-  module: string,
-  stored: string[],
-  allowed: string[],
-  appliedVersion: number
-): { columns: string[]; migrated: boolean; version: number } => {
-  const migration = COLUMN_MIGRATIONS[module];
-  if (!migration) return { columns: stored, migrated: false, version: appliedVersion };
-  if (appliedVersion >= migration.version) return { columns: stored, migrated: false, version: appliedVersion };
+const STORAGE_KEY = (m: string) => `columns_${m}`;
+const VERSION_KEY = (m: string) => `columns_v_${m}`;
 
-  const missing = migration.columns.filter((c) => allowed.includes(c) && !stored.includes(c));
-  return {
-    columns: missing.length ? [...stored, ...missing] : stored,
-    migrated: missing.length > 0,
-    version: migration.version,
-  };
+/** Escribe lista y version juntas. */
+const persistColumns = (module: string, cols: string[], version: number) => {
+  try {
+    localStorage.setItem(STORAGE_KEY(module), JSON.stringify(cols));
+    localStorage.setItem(VERSION_KEY(module), String(version));
+    const prefs = JSON.parse(localStorage.getItem("columnPrefs") || "{}");
+    prefs[module] = cols;
+    localStorage.setItem("columnPrefs", JSON.stringify(prefs));
+  } catch {
+    // Sin localStorage la app sigue funcionando, solo no se recuerda la eleccion.
+  }
+};
+
+/**
+ * Resuelve que columnas mostrar y deja el resultado YA PERSISTIDO.
+ *
+ * Que persista es lo importante y lo que faltaba: la version se marcaba solo al
+ * abrir el gestor de columnas, pero la tabla se arma al montar la pagina, que
+ * pasa antes. Resultado: el usuario ocultaba "Nota", guardaba, y al recargar la
+ * pagina la migracion volvia a correr (version sin marcar) y la re-agregaba sola.
+ * Persistir aqui cierra ese ciclo: la migracion corre una vez y despues la
+ * lista guardada manda, este o no el gestor abierto.
+ */
+export const resolveVisibleColumns = (module: string, available: string[]): string[] => {
+  let stored: string[] | null = null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY(module));
+    stored = raw ? JSON.parse(raw) : null;
+  } catch {
+    stored = null;
+  }
+
+  const { columns, version } = resolveColumns(module, stored, available, readMigrationVersion(module));
+  persistColumns(module, columns, version);
+  return columns;
 };
 
 export default function ColumnManager({ module, columns, onVisibleChange }: ColumnManagerProps) {
@@ -103,37 +91,37 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
     const loadPreferences = async () => {
       const roleCols = columnConfig?.[module] ? migrateCols(columnConfig[module], columns) : undefined;
       const allowed = roleCols && roleCols.length ? columns.filter((c) => roleCols.includes(c)) : columns;
-      let stored = migrateCols(getStored(module) || [], columns);
-      try {
-        const response = await api.get("/users/me/preferences");
-        const remote = migrateCols(response.data.columnPrefs?.[module] || [], columns);
-        // Lo guardado en el navegador es la fuente de verdad más reciente:
-        // las preferencias remotas solo se usan si no existe configuración local.
-        if ((!stored || stored.length === 0) && Array.isArray(remote) && remote.length) stored = remote;
-      } catch {
-        // La preferencia local permite continuar si el endpoint no está disponible.
-      }
-      if (cancelled) return;
-      const storedAllowed = stored?.filter((c) => allowed.includes(c)) || [];
-      // Sin preferencia guardada se muestra todo lo permitido. Con preferencia
-      // guardada se respeta tal cual, y solo se le suma lo nuevo una vez: si el
-      // usuario oculto "Nota", tiene que seguir oculta en cada recarga.
-      const { columns: next, migrated, version } = storedAllowed.length
-        ? applyColumnMigration(module, storedAllowed, allowed, readMigrationVersion(module))
-        : { columns: allowed, migrated: false, version: readMigrationVersion(module) };
 
-      if (migrated || version !== readMigrationVersion(module)) {
-        // La version se marca junto con la lista ya migrada. Marcarla sin
-        // guardar la lista haria que al recargar las columnas nuevas desaparecieran.
-        localStorage.setItem(`columns_v_${module}`, String(version));
-        if (migrated) {
-          localStorage.setItem(`columns_${module}`, JSON.stringify(next));
-          const prefs = JSON.parse(localStorage.getItem("columnPrefs") || "{}");
-          prefs[module] = next;
-          localStorage.setItem("columnPrefs", JSON.stringify(prefs));
-          api.put("/users/me/preferences", { columnPrefs: prefs }).catch(() => {});
+      let stored: string[] | null = null;
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY(module));
+        stored = raw ? migrateCols(JSON.parse(raw), columns) : null;
+      } catch {
+        stored = null;
+      }
+      if (!stored || !stored.length) {
+        // Sin lista local se prueba con la del servidor, para que el ajuste hecho
+        // en otra maquina no se pierda.
+        try {
+          const response = await api.get("/users/me/preferences");
+          const remote = migrateCols(response.data.columnPrefs?.[module] || [], columns);
+          if (Array.isArray(remote) && remote.length) stored = remote;
+        } catch {
+          // La preferencia local permite continuar si el endpoint no está disponible.
         }
       }
+      if (cancelled) return;
+
+      const storedAllowed = (stored || []).filter((c) => allowed.includes(c));
+      // Sin preferencia guardada se muestra todo lo permitido. Con preferencia
+      // guardada se respeta tal cual, y solo se le suma lo nuevo una vez.
+      const { columns: next, version } = storedAllowed.length
+        ? applyColumnMigration(module, storedAllowed, allowed, readMigrationVersion(module))
+        : { columns: allowed, version: readMigrationVersion(module) };
+      // Se persiste lista y version juntas. La tabla ya se armo al montar la
+      // pagina con resolveVisibleColumns; si aqui no se escribiera la version,
+      // esa lectura volveria a migrar en la proxima recarga.
+      persistColumns(module, next, version);
 
       setAllowedCols(allowed);
       setVisible(next);
@@ -169,28 +157,21 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
     }
   };
 
-  const getStored = (m: string): string[] | null => {
-    try {
-      const raw = localStorage.getItem(`columns_${m}`);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  };
-
   const save = async () => {
     setSaving(true);
     try {
       // Se guarda intersection con lo permitido, no lo que haya en pantalla:
       // si el rol cambio despues, lo guardado no debe arrastrar columnas vetadas.
       const permitted = visible.filter((c) => allowedCols.includes(c));
-      localStorage.setItem(`columns_${module}`, JSON.stringify(permitted));
+      // La version se escribe ACÁ, al guardar, en la version vigente de las
+      // migraciones. Antes solo se marcaba al cargar el gestor y la tabla se arma
+      // antes, asi que en la recarga la migracion volvia a correr y re-agregaba
+      // lo recien oculto.
+      persistColumns(module, permitted, latestMigrationVersion(module));
       onVisibleChange(permitted);
-      const currentPrefs = JSON.parse(localStorage.getItem("columnPrefs") || "{}");
-      currentPrefs[module] = permitted;
-      localStorage.setItem("columnPrefs", JSON.stringify(currentPrefs));
       try {
-        await api.put("/users/me/preferences", { columnPrefs: currentPrefs });
+        const prefs = JSON.parse(localStorage.getItem("columnPrefs") || "{}");
+        await api.put("/users/me/preferences", { columnPrefs: prefs });
       } catch {
         // Sin token/permission aún guardamos en localStorage
       }
