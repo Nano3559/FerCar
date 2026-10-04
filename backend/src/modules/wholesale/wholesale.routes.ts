@@ -4,6 +4,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { authenticate, authorize, requireTiendaLocation } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
+import { saleDateRange } from "../../utils/dateRange";
 import { ensureRestockRequest } from "../../utils/restockRequest";
 import { validateAndMergeItems } from "../../utils/saleItems";
 import { planFulfillment, loadStockSnapshot, summarizeFulfillment } from "../../utils/fulfillment";
@@ -473,16 +474,13 @@ router.get("/", async (req: AuthRequest, res: Response) => {
     if (req.user?.role === "TIENDA") {
       where.locationId = req.user.locationId;
     } else if (locationId && typeof locationId === "string") {
-      where.locationId = Number(locationId);
+      // Number("abc") es NaN y Prisma lo rechaza con un 500.
+      const loc = Number(locationId);
+      if (Number.isInteger(loc) && loc > 0) where.locationId = loc;
     }
-    if (startDate || endDate) {
-      where.saleDate = {};
-      if (startDate && typeof startDate === "string") where.saleDate.gte = new Date(startDate);
-      if (endDate && typeof endDate === "string") {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        where.saleDate.lte = end;
-      }
+    const dateRange = saleDateRange(startDate, endDate);
+    if (dateRange) {
+      where.saleDate = dateRange;
     } else {
       // Registro de ventas por mayor: se conservan 15 días por defecto
       where.saleDate = { gte: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) };

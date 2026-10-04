@@ -35,18 +35,55 @@ export const migrateCols = (cols: string[], valid?: string[]): string[] => {
 
 // Columnas incorporadas despues de que un equipo guardara su lista. Si no
 // estan en lo guardado es porque no existian todavia, no porque ese usuario
-// las haya ocultado a proposito: se agregan visibles. Las que ya estaban en
-// su lista y no aparecen, esas si se respetan.
+// las haya ocultado a proposito: se agregan visibles una unica vez.
 //
-// Al agregar o renombrar una columna hay que sumar aqui su nombre: esta lista
-// es la que evita que un usuario se quede sin verla en silencio.
-const ADDED_COLUMNS: Record<string, string[]> = {
-  ventas: ["Datos de envío", "Usuario", "Estado", "Nota"],
+// Al agregar o renombrar una columna hay que sumar aqui su nombre y subir el
+// `version`.
+//
+// El numero de version es lo que hace que esto no sea un bug permanente:
+// antes esta lista se re-aplicaba en cada carga y era imposible ocultar una
+// columna de aqui para siempre, se ocultaba, se guardaba, y al recargar
+// aparecia sola otra vez. Al usuario le parecia que el ajuste no se guardaba.
+// Con la version, la migracion corre una vez y despues manda lo que el usuario
+// dejo elegido.
+const COLUMN_MIGRATIONS: Record<string, { version: number; columns: string[] }> = {
+  ventas: { version: 2, columns: ["Datos de envío", "Usuario", "Estado", "Nota"] },
 };
 
-export const withAddedCols = (module: string, stored: string[], available: string[]): string[] => {
-  const missing = (ADDED_COLUMNS[module] || []).filter((c) => available.includes(c) && !stored.includes(c));
-  return missing.length ? [...stored, ...missing] : stored;
+export type ColumnMigration = { version: number; columns: string[] };
+
+/** Version de migracion ya aplicada a la preferencia de este modulo. */
+export const readMigrationVersion = (module: string): number => {
+  try {
+    const raw = Number(localStorage.getItem(`columns_v_${module}`));
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  } catch {
+    return 0;
+  }
+};
+
+/**
+ * Agrega las columnas nuevas a una preferencia guardada, pero solo la primera
+ * vez. Devuelve las columnas a mostrar y si hubo que migrar, para que quien
+ * llama persista el resultado junto con la version: si se marcara la version
+ * sin guardar la lista, al recargar las columnas nuevas desaparecerian.
+ */
+export const applyColumnMigration = (
+  module: string,
+  stored: string[],
+  allowed: string[],
+  appliedVersion: number
+): { columns: string[]; migrated: boolean; version: number } => {
+  const migration = COLUMN_MIGRATIONS[module];
+  if (!migration) return { columns: stored, migrated: false, version: appliedVersion };
+  if (appliedVersion >= migration.version) return { columns: stored, migrated: false, version: appliedVersion };
+
+  const missing = migration.columns.filter((c) => allowed.includes(c) && !stored.includes(c));
+  return {
+    columns: missing.length ? [...stored, ...missing] : stored,
+    migrated: missing.length > 0,
+    version: migration.version,
+  };
 };
 
 export default function ColumnManager({ module, columns, onVisibleChange }: ColumnManagerProps) {
@@ -78,7 +115,26 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
       }
       if (cancelled) return;
       const storedAllowed = stored?.filter((c) => allowed.includes(c)) || [];
-      const next = storedAllowed.length ? withAddedCols(module, storedAllowed, allowed) : allowed;
+      // Sin preferencia guardada se muestra todo lo permitido. Con preferencia
+      // guardada se respeta tal cual, y solo se le suma lo nuevo una vez: si el
+      // usuario oculto "Nota", tiene que seguir oculta en cada recarga.
+      const { columns: next, migrated, version } = storedAllowed.length
+        ? applyColumnMigration(module, storedAllowed, allowed, readMigrationVersion(module))
+        : { columns: allowed, migrated: false, version: readMigrationVersion(module) };
+
+      if (migrated || version !== readMigrationVersion(module)) {
+        // La version se marca junto con la lista ya migrada. Marcarla sin
+        // guardar la lista haria que al recargar las columnas nuevas desaparecieran.
+        localStorage.setItem(`columns_v_${module}`, String(version));
+        if (migrated) {
+          localStorage.setItem(`columns_${module}`, JSON.stringify(next));
+          const prefs = JSON.parse(localStorage.getItem("columnPrefs") || "{}");
+          prefs[module] = next;
+          localStorage.setItem("columnPrefs", JSON.stringify(prefs));
+          api.put("/users/me/preferences", { columnPrefs: prefs }).catch(() => {});
+        }
+      }
+
       setAllowedCols(allowed);
       setVisible(next);
       onVisibleChange(next);

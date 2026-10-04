@@ -84,6 +84,17 @@ export default function WholesalePage() {
   }, [isAdmin, user?.locationId]);
   const [sales, setSales] = useState<WholesaleSale[]>([]);
   const [loading, setLoading] = useState(false);
+  // Filtros del historial mayorista. Antes no habia ninguno: se pedia limit=50
+  // sin fechas y el backend cortaba a 15 dias, asi que las ventas mas viejas
+  // desaparecian sin que hubiera forma de verlas ni de enterarse.
+  const [histDateFrom, setHistDateFrom] = useState("");
+  const [histDateTo, setHistDateTo] = useState("");
+  const [histLocation, setHistLocation] = useState("");
+  const [histPage, setHistPage] = useState(1);
+  const [histPages, setHistPages] = useState(1);
+  const [histTotal, setHistTotal] = useState(0);
+  const [histLocations, setHistLocations] = useState<{ id: number; name: string }[]>([]);
+  const WHOLESALE_PAGE_SIZE = 20;
   const [activeTab, setActiveTab] = useState<"venta" | "carrito" | "historial">("venta");
   const [showConfirm, setShowConfirm] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
@@ -157,16 +168,39 @@ export default function WholesalePage() {
   const fetchSales = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get("/wholesale?limit=50");
+      const params = new URLSearchParams({ page: String(histPage), limit: String(WHOLESALE_PAGE_SIZE) });
+      if (histDateFrom) params.set("startDate", histDateFrom);
+      if (histDateTo) params.set("endDate", histDateTo);
+      // El backend ya fuerza la tienda del usuario TIENDA; mandar la suya seria
+      // redundante y para ADMIN es justamente el filtro que se busca.
+      if (!isTienda && histLocation) params.set("locationId", histLocation);
+      const res = await api.get(`/wholesale?${params.toString()}`);
       setSales(res.data.sales);
+      setHistTotal(res.data.pagination?.total ?? 0);
+      setHistPages(res.data.pagination?.pages ?? 1);
+      const lastPage = Math.max(1, res.data.pagination?.pages || 1);
+      if (histPage > lastPage) setHistPage(lastPage);
     } catch {
       toast.error("Error al cargar ventas mayoristas");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [histPage, histDateFrom, histDateTo, histLocation, isTienda]);
 
   useEffect(() => { fetchSales(); }, [fetchSales]);
+
+  // Cualquier cambio de filtro vuelve a la primera pagina: si no, se cambia el
+  // rango estando en la pagina 5 de un listado viejo y sale vacio.
+  useEffect(() => { setHistPage(1); }, [histDateFrom, histDateTo, histLocation]);
+
+  // Tiendas para el filtro. Solo si no es TIENDA: un vendedor ya esta atado a su
+  // tienda y el filtro le seria ruido.
+  useEffect(() => {
+    if (isTienda) return;
+    api.get("/locations")
+      .then((r) => setHistLocations(Array.isArray(r.data) ? r.data.map((l: any) => ({ id: l.id, name: l.name })) : []))
+      .catch(() => {});
+  }, [isTienda]);
 
   useEffect(() => {
     api.get("/products/filters").then((r) => setFilters(r.data)).catch(() => {});
@@ -530,7 +564,7 @@ export default function WholesalePage() {
           </div>
           <p className="text-gray-400 text-sm mt-1">
             {activeTab === "historial"
-              ? `${sales.length} ventas registradas (últimos 15 días)`
+              ? `${histTotal} venta(s) en el filtro`
               : activeTab === "carrito"
                 ? `${items.reduce((s, i) => s + i.quantity, 0)} unidad(es) en carrito`
                 : `${searchTotal > 0 ? searchTotal + " productos encontrados" : "Busca productos y agrégalos al carrito"}`}
@@ -578,10 +612,42 @@ export default function WholesalePage() {
       {activeTab === "historial" && (
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-dark-700/50 flex items-center justify-between">
-            <h3 className="text-foreground font-medium">Historial de Ventas Mayoristas <span className="text-xs text-gray-500 font-normal">(últimos 15 días)</span></h3>
-            <button onClick={fetchSales} className="p-1.5 text-gray-400 hover:text-foreground rounded-lg transition-all">
+            <h3 className="text-foreground font-medium">Historial de Ventas Mayoristas</h3>
+            <button onClick={fetchSales} title="Actualizar" className="p-1.5 text-gray-400 hover:text-foreground rounded-lg transition-all">
               <RefreshCw size={14} />
             </button>
+          </div>
+
+          {/* Filtros. Antes el historial no tenia ninguno y el backend cortaba a
+              15 dias: las ventas anteriores no aparecian y no habia forma de
+              pedirlas. */}
+          <div className="flex flex-wrap items-end gap-3 px-4 py-3 border-b border-dark-700/50">
+            <div className="flex-1 min-w-[140px]">
+              <label htmlFor="wh-hist-from" className="block text-xs text-gray-500 mb-1">Desde</label>
+              <input id="wh-hist-from" type="date" value={histDateFrom} onChange={(e) => setHistDateFrom(e.target.value)}
+                className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+            </div>
+            <div className="flex-1 min-w-[140px]">
+              <label htmlFor="wh-hist-to" className="block text-xs text-gray-500 mb-1">Hasta</label>
+              <input id="wh-hist-to" type="date" value={histDateTo} onChange={(e) => setHistDateTo(e.target.value)}
+                className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+            </div>
+            {!isTienda && (
+              <div className="flex-1 min-w-[160px]">
+                <label htmlFor="wh-hist-loc" className="block text-xs text-gray-500 mb-1">Tienda</label>
+                <select id="wh-hist-loc" value={histLocation} onChange={(e) => setHistLocation(e.target.value)}
+                  className="w-full appearance-none px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                  <option value="">Todas</option>
+                  {histLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+            )}
+            {(histDateFrom || histDateTo || histLocation) && (
+              <button onClick={() => { setHistDateFrom(""); setHistDateTo(""); setHistLocation(""); }}
+                className="px-3 py-2 text-xs text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
+                Limpiar
+              </button>
+            )}
           </div>
           {loading ? (
             <div className="flex items-center justify-center h-32"><RefreshCw size={24} className="text-primary-400 animate-spin" /></div>
@@ -603,7 +669,11 @@ export default function WholesalePage() {
                 </thead>
                 <tbody>
                   {sales.length === 0 ? (
-                    <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No hay ventas mayoristas en los últimos 15 días</td></tr>
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                      {histDateFrom || histDateTo || histLocation
+                        ? "No hay ventas mayoristas que coincidan con el filtro"
+                        : "No hay ventas mayoristas registradas"}
+                    </td></tr>
                   ) : sales.map((s) => {
                     const paid = salePaid(s);
                     return (
@@ -655,6 +725,27 @@ export default function WholesalePage() {
                   );})}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Paginacion. Antes el historial pedia limit=50 y no tenia paginacion:
+              con mas de 50 ventas solo se veian las mas recientes y el resto no
+              habia forma de alcanzarlo. */}
+          {histTotal > WHOLESALE_PAGE_SIZE && (
+            <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-dark-700/50">
+              <span className="text-xs text-gray-500">
+                Página {histPage} de {histPages} · {histTotal} venta(s)
+              </span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setHistPage((p) => Math.max(1, p - 1))} disabled={histPage <= 1}
+                  className="px-3 py-1.5 text-xs rounded-lg border border-dark-600/50 text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                  Anterior
+                </button>
+                <button onClick={() => setHistPage((p) => Math.min(histPages, p + 1))} disabled={histPage >= histPages}
+                  className="px-3 py-1.5 text-xs rounded-lg border border-dark-600/50 text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                  Siguiente
+                </button>
+              </div>
             </div>
           )}
         </div>

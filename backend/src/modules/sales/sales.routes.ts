@@ -6,6 +6,7 @@ import { ensureRestockRequest } from "../../utils/restockRequest";
 import { validateAndMergeItems, demandByProduct } from "../../utils/saleItems";
 import { planFulfillment, loadStockSnapshot, summarizeFulfillment } from "../../utils/fulfillment";
 import { saleCode } from "../../shared/documentCodes";
+import { saleDateRange } from "../../utils/dateRange";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -24,15 +25,8 @@ router.get("/", async (req: AuthRequest, res: Response) => {
     // URL hace que Prisma rechace la consulta con un 500.
     if (type === "NORMAL" || type === "MAYOR" || type === "DEPARTAMENTAL") where.type = type;
     if (seller && typeof seller === "string") where.seller = seller;
-    if (startDate || endDate) {
-      where.saleDate = {};
-      if (startDate && typeof startDate === "string") where.saleDate.gte = new Date(startDate);
-      if (endDate && typeof endDate === "string") {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        where.saleDate.lte = end;
-      }
-    }
+    const dateRange = saleDateRange(startDate, endDate);
+    if (dateRange) where.saleDate = dateRange;
 
     const user = req.user!;
     if (user.role === "TIENDA") {

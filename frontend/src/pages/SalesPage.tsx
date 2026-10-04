@@ -9,7 +9,7 @@ import toast from "react-hot-toast";
 import axios from "axios";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
-import ColumnManager, { migrateCols, withAddedCols } from "../components/ui/ColumnManager";
+import ColumnManager, { migrateCols, applyColumnMigration, readMigrationVersion } from "../components/ui/ColumnManager";
 import Autocomplete from "../components/ui/Autocomplete";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
@@ -672,9 +672,16 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       const roleCols = useAuthStore.getState().columnConfig?.ventas;
       // migrateCols: un "#" guardado se traduce a "Código", si no la columna
       // del código no apareceria en los equipos que ya tenian columnas fijadas.
-      // withAddedCols: las columnas nuevas entran solas, porque si faltan en lo
-      // guardado es que no existian cuando se guardo, no que esten ocultas.
-      const base = withAddedCols("ventas", migrateCols(stored?.length ? stored : roleCols?.length ? roleCols : HISTORY_COLUMNS), HISTORY_COLUMNS);
+      // applyColumnMigration: las columnas nuevas entran solas la PRIMERA vez,
+      // porque si faltan en lo guardado es que no existian cuando se guardo.
+      // Despues manda lo que el usuario dejo oculto: antes se re-aplicaba en
+      // cada carga y las columnas ocultas volvian a aparecer solas.
+      const base = applyColumnMigration(
+        "ventas",
+        migrateCols(stored?.length ? stored : roleCols?.length ? roleCols : HISTORY_COLUMNS),
+        HISTORY_COLUMNS,
+        readMigrationVersion("ventas")
+      ).columns;
       // Se filtra contra HISTORY_COLUMNS para descartar columnas que ya no existen,
       // pero conservando el orden elegido: filtrar al reves imposedria el orden
       // original y el reordenado del usuario no serviria de nada.
