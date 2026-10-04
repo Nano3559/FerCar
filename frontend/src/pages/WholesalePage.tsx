@@ -518,7 +518,16 @@ export default function WholesalePage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Ventas por Mayor</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-foreground">Ventas por Mayor</h1>
+            {/* Distintivo del tipo de venta. Local, Departamental y Mayorista son
+                pantallas parecidas y el carrito se llenaba igual en las tres; con
+                la etiqueta se sabe de una a que venta pertenece lo que se esta
+                armando. */}
+            <span className="px-2 py-1 rounded-lg text-[11px] font-semibold uppercase tracking-wide border bg-amber-500/10 text-amber-400 border-amber-500/20">
+              Mayorista
+            </span>
+          </div>
           <p className="text-gray-400 text-sm mt-1">
             {activeTab === "historial"
               ? `${sales.length} ventas registradas (últimos 15 días)`

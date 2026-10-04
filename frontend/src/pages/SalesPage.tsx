@@ -282,17 +282,65 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const hasActiveSearchFilters = !!(manufacturer || brand || model || year || categoryId || oemCode || factoryCode || detailFilter || supplierId);
 
   // --- Carts (uno por cliente) ---
-  const [carts, setCarts] = useState<Cart[]>(() => [{ id: "c1", label: "Carrito 1", items: [] }]);
-  const [activeCartId, setActiveCartId] = useState("c1");
+  // Cada tipo de venta guarda sus carritos aparte y con un color propio. Antes
+  // vivian solo en memoria: al cambiar entre Locales y Departamentales se
+  // perdian todos, y como ambas pantallas usan el mismo componente, un carrito
+  // sin etiqueta de tipo no se distinguia de los de la otra venta.
+  const esDepartamental = saleType === "DEPARTAMENTAL";
+  const tipoCarrito = esDepartamental
+    ? { nombre: "Departamental", corto: "Deptal", clases: "bg-blue-500/10 text-blue-400 border-blue-500/20", chip: "bg-blue-500/15 border-blue-500/30 text-blue-400" }
+    : { nombre: "Local", corto: "Local", clases: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", chip: "bg-emerald-500/15 border-emerald-500/30 text-emerald-400" };
+  const CART_STORE_KEY = esDepartamental ? "carts_ventas_departamental" : "carts_ventas_local";
+
+  const [carts, setCarts] = useState<Cart[]>(() => {
+    // Se recupera del navegador: un carrito a medio armar no debe desaparecer
+    // porque el vendedor cambio de pantalla a mirar algo.
+    try {
+      const raw = localStorage.getItem(CART_STORE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((c) => c && c.id && Array.isArray(c.items))) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Un carrito guardado con formato viejo no debe impedir abrir la pantalla.
+    }
+    return [{ id: "c1", label: `${tipoCarrito.corto} 1`, items: [] }];
+  });
+  const [activeCartId, setActiveCartId] = useState(() => {
+    try {
+      const raw = localStorage.getItem(CART_STORE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.some((c: any) => c?.id)) return parsed[0].id;
+      }
+    } catch { /* se usa el carrito por defecto */ }
+    return "c1";
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(CART_STORE_KEY, JSON.stringify(carts)); } catch { /* sin espacio o bloqueado */ }
+  }, [carts, CART_STORE_KEY]);
+
   const activeCart = carts.find((c) => c.id === activeCartId) ?? carts[0];
   const cart = activeCart.items;
 
   const updateActiveCart = (updater: (items: CartItem[]) => CartItem[]) =>
     setCarts((prev) => prev.map((c) => (c.id === activeCartId ? { ...c, items: updater(c.items) } : c)));
 
+  /**
+   * Vacia un carrito por id. Las operaciones asincronas (cobrar, cargar una
+   * cotizacion) usan esto y no `updateActiveCart`: si el vendedor cambia de
+   * carrito mientras la peticion viaja, limpiar el carrito activo vaciaria el
+   * equivocado y dejaria los productos de la venta cobrada sin confirmar.
+   */
+  const clearCartById = (id: string, items: CartItem[] = []) =>
+    setCarts((prev) => prev.map((c) => (c.id === id ? { ...c, items } : c)));
+
   const createNewCart = () => {
     const id = `c${Date.now()}`;
-    setCarts((prev) => [...prev, { id, label: `Carrito ${prev.length + 1}`, items: [] }]);
+    setCarts((prev) => [...prev, { id, label: `${tipoCarrito.corto} ${prev.length + 1}`, items: [] }]);
     setActiveCartId(id);
   };
 
@@ -302,7 +350,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     setCarts((prev) => prev.map((c) => (c.id === activeCartId ? { ...c, label } : c)));
 
   const removeCart = (id: string) => {
-    if (carts.length <= 1) { updateActiveCart(() => []); return; }
+    if (carts.length <= 1) { clearCartById(id); return; }
     const remaining = carts.filter((c) => c.id !== id);
     setCarts(remaining);
     if (id === activeCartId) setActiveCartId(remaining[0].id);
@@ -340,22 +388,33 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
           return;
         }
 
-        updateActiveCart(() =>
-          utilizables.map(
-            (l): CartItem => ({
-              productId: l.productId,
-              itemCode: l.itemCode,
-              name: l.name,
-              brand: l.brand ?? "",
-              unitPrice: Number(l.unitPrice),
-              priceTier: l.priceTier === 2 ? 2 : 1,
-              price1: Number(l.price1),
-              price2: Number(l.price2),
-              quantity: l.quantity,
-              availableStock: l.availableStock,
-            })
-          )
+        // La cotizacion entra en un carrito PROPIO. Antes se pisaba el carrito activo:
+        // si el vendedor ya tenia un pedido a medio armar de otro cliente, cargar
+        // una cotizacion le borro ese pedido sin avisar.
+        const quoteItems: CartItem[] = utilizables.map(
+          (l): CartItem => ({
+            productId: l.productId,
+            itemCode: l.itemCode,
+            name: l.name,
+            brand: l.brand ?? "",
+            unitPrice: Number(l.unitPrice),
+            priceTier: l.priceTier === 2 ? 2 : 1,
+            price1: Number(l.price1),
+            price2: Number(l.price2),
+            quantity: l.quantity,
+            availableStock: l.availableStock,
+          })
         );
+        const quoteCartId = `q${quoteIdFromNav}-${Date.now()}`;
+        setCarts((prev) => [
+          ...prev,
+          {
+            id: quoteCartId,
+            label: data.clientName?.trim() || `Cotización ${prev.length + 1}`,
+            items: quoteItems,
+          },
+        ]);
+        setActiveCartId(quoteCartId);
         if (data.clientName) {
           setCustomerData((prev) => (prev.name.trim() ? prev : { ...prev, name: data.clientName }));
         }
@@ -419,6 +478,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
    * importe real y no el que estaba contando.
    */
   const [ajusteStock, setAjusteStock] = useState<{
+    cartId: string;
     ajustes: { productId: number; name: string; pides: number; seVende: number; enTienda: number }[];
     totalAntes: number;
     totalDespues: number;
@@ -911,6 +971,13 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     if (cart.length === 0) { toast.error("Agrega productos al carrito primero"); return; }
     if (!selectedLocationId) { toast.error("Selecciona la tienda de la venta"); return; }
 
+    // Se fija que carrito se esta cobrando antes de esperar cualquier respuesta.
+    // La consulta de stock tarda, y si mientras tanto el vendedor cambia de
+    // carrito, el ajuste tiene que aplicarse al que se cobro y no al que quedo
+    // activo despues.
+    const cartId = activeCartId;
+    const cartCobrando = carts.find((c) => c.id === cartId)?.items ?? cart;
+
     setCheckingStock(true);
     try {
       // El reparto del backend es: tienda donde se cobra, luego las otras
@@ -919,7 +986,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       // se vendera de verdad, porque si baja el total el vendedor no puede
       // cobrarle al cliente la cifra que estaba contando.
       const ajustes: { productId: number; name: string; pides: number; seVende: number; enTienda: number }[] = [];
-      for (const item of cart) {
+      for (const item of cartCobrando) {
         const res = await api.get(`/inventory/product/${item.productId}?locationId=${selectedLocationId}`);
         // El endpoint devuelve el total por tipo sin detallar cada tienda: lo
         // que el vendedor necesita es saber si alcanza entre todas, no cuanto
@@ -933,11 +1000,16 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
         }
       }
       if (ajustes.length > 0) {
-        const totalDespues = cart.reduce((sum, c) => {
+        const totalDespues = cartCobrando.reduce((sum, c) => {
           const a = ajustes.find((x) => x.productId === c.productId);
           return sum + c.unitPrice * (a ? a.seVende : c.quantity);
         }, 0);
-        setAjusteStock({ ajustes, totalAntes: cartTotal, totalDespues });
+        setAjusteStock({
+          cartId,
+          ajustes,
+          totalAntes: cartCobrando.reduce((sum, c) => sum + c.unitPrice * c.quantity, 0),
+          totalDespues,
+        });
         return;
       }
     } catch {
@@ -960,16 +1032,24 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   /** Confirma el recorte: se cobra lo que existe y el resto sale del aviso. */
   const aceptarAjusteStock = () => {
     if (!ajusteStock) return;
-    updateActiveCart((prev) =>
-      prev.flatMap((c) => {
-        const a = ajusteStock.ajustes.find((x) => x.productId === c.productId);
-        if (!a) return [c];
-        if (a.seVende <= 0) return [];
-        return [{ ...c, quantity: a.seVende }];
+    const { cartId } = ajusteStock;
+    setCarts((prev) =>
+      prev.map((c) => {
+        if (c.id !== cartId) return c;
+        return {
+          ...c,
+          items: c.items.flatMap((item) => {
+            const a = ajusteStock.ajustes.find((x) => x.productId === item.productId);
+            if (!a) return [item];
+            if (a.seVende <= 0) return [];
+            return [{ ...item, quantity: a.seVende }];
+          }),
+        };
       })
     );
     setAjusteStock(null);
     setCheckingStock(false);
+    setActiveCartId(cartId);
     toast.success(`Se cobrara ${formatBs(ajusteStock.totalDespues)}: ${ajusteStock.ajustes.length} producto(s) ajustado(s) al stock existente`);
   };
 
@@ -988,6 +1068,12 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   // ==================== CONFIRM SALE ====================
   const confirmSale = async () => {
     if (cart.length === 0) { toast.error("Agrega productos al carrito primero"); return; }
+
+    // El carrito que se cobra queda fijado aqui. Registrar la venta tarda, y si
+    // el vendedor cambia de carrito mientras tanto, limpiar el "activo" al final
+    // vaciaba el carrito equivocado y dejaba este con los productos ya cobrados.
+    const cartVendidoId = activeCartId;
+    const cartVendido = activeCart.items;
 
     // Una fila de pago en blanco se enviaria como 0 y quedaria registrada como
     // un pago de Bs 0 en la venta. Se avisa en vez de dejarla pasar en silencio.
@@ -1107,7 +1193,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
 
       const res = await api.post("/sales", payload);
       const savedItems = (res.data.items || []).map((item: any) => {
-        const cartItem = cart.find((entry) => entry.productId === item.productId);
+        const cartItem = cartVendido.find((entry) => entry.productId === item.productId);
         return {
           ...item,
           product: item.product || { id: item.productId, name: cartItem?.name || "Producto", itemCode: cartItem?.itemCode || "" },
@@ -1122,7 +1208,9 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       });
       setShowPayment(false);
       setShowConfirmed(true);
-      updateActiveCart(() => []);
+      // Se vacia el carrito que se cobro, no el que este activo cuando termino
+      // la peticion.
+      clearCartById(cartVendidoId);
       setSavedQuote(null);
       setActiveTab("venta");
       toast.success("¡Venta registrada exitosamente!");
@@ -1544,10 +1632,13 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
                 <ShoppingCart size={16} className="text-primary-400" />
                 <span>Carrito:</span>
               </div>
+              <span className={`px-2 py-1 rounded-lg text-[11px] font-semibold uppercase tracking-wide border shrink-0 ${tipoCarrito.clases}`}>
+                {tipoCarrito.nombre}
+              </span>
               <div className="flex items-center gap-2 flex-1">
                 <div className="relative flex-1">
                   <select value={activeCartId} onChange={(e) => switchActiveCart(e.target.value)}
-                    aria-label="Carrito activo"
+                    aria-label={`Carrito activo de venta ${tipoCarrito.nombre}`}
                     className="w-full appearance-none px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
                     {carts.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -1725,11 +1816,18 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl overflow-hidden">
           {/* Chips de carritos */}
           <div className="flex items-center gap-2 px-5 py-3 border-b border-dark-700/50 flex-wrap">
+            {/* Local y Departamental se sirven desde el mismo componente, asi que
+                sin este distintivo no hay forma de saber de que venta es cada
+                carrito. */}
+            <span className={`px-2 py-1 rounded-lg text-[11px] font-semibold uppercase tracking-wide border ${tipoCarrito.clases}`}>
+              {tipoCarrito.nombre}
+            </span>
+            <span className="text-xs text-gray-600">·</span>
             {carts.map((c) => {
               const count = c.items.reduce((s, i) => s + i.quantity, 0);
               const isActive = c.id === activeCartId;
               return (
-                <div key={c.id} className={`flex items-center gap-1 pl-3 pr-1.5 py-1.5 rounded-xl border text-sm transition-all ${isActive ? "bg-primary-600/15 border-primary-600/30 text-primary-400" : "bg-dark-900/50 border-dark-700/50 text-gray-400 hover:text-foreground"}`}>
+                <div key={c.id} className={`flex items-center gap-1 pl-3 pr-1.5 py-1.5 rounded-xl border text-sm transition-all ${isActive ? tipoCarrito.chip : "bg-dark-900/50 border-dark-700/50 text-gray-400 hover:text-foreground"}`}>
                   <button onClick={() => switchActiveCart(c.id)} className="flex items-center gap-1.5 font-medium">
                     {c.label}
                     {count > 0 && <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-primary-600 text-white">{count}</span>}
