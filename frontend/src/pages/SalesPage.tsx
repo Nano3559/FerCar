@@ -9,7 +9,7 @@ import toast from "react-hot-toast";
 import axios from "axios";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
-import ColumnManager, { resolveVisibleColumns } from "../components/ui/ColumnManager";
+import ColumnManager, { resolveVisibleColumnsWithFallback } from "../components/ui/ColumnManager";
 import Autocomplete from "../components/ui/Autocomplete";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
@@ -672,7 +672,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
 // las columnas nuevas cada vez sin dejar la version marcada, ocultar una columna
 // se deshacia en la recarga, que es justo lo que se estaba quejando.
 const [histColumns, setHistColumns] = useState<string[]>(() =>
-  resolveVisibleColumns("ventas", HISTORY_COLUMNS)
+  resolveVisibleColumnsWithFallback("ventas", HISTORY_COLUMNS, useAuthStore.getState().columnConfig?.ventas)
 );
 
   const [cartColumns, setCartColumns] = useState<string[]>(() => {

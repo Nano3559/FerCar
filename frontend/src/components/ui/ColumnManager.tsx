@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Settings2, GripVertical, Eye, EyeOff, Check, X, ChevronUp, ChevronDown } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../services/api";
@@ -74,6 +75,34 @@ export const resolveVisibleColumns = (module: string, available: string[]): stri
   return columns;
 };
 
+/**
+ * Si el navegador tiene algo guardado para este modulo.
+ *
+ * La lista de columnas viene del servidor por rol y la eleccion del usuario es
+ * local. Cuando la eleccion local no existe todavia (otro equipo, navegador
+ * nuevo, o la lista se perdio), lo que hay en el navegador manda, y solo si no
+ * hay nada se recurre a lo del servidor. Al revés, lo del servidor pisaria lo
+ * que el usuario acaba de ocultar y las columnas volverian a aparecer.
+ */
+export const resolveVisibleColumnsWithFallback = (
+  module: string,
+  available: string[],
+  serverColumns: string[] | null | undefined
+): string[] => {
+  let stored: string[] | null = null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY(module));
+    stored = raw ? JSON.parse(raw) : null;
+  } catch {
+    stored = null;
+  }
+
+  const source = Array.isArray(stored) && stored.length ? stored : serverColumns;
+  const { columns, version } = resolveColumns(module, source ?? null, available, readMigrationVersion(module));
+  persistColumns(module, columns, version);
+  return columns;
+};
+
 export default function ColumnManager({ module, columns, onVisibleChange }: ColumnManagerProps) {
   const { columnConfig } = useAuthStore();
   const [open, setOpen] = useState(false);
@@ -84,6 +113,67 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
   // aplica, y al recargar desaparece sin explicacion.
   const [allowedCols, setAllowedCols] = useState<string[]>(columns);
   const [saving, setSaving] = useState(false);
+
+  // El panel se dibuja en un portal pegado a <body>, con posicion fija.
+  //
+  // Antes vivia dentro del arbol normal, con position absolute. Los tres usos
+  // (historial, carrito, inventario) estan dentro de tarjetas con
+  // overflow-hidden, y eso recortaba el panel contra el borde de la tarjeta: se
+  // veia la mitad y las pestañas de abajo quedaban inaccesibles, sin aviso de
+  // que faltaba contenido. Un z-index alto no sirve: el recorte lo produce el
+  // ancestro con overflow, no el apilamiento.
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  const PANEL_W = 320;
+  const PANEL_MAX_H = 420;
+
+  const place = useCallback(() => {
+    const btn = buttonRef.current;
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    const margin = 8;
+    // Alineado a la derecha del boton, como antes, pero si no cabe a la
+    // derecha se recorre a la izquierda antes de salirse de la pantalla.
+    let left = r.right - PANEL_W;
+    left = Math.max(margin, Math.min(left, window.innerWidth - PANEL_W - margin));
+    // Debajo del boton; si no hay espacio, arriba.
+    let top = r.bottom + 8;
+    const estimated = 360;
+    if (top + estimated > window.innerHeight - margin) {
+      const above = r.top - 8 - Math.min(estimated, window.innerHeight - margin * 2);
+      top = above > margin ? above : Math.max(margin, window.innerHeight - PANEL_MAX_H - margin);
+    }
+    setPos({ top, left });
+  }, []);
+
+  // Al abrir se mide el boton y se recalcula en scroll o resize: si no, el
+  // panel queda donde estaba y se desalinea al mover la pagina.
+  useEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    place();
+    const onReflow = () => place();
+    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("resize", onReflow);
+    return () => {
+      window.removeEventListener("scroll", onReflow, true);
+      window.removeEventListener("resize", onReflow);
+    };
+  }, [open, place]);
+
+  // Escape cierra, como cualquier panel emergente.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -194,7 +284,10 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         className={`p-2.5 rounded-xl border transition-all flex items-center gap-2 text-sm ${
           open
             ? "bg-primary-600/10 border-primary-600/20 text-primary-400"
@@ -205,10 +298,17 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
         <Settings2 size={18} />
       </button>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 z-50 bg-dark-900 border border-dark-700/50 rounded-2xl shadow-2xl w-80 overflow-hidden">
+      {open &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
+            <div
+              ref={panelRef}
+              role="dialog"
+              aria-label="Configurar columnas"
+              style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: PANEL_W }}
+              className="fixed z-[70] max-h-[min(420px,calc(100vh-1rem))] flex flex-col bg-dark-900 border border-dark-700/50 rounded-2xl shadow-2xl overflow-hidden"
+            >
             <div className="flex items-center justify-between px-4 py-3 border-b border-dark-700/50">
               <h3 className="text-sm font-bold text-foreground">Columnas visibles</h3>
               <button onClick={() => setOpen(false)} className="p-1 text-gray-400 hover:text-foreground rounded-lg hover:bg-dark-700 transition-colors">
@@ -235,7 +335,9 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
               </button>
             </div>
 
-            <div className="p-2 max-h-64 overflow-y-auto">
+            {/* El scroll va en esta zona interna, no en el panel: asi el encabezado y los
+                botones de abajo quedan fijos y siempre alcanzables. */}
+            <div className="p-2 overflow-y-auto min-h-0">
               {tab === "visible" ? (
                 visible.length === 0 ? (
                   <p className="text-xs text-gray-500 text-center py-4">Sin columnas visibles</p>
@@ -300,9 +402,10 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
                 <Check size={14} /> {saving ? "Guardando..." : "Aplicar"}
               </button>
             </div>
-          </div>
-        </>
-      )}
+            </div>
+          </>,
+          document.body
+        )}
     </div>
   );
 }

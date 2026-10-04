@@ -39,6 +39,15 @@ const resolve = (s: Store, m: string, available: string[] = COLS): string[] => {
   persist(s, m, columns, version);
   return columns;
 };
+// Replica de resolveVisibleColumnsWithFallback: la lista local manda y la del
+// servidor se usa solo si no hay nada local.
+const resolveWithServer = (s: Store, available: string[], server: string[] | null): string[] => {
+  const local = readStored(s, "ventas");
+  const source = local && local.length ? local : server;
+  const { columns, version } = resolveVisibleColumns("ventas", source, available, readVersion(s, "ventas"));
+  persist(s, "ventas", columns, version);
+  return columns;
+};
 // Lo que hace el boton Aplicar: guarda la lista y deja marcada la version
 // vigente de las migraciones.
 const save = (s: Store, m: string, chosen: string[]) => persist(s, m, chosen, latestMigrationVersion(m));
@@ -148,6 +157,35 @@ test("applyColumnMigration suma lo nuevo y sube la version", () => {
 test("latestMigrationVersion dice que version hay que dejar marcada al guardar", () => {
   assert.equal(latestMigrationVersion("ventas"), 2);
   assert.equal(latestMigrationVersion("inventario"), 0);
+});
+
+test("la lista local gana sobre la del servidor", () => {
+  // La lista del rol viene del servidor y la eleccion del usuario es local. Si
+  // el servidor le gainara, ocultar una columna no serviria de nada: cada
+  // recarga devolveria las columnas que el usuario acaba de sacar.
+  const s = mkStore();
+  resolve(s, "ventas", COLS);
+  save(s, "ventas", COLS.filter((c) => c !== "Nota"));
+  const conFallback = resolveWithServer(s, COLS, COLS);
+  assert.ok(!conFallback.includes("Nota"), "la columna oculta reaparecio por el fallback del servidor");
+});
+
+test("sin lista local se usa la del servidor, migrada una vez", () => {
+  const s = mkStore();
+  // Una lista guardada en el servidor puede ser anterior a las columnas nuevas:
+  // en ese caso si corresponde sumarlas, una sola vez.
+  const desdeServidor = resolveWithServer(s, COLS, ["Código", "Fecha"]);
+  assert.ok(desdeServidor.includes("Código"));
+  assert.ok(desdeServidor.includes("Fecha"));
+  assert.ok(desdeServidor.includes("Nota"));
+  // Y ya persistida: la segunda vuelta no vuelve a tocar nada.
+  assert.deepEqual(resolveWithServer(s, COLS, ["Código", "Fecha"]), desdeServidor);
+});
+
+test("ni lista local ni del servidor: se muestran todas y queda persistido", () => {
+  const s = mkStore();
+  assert.deepEqual(resolveWithServer(s, COLS, null), COLS);
+  assert.ok(readStored(s, "ventas"), "no quedo guardada ninguna lista");
 });
 
 test("primera vez: guardar sin tocar nada ya marca la version actual", () => {
