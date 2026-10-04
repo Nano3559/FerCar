@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { migrateCols, applyColumnMigration, resolveVisibleColumns, latestMigrationVersion } from "../columnMigration";
+import {
+  migrateCols,
+  applyColumnMigration,
+  resolveVisibleColumns,
+  latestMigrationVersion,
+  insertAtPreferredIndex,
+  swapAt,
+  indexHints,
+} from "../columnMigration";
 
 // Reproduce el ciclo completo: guardar lo que el usuario eligio y despues
 // resolver que columnas mostrar, como hace la pagina al montar y el gestor al
@@ -152,6 +160,80 @@ test("applyColumnMigration suma lo nuevo y sube la version", () => {
   const r = applyColumnMigration("ventas", ["Código"], COLS, 0);
   assert.ok(r.columns.includes("Nota"));
   assert.equal(r.version, 2);
+});
+
+// --- Orden de columnas ---
+// Al ocultar y volver a mostrar una columna, tiene que volver a su lugar. Antes
+// se hacia [...visible, col] y la columna aparecia al final, perdiendo el orden
+// que el usuario habia elegido con las flechas.
+
+test("una columna reinsertada vuelve a su posicion original", () => {
+  const antes = ["Código", "Fecha", "Cliente", "Usuario", "Estado", "Nota"];
+  const hints = indexHints(antes);
+  const ocultando = antes.filter((c) => c !== "Usuario");
+  assert.deepEqual(insertAtPreferredIndex(ocultando, "Usuario", hints["Usuario"]), antes);
+});
+
+test("ocultar y volver a mostrar varias columnas conserva el orden", () => {
+  const original = ["Código", "Fecha", "Cliente", "Usuario", "Estado", "Nota"];
+  let actual = [...original];
+  const hints = indexHints(actual);
+  for (const fuera of ["Fecha", "Cliente", "Estado", "Fecha"]) {
+    hints[fuera] = actual.indexOf(fuera);
+    actual = actual.filter((c) => c !== fuera);
+    actual = insertAtPreferredIndex(actual, fuera, hints[fuera]);
+  }
+  assert.deepEqual(actual, original);
+});
+
+test("sin pista de posicion se inserta al final", () => {
+  // No hay dato de donde estaba: el final es lo unico razonable.
+  assert.deepEqual(insertAtPreferredIndex(["Código"], "Nota", undefined), ["Código", "Nota"]);
+});
+
+test("una pista fuera de rango se recorta, no rompe la lista", () => {
+  const visible = ["Código", "Fecha"];
+  assert.deepEqual(insertAtPreferredIndex(visible, "Nota", 99), ["Código", "Fecha", "Nota"]);
+  // Negativa se ajusta a 0: al principio.
+  assert.deepEqual(insertAtPreferredIndex(visible, "Nota", -5), ["Nota", "Código", "Fecha"]);
+});
+
+test("una pista con decimales o NaN no rompe la lista", () => {
+  // NaN no es un numero: sin dato de posicion va al final.
+  assert.deepEqual(insertAtPreferredIndex(["Código"], "Nota", NaN), ["Código", "Nota"]);
+  // 0.9 se trunca a 0, o sea al principio.
+  assert.deepEqual(insertAtPreferredIndex(["Código"], "Nota", 0.9), ["Nota", "Código"]);
+});
+
+test("insertar una columna ya visible no la duplica", () => {
+  const visible = ["Código", "Fecha"];
+  assert.deepEqual(insertAtPreferredIndex(visible, "Código", 1), visible);
+});
+
+test("swapAt intercambia dos posiciones", () => {
+  assert.deepEqual(swapAt(["A", "B", "C"], 0, 2), ["C", "B", "A"]);
+});
+
+test("swapAt con indices invalidos devuelve la lista sin tocar", () => {
+  const l = ["A", "B"];
+  assert.deepEqual(swapAt(l, 0, 9), l);
+  assert.deepEqual(swapAt(l, -1, 1), l);
+});
+
+test("indexHints devuelve la posicion de cada columna", () => {
+  assert.deepEqual(indexHints(["Código", "Fecha"]), { Código: 0, Fecha: 1 });
+});
+
+test("reordenar y despues ocultar y mostrar devuelve al orden elegido", () => {
+  // El caso que reporto el usuario: mover con las flechas, ocultar una columna
+  // y volver a mostrarla la dejaba al final.
+  let actual = ["Código", "Fecha", "Cliente", "Usuario", "Estado", "Nota"];
+  actual = swapAt(actual, 4, 5);
+  assert.deepEqual(actual, ["Código", "Fecha", "Cliente", "Usuario", "Nota", "Estado"]);
+  const hints = indexHints(actual);
+  actual = actual.filter((c) => c !== "Cliente");
+  actual = insertAtPreferredIndex(actual, "Cliente", hints["Cliente"]);
+  assert.deepEqual(actual, ["Código", "Fecha", "Cliente", "Usuario", "Nota", "Estado"]);
 });
 
 test("latestMigrationVersion dice que version hay que dejar marcada al guardar", () => {

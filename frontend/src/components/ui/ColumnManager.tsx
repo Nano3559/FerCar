@@ -16,12 +16,15 @@ import {
   resolveVisibleColumns as resolveColumns,
   migrateCols,
   latestMigrationVersion,
+  insertAtPreferredIndex,
+  swapAt,
+  indexHints,
 } from "./columnMigration";
 
 // La logica de preferencia (renombres, migraciones de columnas nuevas) vive en
 // columnMigration.ts para poder probarla sin montar React ni localStorage.
 
-export { migrateCols, applyColumnMigration };
+export { migrateCols, applyColumnMigration, insertAtPreferredIndex, swapAt, indexHints };
 
 type Tab = "visible" | "all";
 
@@ -113,6 +116,9 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
   // aplica, y al recargar desaparece sin explicacion.
   const [allowedCols, setAllowedCols] = useState<string[]>(columns);
   const [saving, setSaving] = useState(false);
+  // Posicion que tenia cada columna antes de ocultarla, para devolverla a su
+  // lugar en vez de mandarla al final.
+  const hintsRef = useRef<Record<string, number>>({});
 
   // El panel se dibuja en un portal pegado a <body>, con posicion fija.
   //
@@ -215,6 +221,7 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
 
       setAllowedCols(allowed);
       setVisible(next);
+      hintsRef.current = indexHints(next);
       onVisibleChange(next);
     };
     loadPreferences();
@@ -224,8 +231,10 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
   const move = (idx: number, dir: -1 | 1) => {
     const target = idx + dir;
     if (target < 0 || target >= visible.length) return;
-    const next = [...visible];
-    [next[idx], next[target]] = [next[target], next[idx]];
+    const next = swapAt(visible, idx, target);
+    // El reordenamiento manual es la nueva referencia: si despues se oculta y
+    // se vuelve a mostrar una columna, tiene que volver aqui y no al final.
+    hintsRef.current = indexHints(next);
     setVisible(next);
   };
 
@@ -241,9 +250,13 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
       return;
     }
     if (visible.includes(col)) {
+      // Se recuerda donde estaba antes de ocultarla.
+      hintsRef.current = { ...hintsRef.current, [col]: visible.indexOf(col) };
       setVisible(visible.filter((c) => c !== col));
     } else {
-      setVisible([...visible, col]);
+      // Vuelve a su posicion original. Antes se hacia [...visible, col], que
+      // mandaba la columna al final y perdia el orden elegido con las flechas.
+      setVisible(insertAtPreferredIndex(visible, col, hintsRef.current[col]));
     }
   };
 
@@ -258,6 +271,9 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
       // antes, asi que en la recarga la migracion volvia a correr y re-agregaba
       // lo recien oculto.
       persistColumns(module, permitted, latestMigrationVersion(module));
+      // Las pistas de posicion se tomas de lo aplicado: si no, recargar el
+      // gestor devolveria las columnas a donde estaban antes de guardar.
+      hintsRef.current = indexHints(permitted);
       onVisibleChange(permitted);
       try {
         const prefs = JSON.parse(localStorage.getItem("columnPrefs") || "{}");
@@ -278,6 +294,7 @@ export default function ColumnManager({ module, columns, onVisibleChange }: Colu
     const roleCols = columnConfig?.[module] ? migrateCols(columnConfig[module]) : undefined;
     const permitted = roleCols && roleCols.length ? columns.filter((c) => roleCols.includes(c)) : columns;
     setVisible(permitted);
+    hintsRef.current = indexHints(permitted);
     onVisibleChange(permitted);
   };
 

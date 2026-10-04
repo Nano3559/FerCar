@@ -57,6 +57,41 @@ export const applyColumnMigration = (
 };
 
 /**
+ * Reinserta una columna en la posicion que tenia antes de ocultarla.
+ *
+ * Sin esto, volver a mostrar una columna la mandaba al final de la lista
+ * (setVisible([...visible, col])). El usuario la ocultaba, la volvia a mostrar y
+ * aparecia reorderada al final, ya que el orden elegido a mano con las flechas
+ * se perdia.
+ *
+ * `hint` es la posicion remembered de la columna. Si no hay dato, o no cabe en
+ * la lista actual, se recurre a insertarla al final, que es lo unico razonable.
+ */
+export const insertAtPreferredIndex = (visible: string[], col: string, hint?: number): string[] => {
+  if (visible.includes(col)) return visible;
+  if (typeof hint !== "number" || !Number.isFinite(hint)) return [...visible, col];
+  const at = Math.max(0, Math.min(Math.trunc(hint), visible.length));
+  const next = [...visible];
+  next.splice(at, 0, col);
+  return next;
+};
+
+/** Intercambia dos posiciones y devuelve el orden nuevo, sin mutar el original. */
+export const swapAt = (list: string[], a: number, b: number): string[] => {
+  const next = [...list];
+  if (a < 0 || b < 0 || a >= next.length || b >= next.length) return next;
+  [next[a], next[b]] = [next[b], next[a]];
+  return next;
+};
+
+/** Posiciones de cada columna en un orden dado, para usar como pista al reinsertar. */
+export const indexHints = (order: string[]): Record<string, number> => {
+  const hints: Record<string, number> = {};
+  order.forEach((col, i) => { hints[col] = i; });
+  return hints;
+};
+
+/**
  * Resuelve que columnas mostrar a partir de lo que hay guardado, y devuelve
  * tambien la version a persistir.
  *
