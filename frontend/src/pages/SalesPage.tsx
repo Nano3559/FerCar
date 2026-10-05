@@ -426,6 +426,10 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
             price2: Number(l.price2),
             quantity: l.quantity,
             availableStock: l.availableStock,
+            // Sin esto, una venta cargada desde una cotización no tenía con qué
+            // mostrar de dónde sale el faltante: el selector necesita el stock de
+            // cada tienda y almacén, no solo el de la tienda que cobra.
+            stockByLocation: Array.isArray(l.stockByLocation) ? l.stockByLocation : undefined,
           })
         );
         const quoteCartId = `q${quoteIdFromNav}-${Date.now()}`;
@@ -555,7 +559,9 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [openSaleFilters, setOpenSaleFilters] = useState<OpenSaleFilters>(EMPTY_OPEN_SALE_FILTERS);
   const [showOpenSaleFilters, setShowOpenSaleFilters] = useState(false);
   // stock: cuanto hay en la tienda de la venta, para saber cuanto falta pedir.
-  const [openSalePending, setOpenSalePending] = useState<{ productId: number; quantity: number; unitPrice: number; priceTier: 1 | 2; name: string; itemCode: string; stock: number }[]>([]);
+  const [openSalePending, setOpenSalePending] = useState<{ productId: number; quantity: number; unitPrice: number; priceTier: 1 | 2; name: string; itemCode: string; stock: number; stockByLocation?: StockByLocation[] }[]>([]);
+  // Reparto del faltante al ampliar una venta ya creada, igual que en el carrito.
+  const [openSaleAllocations, setOpenSaleAllocations] = useState<OriginAllocation[]>([]);
   const [openSalePayMethod, setOpenSalePayMethod] = useState("EFECTIVO");
   const [openSalePayAmount, setOpenSalePayAmount] = useState("");
   const [openSaleBusy, setOpenSaleBusy] = useState(false);
@@ -571,6 +577,12 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     : 0;
   const openSaleBalance = openSale ? Math.max(openSale.total - openSalePaid, 0) : 0;
   const openSaleAdded = openSalePending.reduce((s, c) => s + c.quantity * c.unitPrice, 0);
+  // Lo que se puede repartir al ampliar: solo las lineas que traen el desglose
+  // por ubicacion. El backend lo vuelve a validar, esto es para no dejar al
+  // vendedor escribiendo contra un 400.
+  const openSaleAllocateable: AllocateableItem[] = openSalePending
+    .filter((c) => c.stockByLocation)
+    .map((c) => ({ productId: c.productId, quantity: c.quantity, stockByLocation: c.stockByLocation! }));
 
   // ==================== AMPLIAR VENTA DEPARTAMENTAL ====================
   const openSaleHasFilters = useMemo(
@@ -635,7 +647,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       if (found) {
         return prev.map((c) => (c === found ? { ...c, quantity: c.quantity + 1 } : c));
       }
-      return [...prev, { productId: p.id, quantity: 1, unitPrice: precio, priceTier: tier, name: p.name, itemCode: p.itemCode, stock: p.stock }];
+      return [...prev, { productId: p.id, quantity: 1, unitPrice: precio, priceTier: tier, name: p.name, itemCode: p.itemCode, stock: p.stock, stockByLocation: p.stockByLocation }];
     });
     setOpenSaleSearch("");
     setOpenSaleResults([]);
@@ -649,14 +661,22 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
 
   const submitOpenSaleItems = async () => {
     if (!openSale || openSalePending.length === 0) return;
+    // Igual que en el carrito: nada se amplía con el faltante a medio decidir.
+    const openSaleStoreId = openSale.location?.id ?? null;
+    if (openSaleStoreId !== null && hayFaltantesSinAsignar(openSaleAllocateable, openSaleAllocations, openSaleStoreId)) {
+      toast.error("Falta decidir de qué ubicación sale el faltante de los productos nuevos");
+      return;
+    }
     try {
       setOpenSaleBusy(true);
       const res = await api.post(`/sales/${openSale.id}/items`, {
         items: openSalePending.map((c) => ({ productId: c.productId, quantity: c.quantity, unitPrice: c.unitPrice })),
+        ...(openSaleAllocations.length > 0 ? { allocations: openSaleAllocations } : {}),
       });
       toast.success(`Venta ${saleCode(openSale.id, openSale.saleDate)} ampliada`);
       setOpenSale({ ...(res.data as SaleRecord), id: openSale.id, saleDate: openSale.saleDate });
       setOpenSalePending([]);
+      setOpenSaleAllocations([]);
       setSales((prev) => prev.map((s) => (s.id === openSale.id ? { ...s, ...(res.data as SaleRecord) } : s)));
       setHistTotal((t) => t);
       fetchHistory();
@@ -3079,25 +3099,28 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                         </button>
                         <span className="text-xs text-gray-300 w-20 text-right">{formatBs(c.quantity * c.unitPrice)}</span>
                         {c.stock < c.quantity && (
-                          <button onClick={() => openRequestProduct(
-                            {
-                              id: c.productId, name: c.name, itemCode: c.itemCode, stock: c.stock,
-                              manufacturer: "", brand: "", model: "", year: null, detail: null,
-                              oemCode: null, factoryCode: null, categoryId: null, category: null,
-                              price1: c.unitPrice, price2: 0, wholesalePrice: null, cost: null, unitPrice: c.unitPrice,
-                              image: null, detalles: null,
-                            } as unknown as Product,
-                            { id: openSale!.location.id, name: openSale!.location.name },
-                            c.quantity - c.stock
-                          )}
-                            title="Pedir a almacén u otra tienda lo que falta"
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs bg-amber-600/15 text-amber-400 hover:bg-amber-600 hover:text-white transition-colors whitespace-nowrap">
-                            <Send size={12} /> Pedir {c.quantity - c.stock}
-                          </button>
+                          <span className="text-xs text-amber-400 whitespace-nowrap">
+                            falta {c.quantity - c.stock}
+                          </span>
                         )}
                       </div>
                     </div>
                   ))}
+                  {/* Reparto del faltante de lo ampliado, igual que en el carrito.
+                      Antes solo había un botón "Pedir N" que mandaba todo a una sola
+                      ubicación elegida en un modal aparte. */}
+                  {openSale && openSale.location && openSalePending.some((c) => c.stockByLocation) && (
+                    <div className="px-3 py-3 border-t border-dark-700/40">
+                      <OrigenesSelector
+                        items={openSaleAllocateable}
+                        allocations={openSaleAllocations}
+                        storeLocationId={openSale.location.id}
+                        storeName={openSale.location.name}
+                        onChange={setOpenSaleAllocations}
+                        disabled={openSaleBusy}
+                      />
+                    </div>
+                  )}
                   <div className="px-3 py-2.5 bg-dark-800/30 flex justify-end">
                     <button onClick={submitOpenSaleItems} disabled={openSaleBusy}
                       className="px-4 py-2 rounded-xl text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white transition-all disabled:opacity-50">

@@ -286,15 +286,40 @@ router.get("/:id/carrito", async (req: AuthRequest, res: Response) => {
         where: { id: { in: ids } },
         select: { id: true, itemCode: true, name: true, brand: true, price1: true, price2: true },
       }),
+      // Stock de TODAS las ubicaciones, no solo de la de la cotización: el
+      // carrito usa el desglose para preguntarle al vendedor de dónde sale la
+      // mercadería que falta en esa tienda. Con el stock de una sola ubicación,
+      // una venta cargada desde una cotización nunca tenía con qué mostrar las
+      // otras tiendas y almacenes.
       prisma.inventory.findMany({
-        where: { productId: { in: ids }, locationId: quote.locationId },
-        select: { productId: true, stock: true },
+        where: { productId: { in: ids } },
+        select: {
+          productId: true,
+          stock: true,
+          location: { select: { id: true, name: true, type: true } },
+        },
       }),
       prisma.location.findUnique({ where: { id: quote.locationId }, select: { id: true, name: true } }),
     ]);
 
     const byId = new Map(products.map((p) => [p.id, p]));
-    const stockById = new Map(stocks.map((s) => [s.productId, s.stock]));
+    // Todas las filas de stock de un producto, agrupadas para buscarlas por id.
+    const stockRowsById = new Map<number, { stock: number; locationId: number; locationName: string; locationType: string }[]>();
+    for (const row of stocks) {
+      const lista = stockRowsById.get(row.productId) ?? [];
+      lista.push({
+        stock: row.stock,
+        locationId: row.location.id,
+        locationName: row.location.name,
+        locationType: row.location.type,
+      });
+      stockRowsById.set(row.productId, lista);
+    }
+    // El stock de la tienda donde se cobra: la fila de ESA ubicación, no la última
+    // que se leyó. El desglose completo va aparte, en stockByLocation.
+    const stockById = new Map(
+      stocks.filter((s) => s.location.id === quote.locationId).map((s) => [s.productId, s.stock]),
+    );
 
     const lines = quote.items.map((i) => {
       const p = byId.get(i.productId);
@@ -312,6 +337,7 @@ router.get("/:id/carrito", async (req: AuthRequest, res: Response) => {
           price1: null,
           price2: null,
           availableStock: 0,
+          stockByLocation: [],
           sinStock: true,
           noDisponible: true,
         };
@@ -336,6 +362,7 @@ router.get("/:id/carrito", async (req: AuthRequest, res: Response) => {
         price1,
         price2,
         availableStock,
+        stockByLocation: stockRowsById.get(p.id) ?? [],
         sinStock: availableStock < i.quantity,
         noDisponible: false,
       };

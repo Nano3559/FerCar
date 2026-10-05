@@ -1,4 +1,4 @@
-import { test } from "node:test";
+﻿import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   planFulfillment,
@@ -377,3 +377,61 @@ function soloTiendaCon(
 ) {
   return planFulfillment([{ productId, quantity: cantidad }], stock, TIENDA, allocations);
 }
+// --- Ampliar una venta ya creada ---
+// Ampliar una venta departamental pasa por el mismo planificador que crearla:
+// el origen elegido por el vendedor decide de donde sale cada unidad. Estos
+// tests fijan ese comportamiento para que unaampliacion nunca se comportecomo
+// la venta nueva.
+
+test("ampliar con el origen elegido reparte igual que una venta nueva", () => {
+  const plan = soloTiendaCon(1, 20, { 1: snap(0, [{ locationId: SILES, stock: 3 }], [{ locationId: CHIQUICOLLO, stock: 50 }]) }, [
+    { productId: 1, fromLocationId: SILES, quantity: 3 },
+    { productId: 1, fromLocationId: CHIQUICOLLO, quantity: 17 },
+  ]);
+  assert.equal(plan.lines[0].delivered, 0);
+  assert.equal(plan.lines[0].sellable, 20);
+  assert.deepEqual(ordenado(plan.deductions), [
+    { productId: 1, locationId: SILES, units: 3 },
+    { productId: 1, locationId: CHIQUICOLLO, units: 17 },
+  ]);
+});
+
+test("ampliar descuenta del origen elegido, no de la tienda que cobra", () => {
+  // La tienda donde se cobra tiene 0: si el descuento se hiciera como antes,
+  // ese 0 terminaria en negativo.
+  const plan = soloTiendaCon(1, 5, { 1: snap(0, [{ locationId: SILES, stock: 3 }], [{ locationId: CHIQUICOLLO, stock: 9 }]) }, [
+    { productId: 1, fromLocationId: SILES, quantity: 3 },
+    { productId: 1, fromLocationId: CHIQUICOLLO, quantity: 2 },
+  ]);
+  assert.ok(
+    !plan.deductions.some((d) => d.locationId === TIENDA),
+    "la tienda que cobra no aporta nada y no debe descontar",
+  );
+});
+
+test("ampliar sin decidir el origen se rechaza con el detalle", () => {
+  assert.throws(
+    () => soloTiendaCon(1, 20, { 1: snap(0, [{ locationId: SILES, stock: 3 }], [{ locationId: CHIQUICOLLO, stock: 50 }]) }, []),
+    (e: any) => e instanceof FulfillmentError && e.problemas.some((p: string) => /Falta elegir/.test(p)),
+  );
+});
+
+test("ampliar pidiendo mas de lo que hay en un origen se rechaza nombrando la ubicacion", () => {
+  assert.throws(
+    () => soloTiendaCon(1, 20, { 1: snap(0, [{ locationId: SILES, stock: 3 }], [{ locationId: CHIQUICOLLO, stock: 50 }]) }, [
+      { productId: 1, fromLocationId: SILES, quantity: 8 },
+      { productId: 1, fromLocationId: CHIQUICOLLO, quantity: 12 },
+    ]),
+    (e: any) => e instanceof FulfillmentError && e.problemas.some((p: string) => /SILES/.test(p) || /TIENDA 11/.test(p)),
+  );
+});
+
+test("en una ampliacion lo que aporta la tienda propia entra como entregado", () => {
+  const plan = soloTiendaCon(1, 10, { 1: snap(4, [{ locationId: SILES, stock: 8 }], []) }, [
+    { productId: 1, fromLocationId: SILES, quantity: 6 },
+  ]);
+  assert.equal(plan.lines[0].delivered, 4);
+  assert.equal(plan.lines[0].pending, 6);
+  assert.equal(plan.lines[0].origenesPendientes.length, 1);
+  assert.equal(plan.lines[0].origenesPendientes[0].locationId, SILES);
+});

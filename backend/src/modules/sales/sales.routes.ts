@@ -666,31 +666,28 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
       const fresh = await tx.sale.findUnique({ where: { id: saleId }, include: { items: true } });
       if (!fresh) throw new Error("Venta no encontrada");
 
-      // Ampliar una venta ya registrada es distinto a cobrarla: aqui ya hay dinero
-      // registrado y pagos parciales, asi que no se recorta nada en silencio.
-      // Se avisa cuanto existe en total (tienda + otras tiendas + almacenes)
-      // para que el error no diga "no hay" cuando si hay en otro lado.
+      // Ampliar una venta ya registrada es distinto a cobrarla: aqui ya hay
+      // dinero registrado y pagos parciales, asi que no se recorta nada en
+      // silencio. El faltante lo reparte el vendedor como en una venta nueva y
+      // cada origen genera su propia solicitud.
       const stockAmpliar = await loadStockSnapshot(
         tx,
         validItems.map((i) => i.productId),
         sale.locationId,
       );
-      for (const item of demandByProduct(validItems)) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product) throw new Error(`Producto con ID ${item.productId} no encontrado`);
-
-        const snap = stockAmpliar[item.productId];
-        const total =
-          (snap?.store ?? 0) + (snap?.otherStores ?? 0) + (snap?.warehouses ?? 0);
-        if (total < item.quantity) {
-          throw new Error(
-            `Stock insuficiente para "${product.name}". Disponible: ${total} (en tienda ${snap?.store ?? 0}, ` +
-            `otras tiendas ${snap?.otherStores ?? 0}, almacenes ${snap?.warehouses ?? 0}), solicitado: ${item.quantity}`,
-          );
-        }
+      const nombresAmpliar: Record<number, string> = {};
+      for (const productId of new Set(validItems.map((i) => i.productId))) {
+        const product = await tx.product.findUnique({ where: { id: productId }, select: { name: true } });
+        if (!product) throw new Error(`Producto con ID ${productId} no encontrado`);
+        nombresAmpliar[productId] = product.name;
       }
-      const stockUpdates: { productId: number; quantity: number }[] =
-        demandByProduct(validItems).map((i) => ({ productId: i.productId, quantity: i.quantity }));
+      const planAmpliar = planFulfillment(
+        validItems,
+        stockAmpliar,
+        sale.locationId,
+        Array.isArray(req.body.allocations) ? req.body.allocations : [],
+        nombresAmpliar,
+      );
 
       // Cada linea conserva su precio. Si al ampliar se agrega el mismo producto
       // a otro precio (P1 vs P2) se crea una linea nueva: antes se reescribia el
@@ -726,12 +723,30 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
         added += item.quantity * item.unitPrice;
       }
 
+      // Lo entregado de cada linea: lo que aporta la tienda donde se cobra
+      // entra entregado, lo que viene de otro origen queda pendiente. Solo se
+      // cuenta lo NUEVO de esta ampliacion; lo que la linea ya traia entregado
+      // se conserva.
+      const entregadoAntesPorLinea = new Map<string, number>();
+      for (const existing of fresh.items) {
+        entregadoAntesPorLinea.set(
+          lineKey(existing.productId, Number(existing.unitPrice)),
+          Number(existing.deliveredQuantity),
+        );
+      }
+
       for (const data of byLine.values()) {
         const subtotal = data.quantity * data.unitPrice;
+        // Busca la linea del plan que corresponde a esta (producto, precio).
+        const planLine = planAmpliar.lines.find(
+          (l) => l.productId === data.productId && Number(validItems[l.index].unitPrice) === Number(data.unitPrice),
+        );
+        const entregado = Math.min(data.quantity, (entregadoAntesPorLinea.get(lineKey(data.productId, data.unitPrice)) ?? 0) + (planLine?.delivered ?? 0));
+
         if (data.id) {
           await tx.saleItem.update({
             where: { id: data.id },
-            data: { quantity: data.quantity, subtotal },
+            data: { quantity: data.quantity, subtotal, deliveredQuantity: entregado },
           });
         } else {
           await tx.saleItem.create({
@@ -741,6 +756,7 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
               quantity: data.quantity,
               unitPrice: data.unitPrice,
               subtotal,
+              deliveredQuantity: entregado,
             },
           });
         }
@@ -749,21 +765,46 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
       const newTotal = Number(fresh.total) + added;
       await tx.sale.update({ where: { id: saleId }, data: { total: newTotal, status: "PENDIENTE" } });
 
-      for (const update of stockUpdates) {
-        const inv = await tx.inventory.findUnique({
-          where: { productId_locationId: { productId: update.productId, locationId: sale.locationId } },
+      // Descuenta de la ubicacion que REALMENTE aporto cada unidad. Antes se
+      // descontaba todo de la tienda que cobra, aunque el planificador hubiera
+      // tomado mercadería de otras tiendas: el stock de la tienda terminaba en
+      // negativo y la mercadería pedida no sobraba en ninguna parte.
+      for (const d of planAmpliar.deductions) {
+        const inv = await tx.inventory.update({
+          where: { productId_locationId: { productId: d.productId, locationId: d.locationId } },
+          data: { stock: { decrement: d.units } },
         });
-        if (inv) {
-          await tx.inventory.update({
-            where: { id: inv.id },
-            data: { stock: inv.stock - update.quantity },
-          });
+        if (inv.stock <= (inv.minStock ?? 0)) {
           await ensureRestockRequest(tx, {
-            productId: update.productId,
-            destinationId: sale.locationId,
+            productId: d.productId,
+            destinationId: d.locationId,
             requestedById: user.userId,
             source: "VENTA",
-            note: "Reposición automática: la venta dejó el stock bajo el mínimo",
+            note: "Reposición automática: la ampliación dejó el stock bajo el mínimo",
+          });
+        }
+      }
+
+      // Una solicitud por cada origen que eligio el vendedor, atada a la linea
+      // que va a completar. Igual que al crear la venta.
+      for (const line of planAmpliar.lines) {
+        if (line.origenesPendientes.length === 0) continue;
+        const unitPrice = Number(validItems[line.index].unitPrice);
+        const saleItem = await tx.saleItem.findFirst({
+          where: { saleId, productId: line.productId, unitPrice },
+          orderBy: { id: "asc" },
+        });
+        for (const origen of line.origenesPendientes) {
+          await ensureRestockRequest(tx, {
+            productId: line.productId,
+            destinationId: sale.locationId,
+            requestedById: user.userId,
+            quantity: origen.quantity,
+            source: "VENTA",
+            fromLocationId: origen.locationId,
+            saleId,
+            saleItemId: saleItem?.id,
+            note: `Ampliación de venta #${saleId}: ${origen.quantity} unidad(es) pendientes de llegar`,
           });
         }
       }
@@ -790,6 +831,11 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
 
     res.json(result);
   } catch (error: any) {
+    // Igual que al crear la venta: si al vendedor le falta decidir de dónde sale
+    // la mercadería, es un problema del formulario y se devuelve con el detalle.
+    if (error instanceof FulfillmentError) {
+      return res.status(400).json({ message: error.message, problemas: error.problemas });
+    }
     console.error("Error al ampliar venta:", error);
     res.status(400).json({ message: error.message || "Error interno del servidor" });
   }
