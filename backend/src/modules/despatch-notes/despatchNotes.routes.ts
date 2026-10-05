@@ -422,12 +422,26 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
     const requestByProduct = new Map<number, number>();
     for (const r of note.requests) requestByProduct.set(r.productId, r.id);
 
+    // Solicitudes que nacieron de una venta: el origen YA se descontó cuando se
+    // creó la solicitud, para que dos ventas no pudieran pedir la misma unidad.
+    // Si aquí también se descontara, la mercadería se contaría dos veces y del
+    // origen desaparecerían más unidades de las que salieron.
+    const origenYaDescontado = new Set<string>();
+    for (const r of note.requests) {
+      if (!r.saleItemId) continue;
+      const origen = r.fromLocationId ?? r.locationId;
+      origenYaDescontado.add(`${r.productId}:${origen}`);
+    }
+
     const faltantes: string[] = [];
     for (const item of note.items) {
       if (item.locationId === destinationId) {
         faltantes.push(`${item.name}: el origen y el destino son la misma ubicación`);
         continue;
       }
+      // El origen ya bajó al crear la solicitud: no se vuelve a descontar.
+      if (origenYaDescontado.has(`${item.productId}:${item.locationId}`)) continue;
+
       const origen = await prisma.inventory.findUnique({
         where: { productId_locationId: { productId: item.productId, locationId: item.locationId } },
       });
@@ -444,22 +458,29 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
 
     const updated = await prisma.$transaction(async (tx) => {
       for (const item of note.items) {
-        // Bloqueo pesimista del origen para no sobregirar stock.
-        const locked = await tx.$queryRaw<{ id: number; stock: number }[]>`
-          SELECT id, stock FROM "Inventory"
-          WHERE "productId" = ${item.productId} AND "locationId" = ${item.locationId}
-          FOR UPDATE`;
+        // Si el origen ya se descontó al crear la solicitud de la venta, aquí no
+        // se toca: la mercadería ya salió de ahí. Lo que sí falta es que llegue a
+        // la tienda destino.
+        const yaDescontado = origenYaDescontado.has(`${item.productId}:${item.locationId}`);
 
-        if (!locked.length || locked[0].stock < item.quantity) {
-          throw new Error(
-            `Stock insuficiente en ${item.locationName} para ${item.name} (${item.itemCode})`
-          );
+        if (!yaDescontado) {
+          // Bloqueo pesimista del origen para no sobregirar stock.
+          const locked = await tx.$queryRaw<{ id: number; stock: number }[]>`
+            SELECT id, stock FROM "Inventory"
+            WHERE "productId" = ${item.productId} AND "locationId" = ${item.locationId}
+            FOR UPDATE`;
+
+          if (!locked.length || locked[0].stock < item.quantity) {
+            throw new Error(
+              `Stock insuficiente en ${item.locationName} para ${item.name} (${item.itemCode})`
+            );
+          }
+
+          await tx.inventory.update({
+            where: { id: locked[0].id },
+            data: { stock: { decrement: item.quantity } },
+          });
         }
-
-        await tx.inventory.update({
-          where: { id: locked[0].id },
-          data: { stock: { decrement: item.quantity } },
-        });
 
         const invDest = await tx.inventory.findUnique({
           where: { productId_locationId: { productId: item.productId, locationId: destinationId } },

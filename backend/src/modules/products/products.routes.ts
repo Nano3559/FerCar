@@ -199,6 +199,16 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
         stockTotal,
       };
       if (isAuth) {
+        // Desglose por ubicación: sin esto la pantalla de venta no puede
+        // proponerle al vendedor de qué tienda o almacén pedir lo que falta.
+        // Solo para quien tiene sesión: el endpoint aceptaoptionalAuth y sin
+        // esta guarda cualquiera vería el stock de toda la cadena.
+        item.stockByLocation = p.inventories.map((inv) => ({
+          locationId: inv.locationId,
+          locationName: inv.location.name,
+          locationType: inv.location.type,
+          stock: inv.stock,
+        }));
         item.price1 = p.price1;
         item.price2 = p.price2;
         item.wholesalePrice = p.wholesalePrice;

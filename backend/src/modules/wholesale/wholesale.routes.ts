@@ -7,7 +7,7 @@ import { AuthRequest } from "../../shared/types";
 import { saleDateRange } from "../../utils/dateRange";
 import { ensureRestockRequest } from "../../utils/restockRequest";
 import { validateAndMergeItems } from "../../utils/saleItems";
-import { planFulfillment, loadStockSnapshot, summarizeFulfillment } from "../../utils/fulfillment";
+import { planFulfillment, loadStockSnapshot, summarizeFulfillment, FulfillmentError } from "../../utils/fulfillment";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -63,6 +63,10 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     // Validar, deduplicar y resolver precio unitario de los ítems
     const validItems = validateAndMergeItems(items);
 
+    // De dónde sale la mercadería que no está en esta tienda. Lo elige el
+    // vendedor en pantalla: [{ productId, fromLocationId, quantity }].
+    const allocations = Array.isArray(req.body.allocations) ? req.body.allocations : [];
+
     // Datos de entrega: usar los enviados explícitamente o inferir del payload
     const entregaParaQuien = paraQuien || clienteName || null;
     const entregaLugar = lugarEntrega || null;
@@ -88,20 +92,20 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // Mismo reparto que en ventas locales y departamentales: primero la tienda
-      // donde se cobra, luego las demas tiendas, y lo que no hay en ninguna se
-      // pide al almacen y queda pendiente. Lo que no existe en ninguna parte se
-      // recorta de la venta. La mayorista, a diferencia de las otras, no se
-      // detiene ante el recorte: el pedido diferido es parte del negocio.
-      const stock = await loadStockSnapshot(tx, validItems.map((i) => i.productId), userLocationId);
-      const plan = planFulfillment(validItems, stock, userLocationId);
+      const productos = await tx.product.findMany({
+        where: { id: { in: validItems.map((i) => i.productId) } },
+        select: { id: true, name: true, itemCode: true },
+      });
+      const nombres: Record<number, string> = {};
+      for (const p of productos) nombres[p.id] = p.name;
 
-      for (const productId of new Set(validItems.map((i) => i.productId))) {
-        const product = await tx.product.findUnique({ where: { id: productId } });
-        if (!product) {
-          throw new Error(`Producto con ID ${productId} no encontrado`);
-        }
-      }
+      // Mismo reparto que en ventas locales y departamentales: la tienda donde se
+      // cobra se consume sola y el faltante lo reparte el vendedor entre otras
+      // tiendas y almacenes. Cada origen genera su propia solicitud. La
+      // mayorista, a diferencia de las otras, tolera mejor el pedido diferido,
+      // pero igual: si el faltante no esta asignado, la venta no se guarda.
+      const stock = await loadStockSnapshot(tx, validItems.map((i) => i.productId), userLocationId);
+      const plan = planFulfillment(validItems, stock, userLocationId, allocations, nombres);
 
       const stockUpdates = plan.deductions.map((d) => ({
         productId: d.productId,
@@ -183,21 +187,35 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         }
       }
 
-  // Solicitud al almacén por lo que quedó pendiente de llegar. Cada una queda
-  // atada a su línea de venta para poder cerrar el pedido cuando llegue.
+  // Una solicitud por cada origen que eligió el vendedor. Cada una queda atada
+  // a su línea de venta para poder cerrar el pedido cuando llegue, y el origen ya
+  // quedó descontado: la nota de despacho lo suma a esta tienda sin descontarlo
+  // de nuevo.
   for (const line of plan.lines) {
-    if (line.pending <= 0) continue;
-    const saleItem = sale.items.find((i) => i.productId === line.productId && i.quantity === line.sellable);
-    await ensureRestockRequest(tx, {
-      productId: line.productId,
-      destinationId: userLocationId,
-      requestedById: user.userId,
-      quantity: line.pending,
-      source: "VENTA",
-      saleId: sale.id,
-      saleItemId: saleItem?.id,
-      note: `Venta #${sale.id}: ${line.pending} unidad(es) pendientes de llegar`,
-    });
+    if (line.origenesPendientes.length === 0) continue;
+    // También se busca por precio: el mismo producto puede entrar dos veces (P1 y
+        // P2) y, si ambas tuvieran igual cantidad, atar la solicitud a la línea
+        // equivocada haría que la mercadería se cerrara contra la venta que no es.
+        const original: any = validItems[line.index];
+        const saleItem = sale.items.find(
+          (i) =>
+            i.productId === line.productId &&
+            i.quantity === line.sellable &&
+            Number(i.unitPrice) === Number(original.unitPrice || original.wholesalePrice || 0)
+        );
+    for (const origen of line.origenesPendientes) {
+      await ensureRestockRequest(tx, {
+        productId: line.productId,
+        destinationId: userLocationId,
+        requestedById: user.userId,
+        quantity: origen.quantity,
+        source: "VENTA",
+        fromLocationId: origen.locationId,
+        saleId: sale.id,
+        saleItemId: saleItem?.id,
+        note: `Venta #${sale.id}: ${origen.quantity} unidad(es) pendientes de llegar`,
+      });
+    }
   }
 
   // Se devuelve qué productos quedaron pendientes y cuánto se pidió, para
@@ -243,6 +261,9 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(result);
   } catch (error: any) {
+    if (error instanceof FulfillmentError) {
+      return res.status(400).json({ message: error.message, problemas: error.problemas });
+    }
     console.error("Error al crear venta mayorista:", error);
     res.status(400).json({ message: error.message || "Error interno del servidor" });
   }

@@ -17,6 +17,14 @@ import html2canvas from "html2canvas";
 import { saleCode } from "../utils/documentCodes";
 import { downloadElementAsPdf } from "../utils/quotePdf";
 import QuoteDocument from "../components/quotes/QuoteDocument";
+import OrigenesSelector from "../components/ui/OrigenesSelector";
+import {
+  OriginAllocation,
+  AllocateableItem,
+  StockByLocation,
+  hayFaltantesSinAsignar,
+  resumenDeFaltantes,
+} from "../utils/origenes";
 
 const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Datos de envío", "Datos de factura", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Estado", "Pagos", "Nota"];
 const CART_COLUMNS = ["Producto", "Precio", "Cantidad", "Subtotal", "Eliminar"];
@@ -31,6 +39,7 @@ interface Product {
   wholesalePrice: string | null; stock: number; stockTotal?: number; category: string | null;
   image: string | null; oemCode: string | null; factoryCode: string | null;
   detail: string | null; detalles: string | null;
+  stockByLocation?: StockByLocation[];
 }
 
 interface ProductFilters {
@@ -47,6 +56,8 @@ interface CartItem {
   productId: number; itemCode: string; name: string; brand: string;
   unitPrice: number; priceTier: 1 | 2; price1: number; price2: number;
   quantity: number; availableStock: number;
+  /** Stock del producto en cada ubicación, para proponer de dónde pedir lo que falta. */
+  stockByLocation?: StockByLocation[];
 }
 
 interface Cart {
@@ -337,6 +348,18 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
    */
   const clearCartById = (id: string, items: CartItem[] = []) =>
     setCarts((prev) => prev.map((c) => (c.id === id ? { ...c, items } : c)));
+
+  // --- Reparto del faltante entre ubicaciones ---
+  // El stock de la tienda donde se cobra se usa solo. Lo que falta lo decide el
+  // vendedor: cada origen elegido genera su propia solicitud al guardar la venta.
+  const [allocations, setAllocations] = useState<OriginAllocation[]>([]);
+  const storeLocationId = selectedLocationId === "" ? null : selectedLocationId;
+  const storeName = locations.find((l) => l.id === storeLocationId)?.name ?? "";
+  const allocateable: AllocateableItem[] = cart
+    .filter((c) => c.stockByLocation)
+    .map((c) => ({ productId: c.productId, quantity: c.quantity, stockByLocation: c.stockByLocation! }));
+  const faltanPorAsignar =
+    storeLocationId === null ? 0 : resumenDeFaltantes(allocateable, allocations, storeLocationId).filter((r) => !r.completo).length;
 
   const createNewCart = () => {
     const id = `c${Date.now()}`;
@@ -761,28 +784,31 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
   const addToCart = (p: Product, tier: 1 | 2 = 2, qty: number = 1) => {
     const price = tier === 2 && Number(p.price2) > 0 ? Number(p.price2) : Number(p.price1);
     const disponible = typeof p.stockTotal === "number" ? p.stockTotal : p.stock;
-    // No se bloquea agregar mas de lo que hay en la tienda: el reparto usa
-    // primero la tienda, luego las otras tiendas y por ultimo el almacen, y lo
-    // que no existe en ninguna parte se recorta al cobrar. Cortar aqui impedia
-    // vender lo que si existe y avisar de lo que no.
+    // Agregar mas de lo que hay en la tienda no se bloquea: el faltante se
+    // reparte entre las otras tiendas y los almacenes al cobrar. Lo que no
+    // existe en ninguna parte se avisa para que el vendedor lo retire o lo
+    // pida antes de confirmar.
     updateActiveCart((prev) => {
       const existing = prev.find((c) => c.productId === p.id);
       if (existing) {
         return prev.map((c) =>
-          c.productId === p.id ? { ...c, quantity: c.quantity + qty, priceTier: tier, unitPrice: price } : c
+          c.productId === p.id
+            ? { ...c, quantity: c.quantity + qty, priceTier: tier, unitPrice: price, stockByLocation: p.stockByLocation }
+            : c
         );
       }
       return [...prev, {
         productId: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
         unitPrice: price, priceTier: tier, price1: Number(p.price1), price2: Number(p.price2),
         quantity: qty, availableStock: p.stock,
+        stockByLocation: p.stockByLocation,
       }];
     });
 
     if (qty > disponible) {
       toast(
         `Solo existen ${disponible} unidad(es) entre todas las ubicaciones. ` +
-        `Se agregaron ${qty} al carrito: al cobrar se vendera lo que exista y se avisara el faltante.`,
+        `Al cobrar vas a tener que elegir de qué ubicación sale el faltante.`,
         { duration: 7000 }
       );
     } else if (qty > p.stock) {
@@ -943,10 +969,15 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
     }));
   };
 
-  const removeItem = (productId: number) =>
+  const removeItem = (productId: number) => {
     updateActiveCart((prev) => prev.filter((c) => c.productId !== productId));
+    setAllocations((prev) => prev.filter((a) => a.productId !== productId));
+  };
 
-  const clearCart = () => updateActiveCart(() => []);
+  const clearCart = () => {
+    updateActiveCart(() => []);
+    setAllocations([]);
+  };
 
   const cartTotal = cart.reduce((sum, c) => sum + c.unitPrice * c.quantity, 0);
   const cartItemCount = cart.reduce((sum, c) => sum + c.quantity, 0);
@@ -1059,6 +1090,17 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
   const confirmSale = async () => {
     if (cart.length === 0) { toast.error("Agrega productos al carrito primero"); return; }
 
+    // Nada se cobra con el faltante a medio decidir: el backend tambien lo
+    // rechaza, pero avisar aca evita el viaje de ida y vuelta.
+    if (storeLocationId !== null && hayFaltantesSinAsignar(allocateable, allocations, storeLocationId)) {
+      toast.error(
+        faltanPorAsignar === 1
+          ? "Falta decidir de qué ubicación sale 1 producto"
+          : `Falta decidir de qué ubicación salen ${faltanPorAsignar} productos`
+      );
+      return;
+    }
+
     // El carrito que se cobra queda fijado aqui. Registrar la venta tarda, y si
     // el vendedor cambia de carrito mientras tanto, limpiar el "activo" al final
     // vaciaba el carrito equivocado y dejaba este con los productos ya cobrados.
@@ -1138,6 +1180,10 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
         })),
       };
 
+      // Solo si el faltante quedo asignado: si todo salio de la tienda no hace
+      // falta mandarlo y el backend lo toma como vacio.
+      if (allocations.length > 0) payload.allocations = allocations;
+
       if (savedQuote) {
         // La cotizacion que salio impresa se cierra como CONVERTIDA y queda
         // enlazada a esta venta. Solo enlaza si el carrito no cambio desde la
@@ -1203,16 +1249,18 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
       clearCartById(cartVendidoId);
       setSavedQuote(null);
       setActiveTab("venta");
+      setAllocations([]);
       toast.success("¡Venta registrada exitosamente!");
 
-      // Lo que no habia en la tienda queda pedido al almacen. El vendedor ya
-      // cobro, asi que se le dice de entrada para que no lo olvide al entregar.
+      // Lo que no habia en la tienda queda pedido a las ubicaciones que eligio el
+      // vendedor. El vendedor ya cobro, asi que se le dice de entrada para que no
+      // lo olvide al entregar.
       const pendientes = res.data.entrega?.detalle || [];
       if (pendientes.length > 0) {
         const detalle = pendientes
           .map((p: any) => `${p.nombre} (${p.entregadas} entregadas, ${p.pendientes} pendientes)`)
           .join("; ");
-        toast(`Entrega parcial: se pidio al almacen. ${detalle}`, { duration: 9000 });
+        toast(`Entrega parcial: ya se generaron las solicitudes de pedido. ${detalle}`, { duration: 9000 });
       }
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Error al registrar la venta");
@@ -1943,6 +1991,18 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                   </div>
                 ))}
               </div>
+
+              {storeLocationId !== null && allocateable.length > 0 && (
+                <div className="px-5 pt-4">
+                  <OrigenesSelector
+                    items={allocateable}
+                    allocations={allocations}
+                    storeLocationId={storeLocationId}
+                    storeName={storeName}
+                    onChange={setAllocations}
+                  />
+                </div>
+              )}
 
               <div className="px-5 py-4 border-t border-dark-700/50 bg-dark-900/20">
                 <div className="flex items-center justify-between mb-3">

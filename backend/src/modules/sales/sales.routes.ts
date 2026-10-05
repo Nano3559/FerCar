@@ -4,7 +4,7 @@ import { authenticate, authorize, requireTiendaLocation } from "../../shared/mid
 import { AuthRequest } from "../../shared/types";
 import { ensureRestockRequest } from "../../utils/restockRequest";
 import { validateAndMergeItems, demandByProduct } from "../../utils/saleItems";
-import { planFulfillment, loadStockSnapshot, summarizeFulfillment } from "../../utils/fulfillment";
+import { planFulfillment, loadStockSnapshot, summarizeFulfillment, FulfillmentError } from "../../utils/fulfillment";
 import { saleCode } from "../../shared/documentCodes";
 import { saleDateRange } from "../../utils/dateRange";
 
@@ -308,6 +308,11 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     // Validar y deduplicar ítems (evita sobreventa con productos repetidos)
     const validItems = validateAndMergeItems(items);
 
+    // De dónde sale la mercadería que no está en esta tienda. Lo elige el
+    // vendedor en pantalla: [{ productId, fromLocationId, quantity }]. El
+    // planificador lo exige completo y devuelve 400 con el detalle si no.
+    const allocations = Array.isArray(req.body.allocations) ? req.body.allocations : [];
+
     const user = req.user!;
     let userLocationId: number;
 
@@ -400,23 +405,22 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // Entrega parcial: se usa primero la tienda donde se cobra, luego las
-      // demas tiendas (la mercaderia ya existe, solo esta en otro punto) y lo
-      // que no hay en ninguna se pide al almacen y queda pendiente. Si no
-      // existe en ninguna parte, la venta se recorta a lo que hay.
-      const stock = await loadStockSnapshot(tx, validItems.map((i) => i.productId), userLocationId);
-      const plan = planFulfillment(validItems, stock, userLocationId);
-
       const productos = await tx.product.findMany({
         where: { id: { in: validItems.map((i) => i.productId) } },
         select: { id: true, name: true, itemCode: true },
       });
       const nombrePorId = new Map(productos.map((p) => [p.id, p]));
+      // Nombres planos para que los mensajes de error del planificador hablen de
+      // productos y no de ids.
+      const nombres: Record<number, string> = {};
+      for (const [id, p] of nombrePorId) nombres[id] = p.name;
 
-      for (const productId of new Set(validItems.map((i) => i.productId))) {
-        const product = await tx.product.findUnique({ where: { id: productId } });
-        if (!product) throw new Error(`Producto con ID ${productId} no encontrado`);
-      }
+      // Entrega parcial con origen elegido por el vendedor: se usa primero la
+      // tienda donde se cobra y el faltante lo reparte el, entre otras tiendas y
+      // almacenes. Cada origen genera su propia solicitud. Si el faltante no
+      // queda cubierto, la venta no se guarda.
+      const stock = await loadStockSnapshot(tx, validItems.map((i) => i.productId), userLocationId);
+      const plan = planFulfillment(validItems, stock, userLocationId, allocations, nombres);
 
       let totalSale = 0;
       const saleItemsData = plan.lines.map((line) => {
@@ -548,22 +552,35 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         }
       }
 
-      // Lo que quedo pendiente se pide al almacen. Cada solicitud queda
-      // enlazada a la linea de venta que va a completar, para que al llegar la
-      // mercaderia se sepa que pedido se cierra.
+      // Una solicitud por cada origen que eligio el vendedor. Cada una queda
+      // atada a su linea de venta para que al llegar la mercaderia se sepa que
+      // pedido cierra cada unidad, y el origen ya quedo descontado: la nota de
+      // despacho lo suma a esta tienda sin descontarlo de nuevo.
       for (const line of plan.lines) {
-        if (line.pending <= 0) continue;
-        const saleItem = sale.items.find((i) => i.productId === line.productId && i.quantity === line.sellable);
-        await ensureRestockRequest(tx, {
-          productId: line.productId,
-          destinationId: userLocationId,
-          requestedById: user.userId,
-          quantity: line.pending,
-          source: "VENTA",
-          saleId: sale.id,
-          saleItemId: saleItem?.id,
-          note: `Venta #${sale.id}: ${line.pending} unidad(es) pendientes de llegar`,
-        });
+        if (line.origenesPendientes.length === 0) continue;
+        // La linea se busca tambien por precio: un mismo producto puede entrar dos
+        // veces (P1 y P2) y, si ambas tuvieran la misma cantidad, atar la
+        // solicitud a la linea equivocada haria que la mercaderia se cerrara
+        // contra la venta equivocada.
+        const saleItem = sale.items.find(
+          (i) =>
+            i.productId === line.productId &&
+            i.quantity === line.sellable &&
+            Number(i.unitPrice) === Number(validItems[line.index].unitPrice)
+        );
+        for (const origen of line.origenesPendientes) {
+          await ensureRestockRequest(tx, {
+            productId: line.productId,
+            destinationId: userLocationId,
+            requestedById: user.userId,
+            quantity: origen.quantity,
+            source: "VENTA",
+            fromLocationId: origen.locationId,
+            saleId: sale.id,
+            saleItemId: saleItem?.id,
+            note: `Venta #${sale.id}: ${origen.quantity} unidad(es) pendientes de llegar`,
+          });
+        }
       }
 
       const etiqueta = (productId: number) => {
@@ -601,6 +618,12 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(result);
   } catch (error: any) {
+    // Elegir el origen de la mercadería es parte de la venta: si al vendedor le
+    // falta asignar algo, es un problema del formulario y se lo devolvemos con
+    // el detalle, no un error interno de 500.
+    if (error instanceof FulfillmentError) {
+      return res.status(400).json({ message: error.message, problemas: error.problemas });
+    }
     console.error("Error al crear venta:", error);
     res.status(400).json({ message: error.message || "Error interno del servidor" });
   }

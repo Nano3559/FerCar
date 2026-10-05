@@ -13,13 +13,22 @@ import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import * as XLSX from "xlsx";
 import { saleCode } from "../utils/documentCodes";
+import OrigenesSelector from "../components/ui/OrigenesSelector";
+import {
+  OriginAllocation,
+  AllocateableItem,
+  StockByLocation,
+  hayFaltantesSinAsignar,
+  resumenDeFaltantes,
+} from "../utils/origenes";
 
 interface WholesaleItem {
   productId: number; itemCode: string; name: string; brand: string;
   model: string; year: string; detail: string | null; quantity: number;
-  unitPrice: number; subtotal: number; factoryCode: string | null;
-  price1: number; price2: number;
-}
+unitPrice: number; subtotal: number; factoryCode: string | null;
+    price1: number; price2: number;
+    stockByLocation?: StockByLocation[];
+  }
 
 interface WholesaleSale {
   id: number; saleDate: string; total: number; type: string;
@@ -48,6 +57,7 @@ interface ProductResult {
   detalles: string | null; oemCode: string | null; factoryCode: string | null;
   wholesalePrice: number | null; stock: number; category: string | null;
   price1?: number; price2?: number;
+  stockByLocation?: StockByLocation[];
 }
 
 interface ProductFilters {
@@ -236,6 +246,7 @@ export default function WholesalePage() {
             detalles: p.detalles, oemCode: p.oemCode || null, factoryCode: p.factoryCode || null,
             wholesalePrice: p.wholesalePrice ? Number(p.wholesalePrice) : null,
             stock: Number(p.stock) || 0, category: p.category || null,
+            stockByLocation: p.stockByLocation || undefined,
           })));
           setSearchTotal(res.data.pagination?.total || 0);
           setSearchPages(res.data.pagination?.pages || 1);
@@ -265,6 +276,7 @@ export default function WholesalePage() {
       model: p.model, year: p.year, detail: p.detail,
       quantity: 1, unitPrice: price, subtotal: price, factoryCode: p.factoryCode,
       price1: Number(p.price1) || 0, price2: Number(p.price2) || 0,
+      stockByLocation: p.stockByLocation,
     }]);
   };
 
@@ -277,7 +289,22 @@ export default function WholesalePage() {
     setItems((prev) => prev.map((i) => i.productId === productId ? { ...i, unitPrice: price, subtotal: i.quantity * price } : i));
   };
 
-  const removeItem = (productId: number) => setItems((prev) => prev.filter((i) => i.productId !== productId));
+  const removeItem = (productId: number) => {
+    setItems((prev) => prev.filter((i) => i.productId !== productId));
+    setAllocations((prev) => prev.filter((a) => a.productId !== productId));
+  };
+
+  // --- Reparto del faltante entre ubicaciones ---
+  // El stock de la tienda donde se cobra se usa solo; lo que falta lo elige el
+  // vendedor y cada origen genera su propia solicitud al guardar la venta.
+  const [allocations, setAllocations] = useState<OriginAllocation[]>([]);
+  const storeLocationId = selectedStoreId === "" ? null : Number(selectedStoreId);
+  const storeName = histLocations.find((l) => l.id === storeLocationId)?.name ?? "";
+  const allocateable: AllocateableItem[] = items
+    .filter((i) => i.stockByLocation)
+    .map((i) => ({ productId: i.productId, quantity: i.quantity, stockByLocation: i.stockByLocation! }));
+  const faltanPorAsignar =
+    storeLocationId === null ? [] : resumenDeFaltantes(allocateable, allocations, storeLocationId).filter((r) => !r.completo);
 
   const openConfirm = () => {
     if (!items.length) { toast.error("Agrega al menos un producto"); return; }
@@ -298,6 +325,16 @@ export default function WholesalePage() {
       return;
     }
     if (validPayments.length === 0) { toast.error("Registra al menos un pago (QR, Efectivo o Crédito)"); return; }
+    // Nada se cobra con el faltante a medio decidir: el backend tambien lo
+    // rechaza, pero avisar aca evita el viaje de ida y vuelta.
+    if (storeLocationId !== null && hayFaltantesSinAsignar(allocateable, allocations, storeLocationId)) {
+      toast.error(
+        faltanPorAsignar.length === 1
+          ? "Falta decidir de qué ubicación sale 1 producto"
+          : `Falta decidir de qué ubicación salen ${faltanPorAsignar.length} productos`
+      );
+      return;
+    }
     setShowConfirm(true);
   };
 
@@ -329,6 +366,7 @@ export default function WholesalePage() {
         payments: validPayments.map((p) => ({ method: p.method, amount: Number(p.amount) })),
       };
       if (selectedStoreId) payload.locationId = selectedStoreId;
+      if (allocations.length > 0) payload.allocations = allocations;
       const response = await api.post("/wholesale", payload);
       const faltantes: { productId: number; nombre: string; cantidad: number }[] = response.data.faltantes || [];
       const recortados: { productId: number; nombre: string; pedido: number; vendido: number; faltante: number }[] = response.data.recortados || [];
@@ -360,6 +398,7 @@ export default function WholesalePage() {
   const resetForm = () => {
     setItems([]); setClientName(""); setParaQuien(""); setParaDonde(""); setTelefonoEnvio(""); setNit(""); setNitName(""); setCelularFactura("");
     setPayments([{ method: "EFECTIVO", amount: 0 }]);
+    setAllocations([]);
   };
 
   const registerPayment = async () => {
@@ -1027,6 +1066,16 @@ export default function WholesalePage() {
                     </tbody>
                   </table>
                 </div>
+
+                {storeLocationId !== null && allocateable.length > 0 && (
+                  <OrigenesSelector
+                    items={allocateable}
+                    allocations={allocations}
+                    storeLocationId={storeLocationId}
+                    storeName={storeName}
+                    onChange={setAllocations}
+                  />
+                )}
 
                 {/* Los tres bloques: cliente, envio y factura. Los mismos que en local y
                     departamental, y todos obligatorios. */}

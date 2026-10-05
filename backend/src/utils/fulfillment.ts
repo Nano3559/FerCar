@@ -1,19 +1,31 @@
 /**
- * Reparte una venta entre las unidades que ya existen y las que hay en camino
- * desde los almacenes.
+ * Reparte una venta entre lo que hay en la tienda donde se cobra y lo que el
+ * vendedor decide pedir a otras tiendas o a los almacenes.
  *
  * Reglas:
- *  - Se usa primero el stock de la tienda donde se cobra.
- *  - Si esa tienda no alcanza, se completa con el stock de las otras tiendas y
- *    se descuenta de ellas: la mercaderia ya existe, solo esta en otro punto.
- *  - Solo lo que no hay en ninguna tienda se pide a los almacenes: eso queda
- *    "pendiente", se factura igual y se genera la solicitud para que llegue.
- *  - Si no hay en ninguna parte, la venta se recorta a lo que existe y se
- *    avisa. Vender de mas dejaria una venta que jamas se podria completar.
+ *  - El stock de la tienda donde se cobra se consume solo: la mercaderia ya esta
+ *    en el mostrador y no tiene sentido pedirla a otro lado.
+ *  - El faltante NO se decide solo. El vendedor elige, unidad por unidad, de que
+ *    tienda o de que almacen sale, y puede repartirlo entre varios (3 de SILES y
+ *    4 de CHIQUICOLLO, por ejemplo). Cada origen elegido genera su propia
+ *    solicitud.
+ *  - Si el faltante no queda cubierto por completo, la venta no se guarda: es
+ *    mejor avisarle al vendedor que dejar una venta que nadie va a poder
+ *    completar.
+ *  - El origen se descuenta al crear la solicitud, para que dos ventas no
+ *    puedan pedir las mismas unidades. Cuando la mercaderia llega, la nota de
+ *    despacho la suma a la tienda destino sin volver a descontar el origen.
  */
 
 export interface OtherStoreStock {
   locationId: number;
+  stock: number;
+}
+
+export interface LocationStock {
+  locationId: number;
+  name: string;
+  type: "TIENDA" | "ALMACEN";
   stock: number;
 }
 
@@ -26,6 +38,15 @@ export interface StockSnapshot {
   otherStoreStock: OtherStoreStock[];
   /** Unidades disponibles sumando todos los almacenes. */
   warehouses: number;
+  /** Desglose de TODAS las ubicaciones: permite validar de donde se puede pedir. */
+  byLocation: LocationStock[];
+}
+
+export interface OriginAllocation {
+  productId: number;
+  /** Tienda o almacen de donde sale la mercaderia. */
+  fromLocationId: number;
+  quantity: number;
 }
 
 export interface FulfillmentLine {
@@ -34,15 +55,18 @@ export interface FulfillmentLine {
   productId: number;
   /** Lo que el vendedor pidio. */
   requested: number;
-  /** Lo que realmente se factura, ya recortado por existencia real. */
+  /** Lo que realmente se factura. Con el faltante obligatorio, es todo lo pedido. */
   sellable: number;
   /** Lo que se le entrega al cliente ahora. */
   delivered: number;
-  /** Lo que queda en camino desde el almacen: se factura pero no se entrega. */
+  /** Lo que queda en camino: se factura pero no se entrega. */
   pending: number;
-  /** De donde sale lo entregado, para poder descontarlo. */
+  /** Lo que sale de la tienda donde se cobra. */
   desDeTienda: number;
+  /** Lo que sale de otras tiendas. */
   desDeOtrasTiendas: number;
+  /** Reparto del pendiente por ubicacion de origen, una fila por solicitud. */
+  origenesPendientes: { locationId: number; quantity: number }[];
 }
 
 /** Unidades que hay que restar de una ubicacion concreta al confirmar la venta. */
@@ -62,65 +86,135 @@ export interface CappedProduct {
 
 export interface FulfillmentPlan {
   lines: FulfillmentLine[];
-  /** Productos cuya cantidad hubo que recortar, para avisar al vendedor. */
+  /** Productos cuya cantidad hubo que recortar. ConOrigins es obligatorio, queda vacio. */
   capped: CappedProduct[];
   /** Descuentos por ubicacion: tienda propia primero, luego las otras. */
   deductions: FulfillmentDeduction[];
 }
 
+/**
+ * Error de planificacion con el detalle de que falta asignar. La ruta lo
+ * devuelve como 400 para que la pantalla muestre el problema concreto en vez de
+ * un "error interno".
+ */
+export class FulfillmentError extends Error {
+  problemas: string[];
+
+  constructor(problemas: string[]) {
+    super(problemas.join("; "));
+    this.name = "FulfillmentError";
+    this.problemas = problemas;
+  }
+}
+
+const nombreUbicacion = (snap: StockSnapshot | undefined, locationId: number) =>
+  snap?.byLocation.find((l) => l.locationId === locationId)?.name || `ubicación ${locationId}`;
+
 export function planFulfillment(
   items: { productId: number; quantity: number }[],
   stock: Record<number, StockSnapshot>,
   storeLocationId: number,
+  allocations: OriginAllocation[] = [],
+  nombres: Record<number, string> = {},
 ): FulfillmentPlan {
-  const lines: FulfillmentLine[] = [];
+  const problemas: string[] = [];
+  const etiqueta = (productId: number) => nombres[productId] || `producto ${productId}`;
 
+  // --- 1. Lo que sale de la tienda donde se cobra, sin preguntar. ---
   const pedidoPorProducto = new Map<number, number>();
   for (const it of items) {
     pedidoPorProducto.set(it.productId, (pedidoPorProducto.get(it.productId) ?? 0) + it.quantity);
   }
 
-  // Para un mismo producto la disponibilidad se gasta en el orden en que
-  // aparecen sus lineas: si se pido 2 en P1 y 4 en P2 con 3 en tienda, la
-  // primera linea se entrega completa y la segunda es la que queda pendiente.
-  // Cuanto se puede facturar de cada producto, sin pasar de lo que existe entre
-  // las tiendas y los almacenes.
-  const vendiblePorProducto = new Map<number, number>();
-  const capped: CappedProduct[] = [];
-  for (const [productId, pedidoTotal] of pedidoPorProducto) {
-    const snap = stock[productId];
-    const disponible =
-      (snap?.store ?? 0) + (snap?.otherStores ?? 0) + (snap?.warehouses ?? 0);
-    const vendible = Math.min(pedidoTotal, disponible);
-    vendiblePorProducto.set(productId, vendible);
-    if (vendible < pedidoTotal) {
-      capped.push({
-        productId,
-        requested: pedidoTotal,
-        sellable: vendible,
-        missing: pedidoTotal - vendible,
-      });
+  const desdeTienda = new Map<number, number>();
+  const faltante = new Map<number, number>();
+  for (const [productId, pedido] of pedidoPorProducto) {
+    const propio = Math.min(pedido, stock[productId]?.store ?? 0);
+    desdeTienda.set(productId, propio);
+    faltante.set(productId, pedido - propio);
+  }
+
+  // --- 2. Origenes que eligio el vendedor, acumulados por producto y por ubicacion. ---
+  const asignadoPorProducto = new Map<number, number>();
+  const porProductoOrigen = new Map<number, Map<number, number>>();
+  for (const a of allocations) {
+    const cantidad = Math.round(Number(a.quantity));
+    const fromLocationId = Number(a.fromLocationId);
+    const productId = Number(a.productId);
+
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      problemas.push(`La cantidad asignada a "${etiqueta(a.productId)}" debe ser un número mayor que cero.`);
+      continue;
+    }
+    if (!Number.isFinite(fromLocationId) || fromLocationId <= 0) {
+      problemas.push(`Indicá de qué ubicación sale la mercadería de "${etiqueta(a.productId)}".`);
+      continue;
+    }
+    if (!pedidoPorProducto.has(productId)) {
+      problemas.push(`Asignaste mercadería a "${etiqueta(productId)}" pero ese producto no está en la venta.`);
+      continue;
+    }
+    if (fromLocationId === storeLocationId) {
+      problemas.push(`"${etiqueta(productId)}" no se pide a tu propia tienda: eso se usa directo del stock que ya tenés.`);
+      continue;
+    }
+
+    asignadoPorProducto.set(productId, (asignadoPorProducto.get(productId) ?? 0) + cantidad);
+    if (!porProductoOrigen.has(productId)) porProductoOrigen.set(productId, new Map());
+    const porOrigen = porProductoOrigen.get(productId)!;
+    porOrigen.set(fromLocationId, (porOrigen.get(fromLocationId) ?? 0) + cantidad);
+  }
+
+  // --- 3. El faltante tiene que quedar cubierto por completo. ---
+  for (const [productId, falta] of faltante) {
+    const asignado = asignadoPorProducto.get(productId) ?? 0;
+    const pedido = pedidoPorProducto.get(productId) ?? 0;
+    const propio = desdeTienda.get(productId) ?? 0;
+    if (asignado === falta) continue;
+
+    if (falta === 0) {
+      problemas.push(
+        `Asignaste ${asignado} unidad(es) de "${etiqueta(productId)}" de más: ya hay ${propio} en tu tienda y con eso alcanza.`,
+      );
+    } else {
+      problemas.push(
+        `Falta elegir de dónde sale ${falta - asignado > 0 ? falta - asignado : 0} unidad(es) de "${etiqueta(productId)}": ` +
+          `pediste ${pedido}, tenés ${propio} en tu tienda y asignaste ${asignado} de las ${falta} que faltaban.`,
+      );
     }
   }
 
-  // El reparto se hace en el orden de las lineas y por ubicacion: primero la
-  // tienda donde se cobra, luego las demas tiendas, y lo que no exista en
-  // ninguna tienda sale del almacen, que es exactamente lo pendiente.
-  const restanteTienda = new Map<number, number>();
-  const restanteOtras = new Map<number, Map<number, number>>();
-  // Se arma por producto pedido, no con Object.entries: las claves de un objeto
-  // son texto y un Map<number,...> las guardaria como "1", que ya no coincide
-  // con el productId numerico de la linea.
-  for (const it of items) {
-    const snap = stock[it.productId];
-    restanteTienda.set(it.productId, snap?.store ?? 0);
-    const porTienda = new Map<number, number>();
-    for (const t of snap?.otherStoreStock || []) porTienda.set(t.locationId, t.stock || 0);
-    restanteOtras.set(it.productId, porTienda);
+  // --- 4. Cada origen tiene que tener stock suficiente. ---
+  // Se descuenta lo ya asignado en este mismo producto para que dos lineas del
+  // mismo producto no se coman la misma unidad.
+  const consumoPorOrigen = new Map<number, Map<number, number>>();
+  for (const [productId, porOrigen] of porProductoOrigen) {
+    const snap = stock[productId];
+    for (const [locationId, cantidad] of porOrigen) {
+      const fila = snap?.byLocation.find((l) => l.locationId === locationId);
+      if (!fila) {
+        problemas.push(
+          `"${etiqueta(productId)}" no tiene stock registrado en ${nombreUbicacion(snap, locationId)}.`,
+        );
+        continue;
+      }
+      if (!consumoPorOrigen.has(productId)) consumoPorOrigen.set(productId, new Map());
+      const gastado = consumoPorOrigen.get(productId)!;
+      const yaPedido = gastado.get(locationId) ?? 0;
+      const disponible = fila.stock - yaPedido;
+      if (cantidad > disponible) {
+        problemas.push(
+          `"${etiqueta(productId)}" no alcanza en ${fila.name}: pediste ${cantidad} y quedan ${disponible}.`,
+        );
+      }
+      gastado.set(locationId, yaPedido + cantidad);
+    }
   }
-  const vendibleRestante = new Map(vendiblePorProducto);
-  const deductions: FulfillmentDeduction[] = [];
 
+  if (problemas.length > 0) throw new FulfillmentError(problemas);
+
+  // --- 5. Descuentos: tienda propia y cada origen elegido. ---
+  const deductions: FulfillmentDeduction[] = [];
   const descontar = (productId: number, locationId: number, units: number) => {
     if (units <= 0) return;
     const previo = deductions.find((d) => d.productId === productId && d.locationId === locationId);
@@ -128,32 +222,45 @@ export function planFulfillment(
     else deductions.push({ productId, locationId, units });
   };
 
+  for (const [productId, propio] of desdeTienda) descontar(productId, storeLocationId, propio);
+  for (const [productId, porOrigen] of porProductoOrigen) {
+    for (const [locationId, cantidad] of porOrigen) descontar(productId, locationId, cantidad);
+  }
+
+  // --- 6. Reparto en las lineas, en el orden en que las escribio el vendedor. ---
+  // Si el mismo producto aparece dos veces, la primera linea se come primero la
+  // mercaderia de la tienda y de los orígenes, en ese orden.
+  const restanteTienda = new Map(desdeTienda);
+  const restanteOrigen = new Map<string, number>();
+  for (const [productId, porOrigen] of porProductoOrigen) {
+    for (const [locationId, cantidad] of porOrigen) {
+      restanteOrigen.set(`${productId}:${locationId}`, cantidad);
+    }
+  }
+
+  const lines: FulfillmentLine[] = [];
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
-    const porVender = Math.min(it.quantity, vendibleRestante.get(it.productId) ?? 0);
-    vendibleRestante.set(it.productId, (vendibleRestante.get(it.productId) ?? 0) - porVender);
-    if (porVender <= 0) continue;
+    const propio = Math.min(it.quantity, restanteTienda.get(it.productId) ?? 0);
+    restanteTienda.set(it.productId, (restanteTienda.get(it.productId) ?? 0) - propio);
 
-    const disponiblesTienda = restanteTienda.get(it.productId) ?? 0;
-    const desDeTienda = Math.min(porVender, disponiblesTienda);
-    restanteTienda.set(it.productId, disponiblesTienda - desDeTienda);
-    descontar(it.productId, storeLocationId, desDeTienda);
-
-    let faltanPorEntregar = porVender - desDeTienda;
+    let porEntregar = it.quantity - propio;
+    const origenesPendientes: { locationId: number; quantity: number }[] = [];
     let desDeOtrasTiendas = 0;
-    const porTienda = restanteOtras.get(it.productId);
-    if (porTienda && faltanPorEntregar > 0) {
-      // Orden estable por ubicacion para que dos ventas simultaneas no elijan
-      // destinos distintos por casualidad.
-      for (const locationId of [...porTienda.keys()].sort((a, b) => a - b)) {
-        if (faltanPorEntregar <= 0) break;
-        const hay = porTienda.get(locationId) ?? 0;
-        const tomar = Math.min(faltanPorEntregar, hay);
+    const porOrigen = porProductoOrigen.get(it.productId);
+    if (porOrigen) {
+      // Orden estable por ubicacion: dos carritos con la misma asignacion tienen
+      // que producir el mismo plan.
+      for (const locationId of [...porOrigen.keys()].sort((a, b) => a - b)) {
+        if (porEntregar <= 0) break;
+        const clave = `${it.productId}:${locationId}`;
+        const disponible = restanteOrigen.get(clave) ?? 0;
+        const tomar = Math.min(porEntregar, disponible);
         if (tomar <= 0) continue;
-        porTienda.set(locationId, hay - tomar);
-        descontar(it.productId, locationId, tomar);
-        faltanPorEntregar -= tomar;
+        restanteOrigen.set(clave, disponible - tomar);
+        porEntregar -= tomar;
         desDeOtrasTiendas += tomar;
+        origenesPendientes.push({ locationId, quantity: tomar });
       }
     }
 
@@ -161,15 +268,16 @@ export function planFulfillment(
       index: i,
       productId: it.productId,
       requested: it.quantity,
-      sellable: porVender,
-      delivered: desDeTienda + desDeOtrasTiendas,
-      pending: faltanPorEntregar,
-      desDeTienda,
+      sellable: it.quantity,
+      delivered: propio,
+      pending: it.quantity - propio,
+      desDeTienda: propio,
       desDeOtrasTiendas,
+      origenesPendientes,
     });
   }
 
-  return { lines, capped, deductions };
+  return { lines, capped: [], deductions };
 }
 
 /** Unidades de una linea que todavia no llegaron al cliente. */
@@ -225,20 +333,26 @@ export async function loadStockSnapshot(
 
   const rows = await db.inventory.findMany({
     where: { productId: { in: productIds } },
-    select: { productId: true, locationId: true, stock: true, location: { select: { type: true } } },
+    select: {
+      productId: true,
+      locationId: true,
+      stock: true,
+      location: { select: { type: true, name: true } },
+    },
   });
 
   const snapshot: Record<number, StockSnapshot> = {};
-  for (const id of productIds) snapshot[id] = { store: 0, otherStores: 0, otherStoreStock: [], warehouses: 0 };
+  for (const id of productIds) {
+    snapshot[id] = { store: 0, otherStores: 0, otherStoreStock: [], warehouses: 0, byLocation: [] };
+  }
 
   for (const row of rows) {
     const entry = snapshot[row.productId];
     if (!entry) continue;
     const stock = row.stock || 0;
-    // Primero la tienda donde se cobra. Si ahi no alcanza, se usa el stock de
-    // las otras tiendas y se descuenta de ellas: la unidad ya existe en la
-    // empresa, solo esta en otro punto de venta. Lo que no hay en ninguna
-    // tienda se pide al almacen, y ahi si es una entrega en el tiempo.
+    // Primero la tienda donde se cobra. Si ahi no alcanza, el faltante lo elige
+    // el vendedor: otra tienda o un almacen. Lo que no hay en ninguna parte no
+    // se puede vender y el planificador lo rechaza.
     if (row.locationId === storeLocationId) {
       entry.store = stock;
     } else if (row.location?.type === "ALMACEN") {
@@ -247,6 +361,12 @@ export async function loadStockSnapshot(
       entry.otherStores += stock;
       entry.otherStoreStock.push({ locationId: row.locationId, stock });
     }
+    entry.byLocation.push({
+      locationId: row.locationId,
+      name: row.location?.name || `Ubicación ${row.locationId}`,
+      type: row.location?.type === "ALMACEN" ? "ALMACEN" : "TIENDA",
+      stock,
+    });
   }
 
   return snapshot;

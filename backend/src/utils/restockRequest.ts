@@ -25,6 +25,12 @@ export interface RestockArgs {
    */
   quantity?: number;
   note?: string;
+  /**
+   * De donde sale la mercaderia: una tienda o un almacen. Cuando la venta lo
+   * elige el vendedor se pasa aqui; si se omite se usa el primer almacen, que es
+   * lo que corresponde al job de stock minimo.
+   */
+  fromLocationId?: number | null;
   /** Venta que origino la solicitud, si fue por stock faltante al vender. */
   saleId?: number | null;
   /** Linea de venta que esta solicitud va a completar. */
@@ -118,11 +124,22 @@ export async function ensureRestockRequest(db: Db, args: RestockArgs): Promise<n
     return open.id;
   }
 
-  // Origen: el almacen desde donde se envia la mercaderia.
-  const origin = await db.location.findFirst({
-    where: { type: "ALMACEN" },
-    orderBy: { id: "asc" },
-  });
+  // Origen: de donde sale la mercaderia. Si la venta eligio una ubicacion se
+  // respeta esa eleccion; si no, se cae al primer almacen.
+  let originId = args.fromLocationId ?? null;
+  if (originId !== null) {
+    const elegido = await db.location.findUnique({ where: { id: originId }, select: { id: true } });
+    if (!elegido) throw new Error(`La ubicación de origen ${originId} no existe`);
+    if (originId === destinationId) {
+      throw new Error("El origen y el destino de la solicitud no pueden ser la misma ubicación");
+    }
+  } else {
+    const origin = await db.location.findFirst({
+      where: { type: "ALMACEN" },
+      orderBy: { id: "asc" },
+    });
+    originId = origin?.id ?? null;
+  }
 
   const [product, destination] = await Promise.all([
     db.product.findUnique({ where: { id: productId }, select: { name: true } }),
@@ -134,7 +151,7 @@ export async function ensureRestockRequest(db: Db, args: RestockArgs): Promise<n
       productId,
       quantity,
       locationId: destinationId,
-      fromLocationId: origin?.id ?? null,
+      fromLocationId: originId,
       requestedById,
       source,
       status: "PENDIENTE",
