@@ -11,6 +11,7 @@ import { useDialogBehavior } from "../components/ui/useDialog";
 interface Product {
   id: number; itemCode: string; name: string; brand: string; model: string;
   stock: number; category: string | null; image: string | null;
+  stockByLocation?: { locationId: number; stock: number }[];
 }
 
 interface RequestRecord {
@@ -200,6 +201,15 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
     }
     const qty = Number(quantity);
     if (qty <= 0) { toast.error("La cantidad debe ser mayor a 0"); return; }
+
+    // El backend es el que manda, pero avisar aca evita mandar un pedido que
+    // seguro va a ser rechazado: la mercaderia no puede sumar mas que lo que hay
+    // sumando todas las tiendas y los almacenes.
+    const totalCadena = selectedProduct.stockByLocation?.reduce((s, l) => s + (l.stock || 0), 0);
+    if (totalCadena !== undefined && qty > totalCadena) {
+      toast.error(`No podés pedir ${qty}: en toda la cadena hay ${totalCadena} unidades`);
+      return;
+    }
 
     try {
       setSaving(true);
@@ -559,6 +569,15 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
                 <label className="block text-xs text-gray-400 mb-1.5">Cantidad *</label>
                 <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} min="1"
                   className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                {selectedProduct?.stockByLocation && (
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    En toda la cadena hay{" "}
+                    <span className="text-gray-300 font-medium">
+                      {selectedProduct.stockByLocation.reduce((s, l) => s + (l.stock || 0), 0)}
+                    </span>{" "}
+                    unidad(es). No se puede pedir más de eso.
+                  </p>
+                )}
               </div>
 
               <div>

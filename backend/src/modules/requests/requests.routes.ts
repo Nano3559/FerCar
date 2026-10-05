@@ -3,6 +3,11 @@ import { PrismaClient, RequestStatus } from "@prisma/client";
 import { authenticate, authorize, requireTiendaLocation } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
 import { parseId, parsePositiveInt } from "../../shared/middlewares/validate";
+import {
+  calcularDisponibilidad,
+  errorSiExcede,
+  ESTADOS_ABIERTOS,
+} from "../../utils/requestAvailability";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -184,6 +189,21 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     if (!product) return res.status(404).json({ message: "Producto no encontrado" });
     if (!location) return res.status(404).json({ message: "Ubicación no encontrada" });
     if (fromLocationId && !fromLocation) return res.status(404).json({ message: "Ubicación de origen no encontrada" });
+
+    // Una solicitud manual no reserva stock: sigue en su ubicacion hasta que se
+    // despacha. Sin este control se podian pedir mas unidades de las que hay en
+    // toda la cadena (37 de un producto que tenia 20) y el faltante se descubria
+    // recien cuando inventario no encontraba la mercaderia.
+    const [inventario, abiertas] = await Promise.all([
+      prisma.inventory.findMany({ where: { productId }, select: { stock: true } }),
+      prisma.productRequest.findMany({
+        where: { productId, status: { in: [...ESTADOS_ABIERTOS] } },
+        select: { quantity: true, source: true },
+      }),
+    ]);
+    const disponibilidad = calcularDisponibilidad(inventario, abiertas);
+    const error = errorSiExcede(quantity, disponibilidad, product.name);
+    if (error) return res.status(400).json({ message: error });
 
     const request = await prisma.productRequest.create({
       data: {
