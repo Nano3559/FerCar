@@ -4,6 +4,7 @@ import {
   desdeMiTienda,
   faltanteDe,
   totalAsignado,
+  asignadoA,
   disponibleEn,
   sugerirReparto,
   completarAllocations,
@@ -158,7 +159,69 @@ test("deduplicar junta lo que se pidió dos veces al mismo origen", () => {
   );
 });
 
-// --- Resumen y bloqueo ---
+test("asignadoA cuenta lo puesto a una sola ubicación", () => {
+  const i = item(10, [loc(MI_TIENDA, "TIENDA", 0), loc(SILES, "TIENDA", 3), loc(20, "ALMACEN", 9)]);
+  const alloc: OriginAllocation[] = [
+    { productId: 1, fromLocationId: SILES, quantity: 3 },
+    { productId: 1, fromLocationId: 20, quantity: 4 },
+  ];
+  assert.equal(asignadoA(i, alloc, SILES), 3);
+  assert.equal(asignadoA(i, alloc, 20), 4);
+  assert.equal(asignadoA(i, alloc, 99), 0);
+});
+
+// --- El caso real: pedir más de lo que hay en un origen ---
+
+test("pedir 8 a SILES cuando solo tiene 3 no alcanza: el sugeridor se detiene en 3", () => {
+  // TYD1126CIR: TUMUSLA 0, SILES 3, y de sobra en otras tiendas.
+  const i = item(10, [
+    loc(MI_TIENDA, "TIENDA", 0),
+    loc(SILES, "TIENDA", 3),
+    loc(21, "ALMACEN", 50),
+  ]);
+  const r = sugerirReparto(i, [], MI_TIENDA);
+  // 3 de SILES y el resto del almacén: nunca 8 de SILES.
+  assert.deepEqual(r, [
+    { productId: 1, fromLocationId: SILES, quantity: 3 },
+    { productId: 1, fromLocationId: 21, quantity: 7 },
+  ]);
+  const deSiles = r.find((a) => a.fromLocationId === SILES);
+  assert.ok(deSiles);
+  assert.ok(deSiles!.quantity <= 3, "nunca se pide más de lo que hay");
+});
+
+test("con lo ya asignado a mano, SILES no vuelve a ofrecer sus 3", () => {
+  const i = item(10, [
+    loc(MI_TIENDA, "TIENDA", 0),
+    loc(SILES, "TIENDA", 3),
+    loc(21, "ALMACEN", 50),
+  ]);
+  const manual: OriginAllocation[] = [{ productId: 1, fromLocationId: SILES, quantity: 3 }];
+  assert.equal(disponibleEn(i, SILES, manual, MI_TIENDA), 0);
+  const r = sugerirReparto(i, manual, MI_TIENDA);
+  assert.deepEqual(r, [{ productId: 1, fromLocationId: 21, quantity: 7 }]);
+});
+
+test("un origen con stock asignado sigue en la lista aunque ya no quede libre", () => {
+  // Si se filtrara solo por disponible > 0, la fila de SILES desaparecería al
+  // asignarle las 3 y el vendedor no podría ver ni corregir lo que puso.
+  const i = item(10, [loc(MI_TIENDA, "TIENDA", 0), loc(SILES, "TIENDA", 3)]);
+  const manual: OriginAllocation[] = [{ productId: 1, fromLocationId: SILES, quantity: 3 }];
+  const opciones = origenesDisponibles(i, manual, MI_TIENDA);
+  const siles = opciones.find((o) => o.locationId === SILES);
+  assert.ok(siles, "SILES debe seguir visible");
+  assert.equal(siles!.stock, 3);
+  assert.equal(siles!.disponible, 0);
+});
+
+test("el sugeridor no inventa stock cuando la cadena entera no alcanza", () => {
+  const i = item(50, [loc(MI_TIENDA, "TIENDA", 0), loc(SILES, "TIENDA", 3), loc(20, "ALMACEN", 4)]);
+  const r = sugerirReparto(i, [], MI_TIENDA);
+  // Solo 7 disponibles en total: entrega 7 y deja 43 sin cubrir, para que el
+  // backend lo reporte en vez de prometer una venta imposible.
+  assert.equal(r.reduce((s, a) => s + a.quantity, 0), 7);
+  assert.equal(hayFaltantesSinAsignar([i], r, MI_TIENDA), true);
+});
 
 test("el resumen dice qué falta y si ya está asignado", () => {
   const items: AllocateableItem[] = [

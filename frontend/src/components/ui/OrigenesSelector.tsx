@@ -5,6 +5,7 @@ import {
   origenesDisponibles,
   disponibleEn,
   totalAsignado,
+  asignadoA,
   faltanteDe,
   desdeMiTienda,
   completarAllocations,
@@ -41,9 +42,18 @@ export default function OrigenesSelector({ items, allocations, storeLocationId, 
 
   const sinAsignar = pendientes.reduce((s, p) => s + Math.max(0, p.faltante - p.asignado), 0);
 
-  const setCantidad = (productId: number, locationId: number, cantidad: number) => {
-    const resto = allocations.filter((a) => !(a.productId === productId && a.fromLocationId === locationId));
-    if (cantidad > 0) resto.push({ productId, fromLocationId: locationId, quantity: cantidad });
+  // Escribe la cantidad pero nunca deja pasar más de lo que hay en esa
+  // ubicación. El `max` del input no alcanza para esto: es una sugerencia del
+  // navegador, no un recorte, y sin un formulario que lo valide el valor
+  // escrito se queda tal cual. Permitir 8 de un origen que tiene 3 solo lo
+  // detecta el backend, o sea cuando el vendedor ya envió la venta.
+  const setCantidad = (item: AllocateableItem, locationId: number, cantidad: number) => {
+    const tope = disponibleEn(item, locationId, allocations, storeLocationId) +
+      (allocations.find((a) => a.productId === item.productId && a.fromLocationId === locationId)?.quantity ?? 0);
+    const valor = Math.max(0, Math.min(Math.round(cantidad) || 0, tope));
+
+    const resto = allocations.filter((a) => !(a.productId === item.productId && a.fromLocationId === locationId));
+    if (valor > 0) resto.push({ productId: item.productId, fromLocationId: locationId, quantity: valor });
     onChange(deduplicar(resto));
   };
 
@@ -51,7 +61,7 @@ export default function OrigenesSelector({ items, allocations, storeLocationId, 
     const disponible = disponibleEn(item, locationId, allocations, storeLocationId);
     if (disponible <= 0) return;
     const yaTiene = allocations.find((a) => a.productId === item.productId && a.fromLocationId === locationId);
-    setCantidad(item.productId, locationId, (yaTiene?.quantity ?? 0) + 1);
+    setCantidad(item, locationId, (yaTiene?.quantity ?? 0) + 1);
   };
 
   // La sugerencia solo completa lo que falta: lo que el vendedor ya eligió a mano
@@ -95,9 +105,23 @@ export default function OrigenesSelector({ items, allocations, storeLocationId, 
           </button>
 
           {pendientes.map(({ item, faltante, asignado }) => {
-            const opciones = origenesDisponibles(item, allocations, storeLocationId).filter((o) => o.disponible > 0);
+            // Aparecen las ubicaciones con stock y también las que ya tienen unidades
+            // asignadas. Si solo se mostrara las que tienen disponible, al
+            // asignar las últimas unidades de un origen su fila desaparecería
+            // y el vendedor no podría ver ni corregir lo que ya le puso.
+            const opciones = origenesDisponibles(item, allocations, storeLocationId).filter(
+              (o) => o.disponible > 0 || asignadoA(item, allocations, o.locationId) > 0,
+            );
             const propio = desdeMiTienda(item, storeLocationId);
             const falta = Math.max(0, faltante - asignado);
+
+            // Si ni con todas las ubicaciones juntas alcanza, avisarlo acá: si no, el
+            // vendedor completa lo que puede y la venta vuelve del backend con
+            // un error que no explica de entrada que el problema es que no hay
+            // mercadería en toda la cadena.
+            const totalDisponible =
+              origenesDisponibles(item, [], storeLocationId).reduce((s, o) => s + Math.max(0, o.stock), 0) + propio;
+            const imposible = totalDisponible < item.quantity;
 
             return (
               <div key={item.productId} className="rounded-xl border border-dark-700/60 bg-dark-900/40 p-2.5">
@@ -109,6 +133,13 @@ export default function OrigenesSelector({ items, allocations, storeLocationId, 
                   </span>
                 </p>
 
+                {imposible && (
+                  <p className="text-xs text-red-400 mb-2">
+                    No hay {item.quantity} unidades de este producto en toda la cadena: sumando todas las
+                    ubicaciones dan {totalDisponible}. Bajá la cantidad o sacá el producto.
+                  </p>
+                )}
+
                 {opciones.length === 0 ? (
                   <p className="text-xs text-red-400">
                     Este producto no tiene stock en ninguna otra tienda ni almacén.
@@ -116,10 +147,7 @@ export default function OrigenesSelector({ items, allocations, storeLocationId, 
                 ) : (
                   <div className="space-y-1.5">
                     {opciones.map((o) => {
-                      const asignadoAqui =
-                        allocations.find(
-                          (a) => a.productId === item.productId && a.fromLocationId === o.locationId,
-                        )?.quantity ?? 0;
+                      const asignadoAqui = asignadoA(item, allocations, o.locationId);
                       return (
                         <div key={o.locationId} className="flex items-center gap-2">
                           <span
@@ -133,14 +161,20 @@ export default function OrigenesSelector({ items, allocations, storeLocationId, 
                           </span>
                           <span className="text-xs text-gray-300 flex-1 truncate">
                             {o.locationName}
-                            <span className="text-gray-500"> · hay {o.disponible}</span>
+                            {asignadoAqui > 0 ? (
+                              <span className="text-amber-400">
+                                {" "}· {asignadoAqui} de {o.stock} pedidos
+                              </span>
+                            ) : (
+                              <span className="text-gray-500"> · hay {o.stock}</span>
+                            )}
                           </span>
                           <button
                             type="button"
                             onClick={() => agregarUno(item, o.locationId)}
-                            disabled={disabled}
+                            disabled={disabled || o.disponible <= 0}
                             className="w-6 h-6 rounded-md border border-dark-600 text-gray-300 hover:border-amber-500/40 hover:text-amber-400 disabled:opacity-30 text-xs shrink-0"
-                            title="Pedir una más"
+                            title={o.disponible > 0 ? `Pedir una más` : `No queda stock en ${o.locationName}`}
                           >
                             +
                           </button>
@@ -150,12 +184,12 @@ export default function OrigenesSelector({ items, allocations, storeLocationId, 
                             max={asignadoAqui + o.disponible}
                             value={asignadoAqui}
                             disabled={disabled}
-                            onChange={(e) => setCantidad(item.productId, o.locationId, Number(e.target.value) || 0)}
+                            onChange={(e) => setCantidad(item, o.locationId, Number(e.target.value) || 0)}
                             className="w-14 px-1.5 py-1 rounded-md bg-dark-800 border border-dark-600 text-xs text-center text-gray-200 disabled:opacity-40"
                           />
                           <button
                             type="button"
-                            onClick={() => setCantidad(item.productId, o.locationId, 0)}
+                            onClick={() => setCantidad(item, o.locationId, 0)}
                             disabled={disabled || asignadoAqui === 0}
                             className="w-6 h-6 rounded-md text-gray-500 hover:text-red-400 disabled:opacity-20 text-xs shrink-0"
                             title="Quitar"

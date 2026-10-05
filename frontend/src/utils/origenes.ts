@@ -71,13 +71,28 @@ export const disponibleEn = (
   return Math.max(0, stock - yaPedido - pedidoPorMiTienda);
 };
 
+/** Cuántas unidades de este producto ya están asignadas a una ubicación. */
+export const asignadoA = (
+  item: AllocateableItem,
+  allocations: OriginAllocation[],
+  locationId: number,
+): number =>
+  allocations
+    .filter((a) => a.productId === item.productId && a.fromLocationId === locationId)
+    .reduce((sum, a) => sum + (a.quantity || 0), 0);
+
 /** Propuesta de reparto automático: primero otras tiendas, después almacenes. */
 export const sugerirReparto = (
   item: AllocateableItem,
   allocations: OriginAllocation[],
   storeLocationId: number,
 ): OriginAllocation[] => {
-  let restante = faltanteDe(item, storeLocationId);
+  // Lo que ya está asignado a mano descuenta: sin esto, con 3 unidades ya
+  // puestas a SILES y 10 por cubrir, el almacén recibiría las 10 en vez de 7.
+  const yaAsignado = allocations
+    .filter((a) => a.productId === item.productId)
+    .reduce((sum, a) => sum + (a.quantity || 0), 0);
+  let restante = faltanteDe(item, storeLocationId) - yaAsignado;
   if (restante <= 0) return [];
 
   const candidatos = (item.stockByLocation || [])
