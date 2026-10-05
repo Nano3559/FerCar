@@ -418,9 +418,19 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "El destino del despacho debe ser una tienda" });
     }
 
-    // Solicitud vinculada por producto, para colgarle el movimiento.
-    const requestByProduct = new Map<number, number>();
-    for (const r of note.requests) requestByProduct.set(r.productId, r.id);
+    // Solicitud vinculada por producto Y origen, para colgarle el movimiento a la
+    // correcta. Con una venta repartida entre varias tiendas hay varias
+    // solicitudes del MISMO producto, y una por producto dejaba a todas las
+    // líneas apuntando a la última: el movimiento de SILES quedaba registrado
+    // como si hubiera salido de FALSURI.
+    const requestByProductOrigen = new Map<string, { id: number; requestedBy?: string | null }>();
+    for (const r of note.requests) {
+      const origen = r.fromLocationId ?? r.locationId;
+      requestByProductOrigen.set(`${r.productId}:${origen}`, {
+        id: r.id,
+        requestedBy: r.requestedBy?.name ?? null,
+      });
+    }
 
     // Solicitudes que nacieron de una venta: el origen YA se descontó cuando se
     // creó la solicitud, para que dos ventas no pudieran pedir la misma unidad.
@@ -496,10 +506,8 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
           });
         }
 
-        const linkedRequest = requestByProduct.get(item.productId);
-        const linked = linkedRequest
-          ? note.requests.find((r) => r.id === linkedRequest)
-          : undefined;
+        const claveSolicitud = `${item.productId}:${item.locationId}`;
+        const vinculo = requestByProductOrigen.get(claveSolicitud);
 
         await tx.movement.create({
           data: {
@@ -508,8 +516,8 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
             toLocationId: destinationId,
             quantity: item.quantity,
             userId: req.user!.userId,
-            requestId: linkedRequest ?? null,
-            requester: linked?.requestedBy?.name ?? null,
+            requestId: vinculo?.id ?? null,
+            requester: vinculo?.requestedBy ?? null,
             observation: `Despacho ${note.noteNumber}`,
           },
         });
