@@ -49,7 +49,7 @@ interface PendingRequest {
   destino: { id: number; name: string; type: string };
   origen: { id: number; name: string; type: string } | null;
   originId: number | null;
-  disponible: number; suficiente: boolean;
+  disponible: number; suficiente: boolean; yaDescontado: boolean;
   solicitadoPor: { id: number; name: string } | null;
 }
 
@@ -862,8 +862,8 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                           </td>
                           <td className="py-2 text-right text-foreground">{r.quantity}</td>
                           <td className="py-2 text-gray-400">{r.origen?.name ?? "—"}</td>
-                          <td className={`py-2 text-right ${r.suficiente ? "text-emerald-400" : "text-red-400"}`}>
-                            {r.disponible}
+                          <td className={`py-2 text-right ${r.yaDescontado ? "text-gray-500" : r.suficiente ? "text-emerald-400" : "text-red-400"}`}>
+                            {r.yaDescontado ? "ya salió" : r.disponible}
                           </td>
                           <td className="py-2 text-gray-400">{r.destino.name}</td>
                         </tr>
@@ -911,7 +911,9 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                 ))}
               </select>
               <p className="text-xs text-gray-500 mt-1.5">
-                Se descuenta del origen de cada ítem y se suma acá. Si no hay stock suficiente, la entrega se rechaza.
+                Las solicitudes que nacieron de una venta ya salieron de su origen al cobrarse,
+así que acá solo se suma al destino. Las demás se descuentan del origen de cada
+ítem. Si no hay stock suficiente, la entrega se rechaza.
               </p>
               {deliverNote.requests.length > 0 && (
                 <div className="mt-3 px-3 py-2 bg-primary-500/10 border border-primary-500/30 rounded-xl">

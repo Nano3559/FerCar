@@ -3,6 +3,12 @@ import { PrismaClient } from "@prisma/client";
 import { authenticate, authorize } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
 import { parseId, parsePositiveInt, parseString } from "../../shared/middlewares/validate";
+import {
+  origenDeSolicitud,
+  origenYaDescontado,
+  alcanzaParaDespachar,
+  claveProductoOrigen,
+} from "../../utils/despatchOrigin";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -296,7 +302,7 @@ router.get("/pending-requests", async (req: AuthRequest, res: Response) => {
     // armar la nota.
     const result = await Promise.all(
       requests.map(async (r) => {
-        const originId = r.fromLocationId ?? r.locationId;
+        const originId = origenDeSolicitud(r);
         const inv = originId
           ? await prisma.inventory.findUnique({
               where: { productId_locationId: { productId: r.productId, locationId: originId } },
@@ -306,6 +312,9 @@ router.get("/pending-requests", async (req: AuthRequest, res: Response) => {
         const origen = r.fromLocationId
           ? r.fromLocation
           : await prisma.location.findUnique({ where: { id: r.locationId }, select: { id: true, name: true, type: true } });
+
+        const disponible = inv?.stock ?? 0;
+        const yaDescontado = origenYaDescontado(r);
 
         return {
           id: r.id,
@@ -318,8 +327,9 @@ router.get("/pending-requests", async (req: AuthRequest, res: Response) => {
           destino: r.location,
           origen: origen ?? null,
           originId,
-          disponible: inv?.stock ?? 0,
-          suficiente: (inv?.stock ?? 0) >= r.quantity,
+          disponible,
+          suficiente: alcanzaParaDespachar(r, r.quantity, disponible),
+          yaDescontado,
           solicitadoPor: r.requestedBy,
         };
       })
@@ -425,8 +435,7 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
     // como si hubiera salido de FALSURI.
     const requestByProductOrigen = new Map<string, { id: number; requestedBy?: string | null }>();
     for (const r of note.requests) {
-      const origen = r.fromLocationId ?? r.locationId;
-      requestByProductOrigen.set(`${r.productId}:${origen}`, {
+      requestByProductOrigen.set(claveProductoOrigen(r.productId, origenDeSolicitud(r)), {
         id: r.id,
         requestedBy: r.requestedBy?.name ?? null,
       });
@@ -436,11 +445,10 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
     // creó la solicitud, para que dos ventas no pudieran pedir la misma unidad.
     // Si aquí también se descontara, la mercadería se contaría dos veces y del
     // origen desaparecerían más unidades de las que salieron.
-    const origenYaDescontado = new Set<string>();
+    const clavesYaDescontadas = new Set<string>();
     for (const r of note.requests) {
-      if (!r.saleItemId) continue;
-      const origen = r.fromLocationId ?? r.locationId;
-      origenYaDescontado.add(`${r.productId}:${origen}`);
+      if (!origenYaDescontado(r)) continue;
+      clavesYaDescontadas.add(claveProductoOrigen(r.productId, origenDeSolicitud(r)));
     }
 
     const faltantes: string[] = [];
@@ -450,7 +458,7 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
         continue;
       }
       // El origen ya bajó al crear la solicitud: no se vuelve a descontar.
-      if (origenYaDescontado.has(`${item.productId}:${item.locationId}`)) continue;
+      if (clavesYaDescontadas.has(claveProductoOrigen(item.productId, item.locationId))) continue;
 
       const origen = await prisma.inventory.findUnique({
         where: { productId_locationId: { productId: item.productId, locationId: item.locationId } },
@@ -471,7 +479,7 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
         // Si el origen ya se descontó al crear la solicitud de la venta, aquí no
         // se toca: la mercadería ya salió de ahí. Lo que sí falta es que llegue a
         // la tienda destino.
-        const yaDescontado = origenYaDescontado.has(`${item.productId}:${item.locationId}`);
+        const yaDescontado = clavesYaDescontadas.has(claveProductoOrigen(item.productId, item.locationId));
 
         if (!yaDescontado) {
           // Bloqueo pesimista del origen para no sobregirar stock.
@@ -506,8 +514,7 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
           });
         }
 
-        const claveSolicitud = `${item.productId}:${item.locationId}`;
-        const vinculo = requestByProductOrigen.get(claveSolicitud);
+        const vinculo = requestByProductOrigen.get(claveProductoOrigen(item.productId, item.locationId));
 
         await tx.movement.create({
           data: {
