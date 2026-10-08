@@ -306,14 +306,14 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       prisma.product.count({
         where: scopeId ? { inventories: { some: invWhere } } : {},
       }),
-      // Mismo calculo que antes (traer cada producto y filtrar sus
-      // inventarios en JS), pero resuelto por la base: productos con al menos
-      // un inventario y todos con stock 0. Se mantiene `stock === 0` (y no
-      // `stock > 0`) para no cambiar quien entra en "Sin Stock".
+      // Productos sin unidades disponibles en el alcance actual. Sin alcance
+      // (toda la cadena) entran tambien los productos que nunca tuvieron una
+      // fila de inventario: no tienen stock, pero antes se salian del
+      // contador y "Sin Stock" quedaba por debajo de "Total Productos".
       prisma.product.count({
-        where: {
-          inventories: { some: invWhere, none: { ...invWhere, stock: { not: 0 } } },
-        },
+        where: scopeId
+          ? { inventories: { some: invWhere, none: { ...invWhere, stock: { gt: 0 } } } }
+          : { NOT: { inventories: { some: { stock: { gt: 0 } } } } },
       }),
       prisma.inventory.findMany({
         where: { stock: { gt: 0 }, minStock: { gt: 0 }, ...locWhere },
@@ -374,7 +374,11 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
     ]);
 
     const criticalStockItems = lowStockItems.filter((item) => item.stock <= item.minStock);
-    const productsWithLowStock = criticalStockItems.length;
+    // "Stock Bajo" cuenta productos, no filas de inventario: el mismo
+    // producto bajo en tres tiendas sigue siendo un solo producto que hay
+    // que reponer. El badge de la tabla "Stock Critico" si cuenta filas,
+    // porque la tabla pinta una fila por producto y ubicacion.
+    const productsWithLowStock = new Set(criticalStockItems.map((item) => item.productId)).size;
 
     // Mapa en vez de .find(): cada lista se recorre una sola vez por fila.
     const locationById = new Map(locations.map((l) => [l.id, l]));
