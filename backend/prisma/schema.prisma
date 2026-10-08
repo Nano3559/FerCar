@@ -113,6 +113,9 @@ model Inventory {
   location   Location @relation(fields: [locationId], references: [id])
   product    Product  @relation(fields: [productId], references: [id])
 
+  // El indice compuesto sirve para buscar por producto, pero no para agrupar
+  // el stock por ubicacion, que es lo que hace el dashboard.
+  @@index([locationId])
   @@unique([productId, locationId])
 }
 
@@ -158,6 +161,12 @@ model Sale {
   quote         Quote?
   /// Solicitudes de reposicion que nacieron de stock faltante en esta venta.
   requests      ProductRequest[]
+
+  // El dashboard resume ventas por fecha, por tienda y por vendedor: cada una
+  // se buscaba haciendo un recorrido completo de la tabla.
+  @@index([saleDate])
+  @@index([locationId])
+  @@index([userId])
 }
 
 enum QuoteStatus {
@@ -229,6 +238,9 @@ model SaleItem {
   requests  ProductRequest[]
 
   @@index([productId])
+  // Cada renglon se busca por su venta: es el cruce que hace el dashboard
+  // al agrupar unidades y totales.
+  @@index([saleId])
 }
 
 model Payment {
@@ -238,6 +250,9 @@ model Payment {
   amount Decimal
   date   DateTime      @default(now())
   sale   Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  // Agrupar los pagos por metodo exige cruzar cada uno con su venta.
+  @@index([saleId])
 }
 
 model Return {
@@ -269,6 +284,10 @@ model Movement {
   toLocation     Location        @relation("MovementTo", fields: [toLocationId], references: [id])
   user           User            @relation(fields: [userId], references: [id])
   request        ProductRequest? @relation(fields: [requestId], references: [id])
+
+  // El historial siempre se ordena por fecha descendente y el dashboard
+  // toma los ultimos 10 movimientos.
+  @@index([date])
 }
 
 model ProductRequest {
@@ -307,6 +326,8 @@ model ProductRequest {
   // llega la mercaderia.
   @@index([saleId])
   @@index([saleItemId])
+  // Pedidos pendientes, ordenados por fecha de creacion.
+  @@index([status, createdAt])
 }
 
 model Supplier {
