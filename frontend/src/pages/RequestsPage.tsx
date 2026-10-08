@@ -246,12 +246,9 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
   };
 
   const canPerformAction = (actionTo: string, record: RequestRecord): boolean => {
-    // Con nota de despacho asignada, el stock se mueve al entregar la nota.
-    if (actionTo === "ENTREGADO" && record.despatchNoteId) return false;
-    // Cancelar una solicitud que surte de una venta haría perder la mercadería:
-    // su origen ya fue descontado al cobrar. El backend la rechaza, asi que no
-    // tiene sentido ofrecer el botón.
-    if (actionTo === "CANCELADO" && record.source === "VENTA") return false;
+    // Con nota de despacho asignada, la nota es la que mueve el stock: entregar o
+    // cancelar a mano dejaría la nota con unidades que ya no corresponden.
+    if (record.despatchNoteId && (actionTo === "ENTREGADO" || actionTo === "CANCELADO")) return false;
     if (role === "ADMIN") return true;
     if (["RECIBIDO_POR_INVENTARIO", "PREPARANDO", "ENTREGADO"].includes(actionTo)) return isInventario;
     // La llegada del producto la confirma quien lo pidió.

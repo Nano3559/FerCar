@@ -538,7 +538,9 @@ router.patch("/:id", async (req: AuthRequest, res: Response) => {
       // Cierra el ciclo: las solicitudes quedan listas para que las confirme
       // quien las pidió.
       for (const r of note.requests) {
-        if (r.status === "ENTREGADO" || r.status === "RECIBIDO_POR_TIENDA") continue;
+        // CANCELADO quedó fuera de la nota: su stock ya volvió al origen al
+        // cancelar, entregarlo acá le regalaría unidades al destino.
+        if (r.status === "ENTREGADO" || r.status === "RECIBIDO_POR_TIENDA" || r.status === "CANCELADO") continue;
         await tx.productRequest.update({
           where: { id: r.id },
           data: { status: "ENTREGADO" },

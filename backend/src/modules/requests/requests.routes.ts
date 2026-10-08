@@ -272,17 +272,18 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Una solicitud que nació de una venta ya descontó su origen al cobrar. Si
-    // se cancela, esa mercadería no vuelve a ningún lado: sale del origen y
-    // nunca llega al destino, la venta queda pendiente para siempre y no queda
-    // ningún movimiento que explique dónde se fue. Se rechaza y que decida
-    // alguien qué hacer con la línea de la venta.
-    if (status === "CANCELADO" && existing.saleItemId) {
+    // Una solicitud de venta ya descontó su origen al cobrar. Al cancelarla esa
+    // mercadería tiene que volver al origen: si no, sale del inventario y no se
+    // la lleva nadie.
+    //
+    // Si ya está dentro de una nota de despacho no se puede cancelar así: la nota
+    // entregaría igual las unidades de esa solicitud. Hay que anular la nota
+    // primero.
+    if (status === "CANCELADO" && existing.despatchNoteId) {
       return res.status(400).json({
         message:
-          `No se puede cancelar: esta solicitud surte de la venta #${existing.saleId}. ` +
-          `Su origen ya fue descontado al cobrar, así que cancelarla haría perder la mercadería. ` +
-          `Ajustá la línea de la venta o entregá lo que sí hay.`,
+          `No se puede cancelar: esta solicitud ya está dentro de la nota ` +
+          `${existing.despatchNote?.noteNumber}. Anulá la nota primero.`,
       });
     }
 
@@ -375,11 +376,44 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
         }
       }
 
+      // Cancelar una solicitud de venta devuelve su mercadería al origen: al
+      // vender, el origen ya fue descontado, así que si no se la devolvemos esa
+      // unidad sale del inventario y no se la lleva nadie. La línea de la venta
+      // queda corta en esa cantidad y queda avisada a quien la cobró.
+      if (status === "CANCELADO" && existing.saleItemId) {
+        const origenId = existing.fromLocationId ?? existing.locationId;
+        // Igual que una devolución: si la fila de inventario del origen no
+        // existe la creamos, porque tirar la unidad la perdería igual que antes.
+        await tx.inventory.upsert({
+          where: { productId_locationId: { productId: existing.productId, locationId: origenId } },
+          update: { stock: { increment: existing.quantity } },
+          create: { productId: existing.productId, locationId: origenId, stock: existing.quantity, minStock: 1 },
+        });
+
+        await tx.notification.create({
+          data: {
+            userId: existing.requestedById,
+            title: `Venta #${existing.saleId}: solicitud cancelada`,
+            message:
+              `Se cancelaron ${existing.quantity} de "${solicitud.product?.name}" que iban ` +
+              `de ${solicitud.fromLocation?.name} a ${solicitud.location?.name}. Esas unidades volvieron ` +
+              `al inventario del origen y la venta #${existing.saleId} queda corta en ${existing.quantity}.`,
+            type: "WARNING",
+            linkUrl: "/panel/ventas",
+          },
+        });
+      }
+
       return solicitud;
     });
 
-    // Notify the requester about status change
-    if (existing.requestedById && existing.requestedById !== req.user?.userId) {
+    // Notify the requester about status change. En una cancelación de solicitud de
+    // venta ya se mandó la que explica el stock devuelto: no mandar dos.
+    if (
+      existing.requestedById &&
+      existing.requestedById !== req.user?.userId &&
+      !(status === "CANCELADO" && existing.saleItemId)
+    ) {
       const actor = await prisma.user.findUnique({
         where: { id: req.user?.userId || 0 },
         select: { name: true },
@@ -407,11 +441,29 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
 router.delete("/:id", async (req: AuthRequest, res: Response) => {
   try {
     const id = parseId(req.params.id);
-    const existing = await prisma.productRequest.findUnique({ where: { id } });
+    const existing = await prisma.productRequest.findUnique({
+      where: { id },
+      include: {
+        product: { select: { name: true } },
+        fromLocation: { select: { name: true } },
+        location: { select: { name: true } },
+        despatchNote: { select: { noteNumber: true } },
+      },
+    });
     if (!existing) return res.status(404).json({ message: "Solicitud no encontrada" });
 
     if (existing.status === "RECIBIDO_POR_TIENDA" || existing.status === "CANCELADO") {
       return res.status(400).json({ message: "No se puede cancelar una solicitud ya recibida o cancelada" });
+    }
+
+    // Mismo criterio que el PUT: la nota es la que mueve el stock, cancelar a
+    // mano dejaría la nota entregando unidades que ya no corresponden.
+    if (existing.despatchNoteId) {
+      return res.status(400).json({
+        message:
+          `No se puede cancelar: esta solicitud ya está dentro de la nota ` +
+          `${existing.despatchNote?.noteNumber}. Anulá la nota primero.`,
+      });
     }
 
     // Solo ADMIN/INVENTARIO o la tienda propietaria pueden cancelar
@@ -422,9 +474,9 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
       }
     }
 
-    await prisma.$transaction([
-      prisma.productRequest.update({ where: { id }, data: { status: "CANCELADO" } }),
-      prisma.requestHistory.create({
+    await prisma.$transaction(async (tx) => {
+      await tx.productRequest.update({ where: { id }, data: { status: "CANCELADO" } });
+      await tx.requestHistory.create({
         data: {
           requestId: id,
           previousStatus: existing.status,
@@ -432,11 +484,38 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
           userId: req.user?.userId || 0,
           userRole: req.user?.role || "ADMIN",
         },
-      }),
-    ]);
+      });
 
-    // Notify the requester about cancellation
-    if (existing.requestedById) {
+      // Igual que el PUT: si la solicitud surte de una venta, su origen ya fue
+      // descontado al cobrar, así que cancelarla tiene que devolverle la unidad.
+      if (existing.saleItemId) {
+        const origenId = existing.fromLocationId ?? existing.locationId;
+        await tx.inventory.upsert({
+          where: { productId_locationId: { productId: existing.productId, locationId: origenId } },
+          update: { stock: { increment: existing.quantity } },
+          create: { productId: existing.productId, locationId: origenId, stock: existing.quantity, minStock: 1 },
+        });
+
+        if (existing.requestedById) {
+          await tx.notification.create({
+            data: {
+              userId: existing.requestedById,
+              title: `Venta #${existing.saleId}: solicitud cancelada`,
+              message:
+                `Se cancelaron ${existing.quantity} de "${existing.product?.name}" que iban ` +
+                `de ${existing.fromLocation?.name} a ${existing.location?.name}. Esas unidades volvieron ` +
+                `al inventario del origen y la venta #${existing.saleId} queda corta en ${existing.quantity}.`,
+              type: "WARNING",
+              linkUrl: "/panel/ventas",
+            },
+          });
+        }
+      }
+    });
+
+    // Notify the requester about cancellation. En una solicitud de venta ya se
+    // mandó la que explica el stock devuelto.
+    if (existing.requestedById && !existing.saleItemId) {
       await prisma.notification.create({
         data: {
           userId: existing.requestedById,
