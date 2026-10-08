@@ -23,6 +23,8 @@ interface LineItem {
   uid: string; productId: number; itemCode: string; name: string;
   brand: string; model: string; manufacturer: string;
   locationId: number; locationName: string; quantity: number;
+  /** true cuando la solicitud ya descontó su origen: no vuelve a restarse. */
+  origenDescontado?: boolean;
 }
 
 interface NoteItemDto {
@@ -225,22 +227,25 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
     if (!Number.isInteger(q) || q <= 0) { toast.error("Ingresa una cantidad entera mayor a 0"); return; }
 
     const avail = availableOf(selected.id, loc.id);
-    const warn = (newQty: number) => {
+    const avisa = (newQty: number, origenYaDescontado = false) => {
+      // Aca fuera del setState: un updater no debe tener efectos secundarios,
+      // React lo puede ejecutar dos veces y se duplicaria el toast.
+      if (origenYaDescontado) return;
       if (avail != null && newQty > avail) toast.error(`Solo hay ${avail} disp. en ${loc.name}`);
     };
 
-    setItems((prev) => {
-      const idx = prev.findIndex((it) => it.productId === selected.id && it.locationId === loc.id);
-      if (idx >= 0) {
-        const current = prev[idx].quantity + q;
-        warn(current);
-        return prev.map((it) => (it.uid === prev[idx].uid ? { ...it, quantity: current } : it));
-      }
-      return [
+    const idx = items.findIndex((it) => it.productId === selected.id && it.locationId === loc.id);
+    if (idx >= 0) {
+      const current = items[idx].quantity + q;
+      avisa(current, items[idx].origenDescontado);
+      setItems((prev) => prev.map((it) => (it.uid === items[idx].uid ? { ...it, quantity: current } : it)));
+    } else {
+      avisa(q);
+      setItems((prev) => [
         ...prev,
         { uid: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, productId: selected.id, itemCode: selected.itemCode, name: selected.name, brand: selected.brand, model: selected.model, manufacturer: selected.manufacturer, locationId: loc.id, locationName: loc.name, quantity: q },
-      ];
-    });
+      ]);
+    }
 
     setSearch(""); setSelected(null); setLocationId(""); setQty("1");
   };
@@ -417,6 +422,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
         locationId: r.originId as number,
         locationName: r.origen?.name ?? "",
         quantity: r.quantity,
+        origenDescontado: r.yaDescontado,
       }))
     );
     setObservacion(
@@ -625,7 +631,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                 </button>
               </div>
             )}
-            {activeItems.length === 0 ? (
+            {items.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-14 text-center">
                 <PackageOpen size={40} className="text-gray-600 mb-3" />
                 <p className="text-gray-500 text-sm">La lista está vacía</p>
@@ -645,9 +651,12 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                     </tr>
                   </thead>
                   <tbody>
-                    {activeItems.map((it, idx) => {
+                    {items.map((it, idx) => {
                       const avail = availableOf(it.productId, it.locationId);
-                      const over = avail != null && it.quantity > avail;
+                      // Si la solicitud ya descontó su origen, esa mercadería ya
+                      // salió de ahí: el stock actual no dice nada y marcarla
+                      // "sobre stock" sería un aviso falso.
+                      const over = !it.origenDescontado && avail != null && it.quantity > avail;
                       return (
                         <tr key={it.uid} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
                           <td className="px-4 py-2.5 text-gray-500">{idx + 1}</td>
@@ -664,7 +673,9 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                               }`} />
                           </td>
                           <td className={`px-4 py-2.5 text-center text-xs ${over ? "text-red-400 font-medium" : "text-gray-500"}`}>
-                            {avail != null ? avail : "—"}
+                            {it.origenDescontado ? (
+                              <span className="text-gray-500" title="El origen ya fue descontado al cobrar la venta; la mercadería ya salió">ya salió</span>
+                            ) : avail != null ? avail : "—"}
                             {over && <span className="flex items-center justify-center gap-1 mt-0.5"><AlertTriangle size={11} /> sobre stock</span>}
                           </td>
                           <td className="px-4 py-2.5">

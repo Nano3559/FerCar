@@ -272,6 +272,20 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Una solicitud que nació de una venta ya descontó su origen al cobrar. Si
+    // se cancela, esa mercadería no vuelve a ningún lado: sale del origen y
+    // nunca llega al destino, la venta queda pendiente para siempre y no queda
+    // ningún movimiento que explique dónde se fue. Se rechaza y que decida
+    // alguien qué hacer con la línea de la venta.
+    if (status === "CANCELADO" && existing.saleItemId) {
+      return res.status(400).json({
+        message:
+          `No se puede cancelar: esta solicitud surte de la venta #${existing.saleId}. ` +
+          `Su origen ya fue descontado al cobrar, así que cancelarla haría perder la mercadería. ` +
+          `Ajustá la línea de la venta o entregá lo que sí hay.`,
+      });
+    }
+
     const role = req.user?.role || "";
     if (INVENTARIO_STATUSES.includes(status) && role !== "ADMIN" && role !== "INVENTARIO") {
       return res.status(403).json({ message: "Solo INVENTARIO o ADMIN pueden realizar esta acción" });

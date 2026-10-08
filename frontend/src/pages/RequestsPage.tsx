@@ -115,6 +115,16 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
   const historyPanelRef = useDialogBehavior(showHistory !== null, () => setShowHistory(null));
   const infoPanelRef = useDialogBehavior(showInfo, () => setShowInfo(false));
 
+  // El filtro y la pagina se cambian juntos, en el mismo evento, para que haya
+  // UNA sola consulta. Resetear la pagina en un useEffect aparte lanzaba dos
+  // pedidos seguidos: el primero ya con el filtro nuevo pero con la pagina
+  // vieja, y si llegaba despues que el segundo se quedaba mostrando filas de
+  // otra pagina.
+  const aplicarFiltro = (setFiltro: () => void) => {
+    setPage(1);
+    setFiltro();
+  };
+
   const fetchRequests = useCallback(async () => {
     try {
       setLoading(true);
@@ -138,10 +148,14 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
   const fetchLocations = useCallback(async () => {
     try {
       const res = await api.get("/locations");
-      setLocations(res.data);
+      // /locations responde { locations: [...] }, pero algunos caminos devuelven
+      // el arreglo directo. Guardar el objeto crudo hacia que locations deje de
+      // ser un arreglo y el panel de crear solicitud reviente al hacer map/filter.
+      const list: Location[] = Array.isArray(res.data) ? res.data : res.data?.locations || [];
+      setLocations(list);
       setSelectedOrigin((prev) => {
         if (prev) return prev;
-        const almacen = (res.data as Location[]).find((l) => l.type === "ALMACEN");
+        const almacen = list.find((l) => l.type === "ALMACEN");
         return almacen ? String(almacen.id) : "";
       });
     } catch { /* ignore */ }
@@ -149,7 +163,6 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
 
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
   useEffect(() => { fetchLocations(); }, [fetchLocations]);
-  useEffect(() => { setPage(1); }, [filterStatus, dateFrom, dateTo]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -235,6 +248,10 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
   const canPerformAction = (actionTo: string, record: RequestRecord): boolean => {
     // Con nota de despacho asignada, el stock se mueve al entregar la nota.
     if (actionTo === "ENTREGADO" && record.despatchNoteId) return false;
+    // Cancelar una solicitud que surte de una venta haría perder la mercadería:
+    // su origen ya fue descontado al cobrar. El backend la rechaza, asi que no
+    // tiene sentido ofrecer el botón.
+    if (actionTo === "CANCELADO" && record.source === "VENTA") return false;
     if (role === "ADMIN") return true;
     if (["RECIBIDO_POR_INVENTARIO", "PREPARANDO", "ENTREGADO"].includes(actionTo)) return isInventario;
     // La llegada del producto la confirma quien lo pidió.
@@ -279,13 +296,13 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button onClick={() => setFilterStatus("")} className={`px-3 py-2 rounded-xl text-sm border transition-all ${!filterStatus ? "bg-primary-600/10 border-primary-600/20 text-primary-400" : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-foreground"}`}>
+        <button onClick={() => aplicarFiltro(() => setFilterStatus(""))} className={`px-3 py-2 rounded-xl text-sm border transition-all ${!filterStatus ? "bg-primary-600/10 border-primary-600/20 text-primary-400" : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-foreground"}`}>
           Todas
         </button>
         {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
           const Icon = cfg.icon;
           return (
-            <button key={key} onClick={() => setFilterStatus(key)}
+            <button key={key} onClick={() => aplicarFiltro(() => setFilterStatus(key))}
               className={`px-3 py-2 rounded-xl text-sm border transition-all flex items-center gap-1.5 ${filterStatus === key ? `${cfg.bg} ${cfg.color}` : "bg-dark-800/50 border-dark-700/50 text-gray-400 hover:text-foreground"}`}>
               <Icon size={14} /> {cfg.label}
             </button>
@@ -305,20 +322,20 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
             <>
               <div className="flex items-center gap-2">
                 <label htmlFor="req-desde" className="text-xs text-gray-500 whitespace-nowrap">Desde</label>
-                <input id="req-desde" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                <input id="req-desde" type="date" value={dateFrom} onChange={(e) => aplicarFiltro(() => setDateFrom(e.target.value))}
                   className="px-2.5 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
               </div>
               <div className="flex items-center gap-2">
                 <label htmlFor="req-hasta" className="text-xs text-gray-500 whitespace-nowrap">Hasta</label>
-                <input id="req-hasta" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                <input id="req-hasta" type="date" value={dateTo} onChange={(e) => aplicarFiltro(() => setDateTo(e.target.value))}
                   className="px-2.5 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
               </div>
-              <button onClick={() => {
+              <button onClick={() => aplicarFiltro(() => {
                 const from = new Date();
                 from.setDate(from.getDate() - 30);
                 setDateFrom(from.toISOString().slice(0, 10));
                 setDateTo(new Date().toISOString().slice(0, 10));
-              }} className="px-3 py-2 text-xs text-gray-400 hover:text-foreground transition-colors">
+              })} className="px-3 py-2 text-xs text-gray-400 hover:text-foreground transition-colors">
                 Últimos 30 días
               </button>
             </>
