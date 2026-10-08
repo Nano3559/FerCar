@@ -48,16 +48,20 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
     if (from) dateWhere.gte = from;
     const where: any = { ...scope, saleDate: dateWhere };
 
-    const locations = await prisma.location.findMany({
-      select: { id: true, name: true, type: true },
-    });
+    // Las dos salen juntas: ninguna depende de la otra.
+    const [locations, sellerSales] = await Promise.all([
+      prisma.location.findMany({
+        select: { id: true, name: true, type: true },
+      }),
+      // Vendedores con actividad en la ubicación seleccionada (sin filtro de fechas).
+      prisma.sale.findMany({
+        where: locWhere,
+        distinct: ["userId"],
+        select: { userId: true },
+      }),
+    ]);
+    const locationById = new Map(locations.map((l) => [l.id, l]));
 
-    // Vendedores con actividad en la ubicación seleccionada (sin filtro de fechas).
-    const sellerSales = await prisma.sale.findMany({
-      where: locWhere,
-      distinct: ["userId"],
-      select: { userId: true },
-    });
     const sellerIds = sellerSales.map((s) => s.userId);
     const sellers = sellerIds.length
       ? await prisma.user.findMany({
@@ -69,19 +73,27 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
 
     const sellerNameMap = new Map(sellers.map((s) => [s.id, s.name]));
 
-    const [sales, items, payments] = await Promise.all([
+    // Todo lo que sale del rango de fechas se pide de una: antes las últimas
+    // ventas se esperaban aparte, al final, y alargaban la respuesta.
+    //
+    // En vez de traer cada renglón de venta con su producto anidado (una fila
+    // por ítem, con la cruzada a Product), la base agrupa: una fila por venta
+    // para las unidades y una por producto para el top. Son los mismos números,
+    // sumados en la base en vez de en memoria.
+    const [sales, unitsBySaleRows, unitsByProductRows, payments, recentSales] = await Promise.all([
       prisma.sale.findMany({
         where,
         select: { id: true, saleDate: true, total: true, userId: true, type: true, locationId: true },
       }),
-      prisma.saleItem.findMany({
+      prisma.saleItem.groupBy({
+        by: ["saleId"],
         where: { sale: where },
-        select: {
-          quantity: true,
-          subtotal: true,
-          saleId: true,
-          product: { select: { id: true, name: true, itemCode: true, brand: true, model: true } },
-        },
+        _sum: { quantity: true },
+      }),
+      prisma.saleItem.groupBy({
+        by: ["productId"],
+        where: { sale: where },
+        _sum: { quantity: true, subtotal: true },
       }),
       prisma.payment.groupBy({
         by: ["method"],
@@ -89,17 +101,30 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
         _count: true,
         _sum: { amount: true },
       }),
+      prisma.sale.findMany({
+        where,
+        take: 10,
+        orderBy: { saleDate: "desc" },
+        include: {
+          location: { select: { name: true } },
+          user: { select: { name: true } },
+          customer: { select: { name: true } },
+          // Solo el número de renglones: `items: true` traía los ítems
+          // enteros para contarlos.
+          _count: { select: { items: true } },
+        },
+      }),
     ]);
 
     const unitsBySale = new Map<number, number>();
-    for (const it of items) {
-      unitsBySale.set(it.saleId, (unitsBySale.get(it.saleId) || 0) + it.quantity);
+    for (const row of unitsBySaleRows) {
+      unitsBySale.set(row.saleId, row._sum.quantity || 0);
     }
 
     // Totales
     const total = sales.reduce((s, x) => s + Number(x.total), 0);
     const count = sales.length;
-    const units = items.reduce((s, x) => s + x.quantity, 0);
+    const units = unitsBySaleRows.reduce((s, row) => s + (row._sum.quantity || 0), 0);
     const avgTicket = count ? total / count : 0;
 
     // Ventas por mes (ceros para los meses sin ventas, máximo 24)
@@ -153,8 +178,8 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
 
       const lc = locMap.get(s.locationId) || {
         locationId: s.locationId,
-        name: locations.find((l) => l.id === s.locationId)?.name || "Desconocido",
-        type: locations.find((l) => l.id === s.locationId)?.type || null,
+        name: locationById.get(s.locationId)?.name || "Desconocido",
+        type: locationById.get(s.locationId)?.type || null,
         count: 0,
         total: 0,
       };
@@ -170,44 +195,39 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
 
     const bestSeller = salesBySeller.length ? { ...salesBySeller[0] } : null;
 
-    // Top productos y marcas
-    const productMap = new Map<
-      number,
-      { productId: number; name: string; itemCode: string; brand: string; model: string; quantity: number; total: number }
-    >();
-    for (const it of items) {
-      const p = productMap.get(it.product.id) || {
-        productId: it.product.id,
-        name: it.product.name,
-        itemCode: it.product.itemCode,
-        brand: it.product.brand,
-        model: it.product.model,
-        quantity: 0,
-        total: 0,
-      };
-      p.quantity += it.quantity;
-      p.total += Number(it.subtotal);
-      productMap.set(it.product.id, p);
-    }
-    const salesByProduct = Array.from(productMap.values()).sort((a, b) => b.total - a.total).slice(0, 10);
+    // Top productos y marcas: el top se ordena en el rango completo y los
+    // datos del producto se piden solo de los 10 que se van a mostrar.
+    const topProductRows = unitsByProductRows
+      .map((row) => ({
+        productId: row.productId,
+        quantity: row._sum.quantity || 0,
+        total: Number(row._sum.subtotal || 0),
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+
+    const topProducts = topProductRows.length
+      ? await prisma.product.findMany({
+          where: { id: { in: topProductRows.map((p) => p.productId) } },
+          select: { id: true, name: true, itemCode: true, brand: true, model: true },
+        })
+      : [];
+    const topProductById = new Map(topProducts.map((p) => [p.id, p]));
+
+    const salesByProduct = topProductRows.map((row) => ({
+      productId: row.productId,
+      name: topProductById.get(row.productId)?.name || "",
+      itemCode: topProductById.get(row.productId)?.itemCode || "",
+      brand: topProductById.get(row.productId)?.brand || null,
+      model: topProductById.get(row.productId)?.model || null,
+      quantity: row.quantity,
+      total: row.total,
+    }));
 
     // Formas de pago
     const salesByPayment = payments
       .map((p) => ({ method: p.method, count: p._count, total: Number(p._sum.amount || 0) }))
       .sort((a, b) => b.total - a.total);
-
-    // Últimas ventas
-    const recentSales = await prisma.sale.findMany({
-      where,
-      take: 10,
-      orderBy: { saleDate: "desc" },
-      include: {
-        location: { select: { name: true } },
-        user: { select: { name: true } },
-        customer: { select: { name: true } },
-        items: true,
-      },
-    });
 
     res.json({
       sellers,
@@ -230,7 +250,7 @@ router.get("/analytics", authenticate, async (req: AuthRequest, res: Response) =
         location: sale.location.name,
         user: sale.user.name,
         customer: sale.customer?.name || "Cliente general",
-        itemCount: sale.items.length,
+        itemCount: sale._count.items,
       })),
     });
   } catch (error) {
@@ -266,34 +286,101 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
     // Si se filtra por tienda, son los productos que existen en esa tienda, no
     // todo el catalogo: si no, el tablero mezcla una cifra global con el resto
     // de numeros de una sola tienda.
-    const totalProducts = await prisma.product.count({
-      where: scopeId ? { inventories: { some: invWhere } } : {},
-    });
+    //
+    // Las consultas de abajo no se dependen entre si: van todas juntas. Antes
+    // se esperaban de a una y el resumen daba 13 idas y vueltas a la base, que
+    // es lo que mas tardaba en pintar el dashboard.
+    const [
+      totalProducts,
+      productsWithoutStock,
+      lowStockItems,
+      locations,
+      stockAgg,
+      salesToday,
+      salesMonth,
+      salesByLocationAgg,
+      recentMovements,
+      pendingRequests,
+      pendingRequestsCount,
+    ] = await Promise.all([
+      prisma.product.count({
+        where: scopeId ? { inventories: { some: invWhere } } : {},
+      }),
+      // Mismo calculo que antes (traer cada producto y filtrar sus
+      // inventarios en JS), pero resuelto por la base: productos con al menos
+      // un inventario y todos con stock 0. Se mantiene `stock === 0` (y no
+      // `stock > 0`) para no cambiar quien entra en "Sin Stock".
+      prisma.product.count({
+        where: {
+          inventories: { some: invWhere, none: { ...invWhere, stock: { not: 0 } } },
+        },
+      }),
+      prisma.inventory.findMany({
+        where: { stock: { gt: 0 }, minStock: { gt: 0 }, ...locWhere },
+        orderBy: { stock: "asc" },
+        // Solo los campos que se usan: antes se traia la fila completa de
+        // inventario entera para contar y mostrar las primeras 50.
+        select: { productId: true, locationId: true, stock: true, minStock: true },
+      }),
+      prisma.location.findMany({ select: { id: true, name: true, type: true } }),
+      prisma.inventory.groupBy({
+        by: ["locationId"],
+        ...(scopeId ? { where: locWhere } : {}),
+        _sum: { stock: true },
+      }),
+      prisma.sale.aggregate({
+        where: { saleDate: { gte: startOfDay }, ...locWhere, ...userWhere },
+        _count: true,
+        _sum: { total: true },
+      }),
+      prisma.sale.aggregate({
+        where: { saleDate: { gte: startOfMonth }, ...locWhere, ...userWhere },
+        _count: true,
+        _sum: { total: true },
+      }),
+      prisma.sale.groupBy({
+        by: ["locationId"],
+        where: { saleDate: { gte: startOfMonth }, ...locWhere, ...userWhere },
+        _count: true,
+        _sum: { total: true },
+      }),
+      prisma.movement.findMany({
+        where: movementWhere,
+        take: 10,
+        orderBy: { date: "desc" },
+        include: {
+          product: { select: { name: true, itemCode: true } },
+          fromLocation: { select: { name: true } },
+          toLocation: { select: { name: true } },
+          user: { select: { name: true } },
+        },
+      }),
+      prisma.productRequest.findMany({
+        where: { status: "PENDIENTE", ...locWhere },
+        take: 10,
+        orderBy: { createdAt: "desc" },
+        include: {
+          product: { select: { name: true, itemCode: true } },
+          location: { select: { name: true } },
+          requestedBy: { select: { name: true } },
+        },
+      }),
+      // La lista de solicitudes viene cortada en 10 para pintar solo lo
+      // reciente, pero el contador tiene que ser el real: si no, el badge
+      // miente cuando hay mas de 10 pendientes.
+      prisma.productRequest.count({
+        where: { status: "PENDIENTE", ...locWhere },
+      }),
+    ]);
 
-    const productsWithInventory = await prisma.product.findMany({
-      where: scopeId ? { inventories: { some: invWhere } } : { inventories: { some: {} } },
-      select: { id: true, inventories: { where: invWhere, select: { stock: true } } },
-    });
-    const productsWithoutStock = productsWithInventory.filter((p) =>
-      p.inventories.every((inv) => inv.stock === 0)
-    ).length;
-
-    const lowStockItems = await prisma.inventory.findMany({
-      where: { stock: { gt: 0 }, minStock: { gt: 0 }, ...locWhere },
-      orderBy: { stock: "asc" },
-    });
     const criticalStockItems = lowStockItems.filter((item) => item.stock <= item.minStock);
     const productsWithLowStock = criticalStockItems.length;
 
-    const locations = await prisma.location.findMany({ select: { id: true, name: true, type: true } });
+    // Mapa en vez de .find(): cada lista se recorre una sola vez por fila.
+    const locationById = new Map(locations.map((l) => [l.id, l]));
 
-    const stockAgg = await prisma.inventory.groupBy({
-      by: ["locationId"],
-      ...(scopeId ? { where: locWhere } : {}),
-      _sum: { stock: true },
-    });
     const stockByLocation = stockAgg.map((agg) => {
-      const loc = locations.find((l) => l.id === agg.locationId);
+      const loc = locationById.get(agg.locationId);
       return {
         locationId: agg.locationId,
         name: loc?.name || "Desconocido",
@@ -302,27 +389,9 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       };
     });
 
-    const salesToday = await prisma.sale.aggregate({
-      where: { saleDate: { gte: startOfDay }, ...locWhere, ...userWhere },
-      _count: true,
-      _sum: { total: true },
-    });
-
-    const salesMonth = await prisma.sale.aggregate({
-      where: { saleDate: { gte: startOfMonth }, ...locWhere, ...userWhere },
-      _count: true,
-      _sum: { total: true },
-    });
-
-    const salesByLocationAgg = await prisma.sale.groupBy({
-      by: ["locationId"],
-      where: { saleDate: { gte: startOfMonth }, ...locWhere, ...userWhere },
-      _count: true,
-      _sum: { total: true },
-    });
     const salesByLocation = salesByLocationAgg
       .map((agg) => {
-        const loc = locations.find((l) => l.id === agg.locationId);
+        const loc = locationById.get(agg.locationId);
         return {
           locationId: agg.locationId,
           name: loc?.name || "Desconocido",
@@ -332,36 +401,6 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
         };
       })
       .filter((l) => l.type === "TIENDA");
-
-    const recentMovements = await prisma.movement.findMany({
-      where: movementWhere,
-      take: 10,
-      orderBy: { date: "desc" },
-      include: {
-        product: { select: { name: true, itemCode: true } },
-        fromLocation: { select: { name: true } },
-        toLocation: { select: { name: true } },
-        user: { select: { name: true } },
-      },
-    });
-
-    const pendingRequests = await prisma.productRequest.findMany({
-      where: { status: "PENDIENTE", ...locWhere },
-      take: 10,
-      orderBy: { createdAt: "desc" },
-      include: {
-        product: { select: { name: true, itemCode: true } },
-        location: { select: { name: true } },
-        requestedBy: { select: { name: true } },
-      },
-    });
-
-    // La lista de solicitudes viene cortada en 10 para pintar solo lo reciente,
-    // pero el contador tiene que ser el real: si no, el badge miente cuando hay
-    // mas de 10 pendientes.
-    const pendingRequestsCount = await prisma.productRequest.count({
-      where: { status: "PENDIENTE", ...locWhere },
-    });
 
     // El stock critico se pinta en una tabla con scroll. Con varios almacenes y
     // cientos de productos puede haber miles de filas criticas, asi que se
