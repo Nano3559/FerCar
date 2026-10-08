@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
 import { useDialogBehavior } from "../components/ui/useDialog";
+import { STATUS_CONFIG, SOURCE_CONFIG } from "../constants/requests";
 
 interface Product {
   id: number; itemCode: string; name: string; brand: string; model: string;
@@ -32,21 +33,6 @@ interface RequestRecord {
 interface Location {
   id: number; name: string; type: string;
 }
-
-const SOURCE_CONFIG: Record<string, { label: string; className: string }> = {
-  MANUAL: { label: "Manual", className: "text-gray-400 bg-dark-700/50 border-dark-600/50" },
-  VENTA: { label: "Auto · Venta", className: "text-purple-400 bg-purple-500/10 border-purple-500/20" },
-  STOCK_MINIMO: { label: "Auto · Stock mínimo", className: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
-};
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock; bg: string }> = {
-  PENDIENTE: { label: "Pendiente", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20", icon: Clock },
-  RECIBIDO_POR_INVENTARIO: { label: "Recibido por Inventario", color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20", icon: Package },
-  PREPARANDO: { label: "Preparando", color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: Package },
-  ENTREGADO: { label: "Entregado", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20", icon: Truck },
-  RECIBIDO_POR_TIENDA: { label: "Recibido por Tienda", color: "text-green-400", bg: "bg-green-500/10 border-green-500/20", icon: CheckCircle },
-  CANCELADO: { label: "Cancelado", color: "text-red-400", bg: "bg-red-500/10 border-red-500/20", icon: Ban },
-};
 
 const STATUS_FLOW: Record<string, { to: string; label: string; icon: typeof Clock; color: string; hoverColor: string }[]> = {
   PENDIENTE: [
