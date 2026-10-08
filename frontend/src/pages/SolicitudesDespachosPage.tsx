@@ -1,6 +1,5 @@
-import { useState } from "react";
 import { Send, ListChecks, LayoutGrid } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
 import RequestsPage from "./RequestsPage";
 import DespatchListPage from "./DespatchListPage";
@@ -20,20 +19,29 @@ type Tab = "solicitudes" | "tablero" | "despachos";
  * solicitud sin dejar hacer cambios, para mirar el estado general de un vistazo.
  */
 export default function SolicitudesDespachosPage() {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { user, permissions } = useAuthStore();
   const isAdmin = user?.role === "ADMIN";
   const canDespach = isAdmin || permissions.includes("despachos");
 
-  const tabParam = params.get("tab");
-  const inicial = (
-    tabParam === "despachos" && canDespach ? "despachos" : tabParam === "tablero" ? "tablero" : "solicitudes"
-  ) as Tab;
-  const [tab, setTab] = useState<Tab>(inicial);
+  // La pestaña sale de la URL: `/panel/despachos` por sí solo, o `?tab=...`
+  // dentro de `/panel/solicitudes`. Antes solo se leía el parámetro, así que
+  // `/panel/despachos` caía siempre en Solicitudes.
+  const tabParam = params.get("tab") ?? (location.pathname.endsWith("/despachos") ? "despachos" : null);
+  const tab: Tab =
+    tabParam === "despachos" && canDespach ? "despachos" : tabParam === "tablero" ? "tablero" : "solicitudes";
 
   const changeTab = (next: Tab) => {
-    setTab(next);
-    setParams(next === "solicitudes" ? {} : { tab: next }, { replace: true });
+    navigate(
+      next === "despachos"
+        ? "/panel/despachos"
+        : next === "tablero"
+          ? "/panel/solicitudes?tab=tablero"
+          : "/panel/solicitudes",
+      { replace: true },
+    );
   };
 
   const tabClass = (activo: boolean) =>
