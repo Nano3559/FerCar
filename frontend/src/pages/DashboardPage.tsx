@@ -158,8 +158,11 @@ export default function DashboardPage() {
   const isAlmacenMode = selectedLocation?.type === "ALMACEN";
 
   const fetchDashboard = async () => {
+    // El esqueleto se muestra solo mientras no haya nada en pantalla. Al
+    // cambiar de filtro o pulsar Actualizar se conserva lo que ya se ve y los
+    // datos nuevos llegan encima: asi la pagina no parpadea en cada cambio.
+    if (!data) setLoading(true);
     try {
-      setLoading(true);
       const res = await api.get("/dashboard", {
         params: {
           ...(locationFilter ? { locationId: locationFilter } : {}),
@@ -252,7 +255,9 @@ export default function DashboardPage() {
     );
   }
 
-  if (!isAlmacenMode && (error || !data)) {
+  // Solo sin datos que mostrar: si una recarga falla se avisa arriba y se
+  // dejan en pantalla los datos que ya estaban cargados.
+  if (!isAlmacenMode && !data) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <AlertTriangle size={40} className="text-red-400" />
@@ -433,8 +438,24 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {!isAlmacenMode && error && data && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-2xl text-sm text-red-300"
+        >
+          <AlertTriangle size={16} className="shrink-0" />
+          <span>{error}. Se siguen mostrando los datos cargados antes.</span>
+          <button
+            onClick={fetchDashboard}
+            className="ml-auto px-3 py-1.5 bg-red-500/20 border border-red-500/40 rounded-xl hover:bg-red-500/30 transition-colors"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
       {isAlmacenMode ? (
-        <SalesAnalyticsBoard data={analytics} loading={analyticsLoading} showLocationChart />
+        <SalesAnalyticsBoard data={analytics} loading={analyticsLoading && !analytics} showLocationChart />
       ) : (
         <>
           {/* Main Stats */}
@@ -520,7 +541,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Analíticas de ventas */}
-          <SalesAnalyticsBoard data={analytics} loading={analyticsLoading} />
+          <SalesAnalyticsBoard data={analytics} loading={analyticsLoading && !analytics} />
 
           {/* Stock Summary Cards */}
           <div className="grid sm:grid-cols-3 gap-4">
