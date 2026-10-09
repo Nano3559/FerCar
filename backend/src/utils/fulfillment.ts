@@ -303,6 +303,43 @@ export interface FulfillmentSummary {
   }[];
 }
 
+/**
+ * Cierra el circuito entre lo que una línea vendió y lo que alguien va a pedir
+ * por ella. `deliveredQuantity` solo sube cuando una solicitud llega a
+ * RECIBIDO_POR_TIENDA, así que una línea con unidades pendientes y ninguna
+ * solicitud atada queda corta para siempre: el almacén nunca recibe el pedido y
+ * la venta jamás se completa. Se lanza dentro de la transacción que crea o
+ * amplía la venta, para que no se guarde un pedido imposible de cerrar.
+ */
+export function assertPendingCovered(
+  items: { id: number; quantity: number; deliveredQuantity: number }[],
+  requests: { saleItemId: number | null; quantity: number }[],
+): void {
+  const cubiertas = new Map<number, number>();
+  for (const request of requests) {
+    if (request.saleItemId == null) continue;
+    cubiertas.set(
+      request.saleItemId,
+      (cubiertas.get(request.saleItemId) ?? 0) + Number(request.quantity),
+    );
+  }
+
+  const sinSolicitud = items
+    .map((item) => ({
+      pendiente: pendingUnits(item),
+      descubierta: Math.max(pendingUnits(item) - (cubiertas.get(item.id) ?? 0), 0),
+    }))
+    .filter((linea) => linea.descubierta > 0);
+
+  if (sinSolicitud.length > 0) {
+    const total = sinSolicitud.reduce((s, l) => s + l.descubierta, 0);
+    throw new Error(
+      `${total} unidad(es) pendientes quedaron sin solicitud: nadie las va a pedir y la venta no podría completarse. ` +
+        `Revisá el origen asignado antes de guardar.`,
+    );
+  }
+}
+
 /** Resumen de entrega de una venta ya guardada, para el listado y el historial. */
 export function summarizeFulfillment(
   items: { id: number; productId: number; quantity: number; deliveredQuantity: number }[],

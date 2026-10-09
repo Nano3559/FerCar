@@ -4,7 +4,7 @@ import { authenticate, authorize, requireTiendaLocation } from "../../shared/mid
 import { AuthRequest } from "../../shared/types";
 import { ensureRestockRequest } from "../../utils/restockRequest";
 import { validateAndMergeItems, demandByProduct } from "../../utils/saleItems";
-import { planFulfillment, loadStockSnapshot, summarizeFulfillment, FulfillmentError } from "../../utils/fulfillment";
+import { planFulfillment, loadStockSnapshot, summarizeFulfillment, FulfillmentError, assertPendingCovered } from "../../utils/fulfillment";
 import { saleCode } from "../../shared/documentCodes";
 import { saleDateRange } from "../../utils/dateRange";
 
@@ -583,6 +583,15 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         }
       }
 
+      // Verificación final antes de dar por buena la venta: si una línea quedó
+      // con unidades pendientes que ninguna solicitud cubre, esa mercadería
+      // nadie la va a pedir y deliveredQuantity nunca va a subir.
+      const solicitudesVenta = await tx.productRequest.findMany({
+        where: { saleId: sale.id, status: { not: "CANCELADO" } },
+        select: { saleItemId: true, quantity: true },
+      });
+      assertPendingCovered(sale.items, solicitudesVenta);
+
       const etiqueta = (productId: number) => {
         const p = nombrePorId.get(productId);
         return p ? `${p.name} (${p.itemCode})` : `Producto ${productId}`;
@@ -819,6 +828,14 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
           payments: true,
         },
       });
+
+      // Misma verificación que al crear la venta: cada unidad que quedó
+      // pendiente tiene que tener su solicitud, o nunca va a llegar.
+      const solicitudesAmpliacion = await tx.productRequest.findMany({
+        where: { saleId, status: { not: "CANCELADO" } },
+        select: { saleItemId: true, quantity: true },
+      });
+      assertPendingCovered(updated!.items, solicitudesAmpliacion);
 
       return {
         ...updated!,

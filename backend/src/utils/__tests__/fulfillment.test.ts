@@ -4,6 +4,7 @@ import {
   planFulfillment,
   summarizeFulfillment,
   loadStockSnapshot,
+  assertPendingCovered,
   FulfillmentError,
 } from "../fulfillment";
 
@@ -434,4 +435,63 @@ test("en una ampliacion lo que aporta la tienda propia entra como entregado", ()
   assert.equal(plan.lines[0].pending, 6);
   assert.equal(plan.lines[0].origenesPendientes.length, 1);
   assert.equal(plan.lines[0].origenesPendientes[0].locationId, SILES);
+});
+
+// --- Cada unidad pendiente tiene que tener su solicitud ---
+
+const linea = (id: number, quantity: number, deliveredQuantity: number) => ({
+  id,
+  quantity,
+  deliveredQuantity,
+});
+
+test("una linea completa no necesita solicitudes", () => {
+  assert.doesNotThrow(() => assertPendingCovered([linea(1, 3, 3)], []));
+});
+
+test("lo pendiente cubierto por sus solicitudes pasa", () => {
+  assert.doesNotThrow(() =>
+    assertPendingCovered([linea(1, 5, 2)], [{ saleItemId: 1, quantity: 3 }]),
+  );
+});
+
+test("varias solicitudes sobre la misma linea se suman", () => {
+  assert.doesNotThrow(() =>
+    assertPendingCovered([linea(1, 6, 0)], [
+      { saleItemId: 1, quantity: 4 },
+      { saleItemId: 1, quantity: 2 },
+    ]),
+  );
+});
+
+test("lo pendiente sin ninguna solicitud se rechaza", () => {
+  assert.throws(
+    () => assertPendingCovered([linea(2, 2, 1)], []),
+    (e: any) => /sin solicitud/.test(e.message),
+  );
+});
+
+test("una solicitud de otra linea no cubre esta", () => {
+  assert.throws(
+    () =>
+      assertPendingCovered(
+        [linea(1, 4, 2), linea(2, 3, 3)],
+        [{ saleItemId: 2, quantity: 1 }],
+      ),
+    (e: any) => /sin solicitud/.test(e.message),
+  );
+});
+
+test("la cobertura parcial tambien se rechaza", () => {
+  assert.throws(
+    () => assertPendingCovered([linea(1, 5, 0)], [{ saleItemId: 1, quantity: 2 }]),
+    (e: any) => /sin solicitud/.test(e.message),
+  );
+});
+
+test("una solicitud huerfana, sin linea, no cubre nada", () => {
+  assert.throws(
+    () => assertPendingCovered([linea(1, 2, 1)], [{ saleItemId: null, quantity: 5 }]),
+    (e: any) => /sin solicitud/.test(e.message),
+  );
 });

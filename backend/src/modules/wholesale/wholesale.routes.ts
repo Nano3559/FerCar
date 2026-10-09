@@ -7,7 +7,7 @@ import { AuthRequest } from "../../shared/types";
 import { saleDateRange } from "../../utils/dateRange";
 import { ensureRestockRequest } from "../../utils/restockRequest";
 import { validateAndMergeItems } from "../../utils/saleItems";
-import { planFulfillment, loadStockSnapshot, summarizeFulfillment, FulfillmentError } from "../../utils/fulfillment";
+import { planFulfillment, loadStockSnapshot, summarizeFulfillment, FulfillmentError, assertPendingCovered } from "../../utils/fulfillment";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -217,6 +217,14 @@ router.post("/", async (req: AuthRequest, res: Response) => {
       });
     }
   }
+
+  // Cada unidad pendiente tiene que tener su solicitud antes de dar por buena
+  // la venta: sin ella nadie la pide y deliveredQuantity nunca sube.
+  const solicitudesVenta = await tx.productRequest.findMany({
+    where: { saleId: sale.id, status: { not: "CANCELADO" } },
+    select: { saleItemId: true, quantity: true },
+  });
+  assertPendingCovered(sale.items, solicitudesVenta);
 
   // Se devuelve qué productos quedaron pendientes y cuánto se pidió, para
   // que la pantalla avise en vez de dejar pasar la venta en silencio.
