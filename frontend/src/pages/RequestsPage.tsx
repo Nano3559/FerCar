@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Send, Plus, X, RefreshCw, ChevronDown, ChevronLeft, ChevronRight,
-  Search, Clock, Package, Truck, CheckCircle, Ban, Info, History, Calendar, MapPin,
+  Search, Clock, Package, Truck, CheckCircle, Ban, Info, History, Calendar, MapPin, FileText,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
@@ -57,6 +58,7 @@ const STATUS_FLOW: Record<string, { to: string; label: string; icon: typeof Cloc
 const PAGE_SIZE = 15;
 
 export default function RequestsPage({ embedded = false }: { embedded?: boolean }) {
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const role = user?.role || "";
   const isInventario = role === "INVENTARIO" || role === "ADMIN";
@@ -232,9 +234,14 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
   };
 
   const canPerformAction = (actionTo: string, record: RequestRecord): boolean => {
-    // Con nota de despacho asignada, la nota es la que mueve el stock: entregar o
+    // El stock lo mueve la nota de despacho. Con nota asignada, entregar o
     // cancelar a mano dejaría la nota con unidades que ya no corresponden.
     if (record.despatchNoteId && (actionTo === "ENTREGADO" || actionTo === "CANCELADO")) return false;
+    // Sin nota no hay documento ni movimiento: esas dos acciones solo las hace
+    // la entrega de la nota, así que no se ofrecen acá.
+    if (!record.despatchNoteId && (actionTo === "ENTREGADO" || actionTo === "RECIBIDO_POR_TIENDA")) {
+      return false;
+    }
     if (role === "ADMIN") return true;
     if (["RECIBIDO_POR_INVENTARIO", "PREPARANDO", "ENTREGADO"].includes(actionTo)) return isInventario;
     // La llegada del producto la confirma quien lo pidió.
@@ -429,6 +436,19 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
                               </div>
                             );
                           })}
+                          {!r.despatchNoteId && (r.status === "PREPARANDO" || r.status === "ENTREGADO") && (
+                            <div className="relative group">
+                              <button
+                                onClick={() => navigate("/panel/despachos")}
+                                className="p-2 rounded-xl border transition-all duration-200 text-primary-400 bg-primary-500/10 border-primary-500/20 hover:bg-primary-500/20 hover:border-primary-500/40 hover:shadow-lg active:scale-95"
+                              >
+                                <FileText size={15} />
+                              </button>
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-dark-950 border border-dark-700 rounded-lg text-xs text-foreground whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-xl z-10">
+                                Generar nota de despacho
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -696,13 +716,14 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
                   <p className="flex items-center gap-2"><Clock size={14} className="text-yellow-400" /> <strong className="text-yellow-400">Pendiente</strong> — Solicitud creada</p>
                   <p className="flex items-center gap-2"><Package size={14} className="text-blue-400" /> <strong className="text-blue-400">Recibido por Inventario</strong> — Inventario tomó conocimiento</p>
                   <p className="flex items-center gap-2"><Package size={14} className="text-purple-400" /> <strong className="text-purple-400">Preparando</strong> — Armando el pedido</p>
-                  <p className="flex items-center gap-2"><Truck size={14} className="text-orange-400" /> <strong className="text-orange-400">Entregado</strong> — Pedido enviado a la tienda</p>
+                  <p className="flex items-center gap-2"><Truck size={14} className="text-orange-400" /> <strong className="text-orange-400">Entregado</strong> — Lo pone la entrega de la nota de despacho, que es la que mueve el stock</p>
                   <p className="flex items-center gap-2"><CheckCircle size={14} className="text-green-400" /> <strong className="text-green-400">Recibido por Tienda</strong> — <strong>Quien pidió el producto</strong> confirma su llegada</p>
                 </div>
               </div>
               <div>
                 <h4 className="text-foreground font-semibold mb-1">¿Quién puede cambiar el estado?</h4>
-                <p><strong className="text-blue-400">Inventario/Admin:</strong> Recibir, Preparar, Entregar</p>
+                <p><strong className="text-blue-400">Inventario/Admin:</strong> Recibir y Preparar</p>
+                <p><strong className="text-orange-400">Entregar:</strong> solo la nota de despacho, desde la pestaña <strong>Despachos</strong> (es la que mueve el stock)</p>
                 <p><strong className="text-green-400">Quien creó la solicitud (o Admin):</strong> Confirmar que el producto llegó a la tienda</p>
               </div>
               <div>

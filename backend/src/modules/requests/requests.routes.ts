@@ -264,11 +264,21 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Si la solicitud ya está en una nota de despacho, el stock se mueve al
-    // entregar esa nota, no marcándola a mano.
-    if (status === "ENTREGADO" && existing.despatchNoteId) {
+    // El stock solo se mueve al entregar la nota de despacho: es la que descuenta
+    // el origen, suma a la tienda destino y crea la fila de Movement. Marcar
+    // "Entregado" a mano dejaba solicitudes cerradas con el inventario intacto,
+    // sin documento ni movimiento que explicara el traslado.
+    if (status === "ENTREGADO") {
       return res.status(400).json({
-        message: `Esta solicitud se entrega con la nota ${existing.despatchNote?.noteNumber}. Entrega la nota para mover el stock.`,
+        message: existing.despatchNoteId
+          ? `Esta solicitud se entrega con la nota ${existing.despatchNote?.noteNumber}. Entrega la nota para mover el stock.`
+          : "Esta solicitud no tiene nota de despacho: genera la nota en Despachos y entregala para mover el stock.",
+      });
+    }
+    // "Recibido por Tienda" solo confirma una entrega que ya hizo la nota.
+    if (status === "RECIBIDO_POR_TIENDA" && !existing.despatchNoteId) {
+      return res.status(400).json({
+        message: "Esta solicitud no tiene nota de despacho: genera la nota en Despachos y entregala para mover el stock.",
       });
     }
 
