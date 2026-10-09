@@ -608,6 +608,14 @@ router.post("/:id/cancel", async (req: AuthRequest, res: Response) => {
     const note = await prisma.despatchNote.findUnique({ where: { id } });
     if (!note) return res.status(404).json({ message: "Nota de despacho no encontrada" });
     if (note.status === "ANULADA") return res.status(400).json({ message: "La nota ya está anulada" });
+    // Anular una nota entregada dejaba el stock sumado en el destino, sin
+    // devolverlo al origen, y las solicitudes en ENTREGADO sin nota: no se
+    // podían confirmar ni volver a despachar. Ya no se permite.
+    if (note.status === "ENTREGADA") {
+      return res.status(400).json({
+        message: "No se puede anular una nota ya entregada: el stock ya se movió al destino",
+      });
+    }
 
     const reason = parseString(req.body.reason, "Motivo de anulación", { max: 300 });
 

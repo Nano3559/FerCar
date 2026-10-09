@@ -770,7 +770,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                               <CheckCircle2 size={15} />
                             </button>
                           )}
-                          {n.status !== "ANULADA" && (
+                          {n.status === "EMITIDA" && (
                             <button onClick={() => setCancelNote(n)} title="Anular" aria-label="Anular nota"
                               className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
                               <Ban size={15} />
