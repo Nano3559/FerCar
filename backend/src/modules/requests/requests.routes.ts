@@ -52,20 +52,31 @@ function endOfDay(d: Date): Date {
 // GET / — Listar solicitudes con filtros + historial
 router.get("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { status, locationId, startDate, endDate, page = "1", limit = "20" } = req.query;
+    const { status, locationId, startDate, endDate, scope, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
     if (status && typeof status === "string") where.status = status as RequestStatus;
     if (locationId && typeof locationId === "string") where.locationId = Number(locationId);
 
-    // El registro se conserva siempre; la lista muestra por defecto los
-    // últimos 30 días, igual que el historial de devoluciones.
-    const from = startDate ? new Date(String(startDate)) : daysAgo(30);
-    const to = endDate ? new Date(String(endDate)) : endOfDay(new Date());
-    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-      return res.status(400).json({ message: "Rango de fechas inválido" });
+    if (scope === "daily") {
+      // El tablero de seguimiento es diario: muestra lo creado hoy (en
+      // cualquier estado) y todo lo que siga abierto de días anteriores, para
+      // que nada quede sin cerrar. Al pasar el día, lo ya cerrado (entregado a
+      // la tienda o cancelado) se limpia solo, sin borrar el registro.
+      where.OR = [
+        { date: { gte: startOfDay(new Date()) } },
+        { status: { in: [...ESTADOS_ABIERTOS] } },
+      ];
+    } else {
+      // El registro se conserva siempre; la lista muestra por defecto los
+      // últimos 30 días, igual que el historial de devoluciones.
+      const from = startDate ? new Date(String(startDate)) : daysAgo(30);
+      const to = endDate ? new Date(String(endDate)) : endOfDay(new Date());
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        return res.status(400).json({ message: "Rango de fechas inválido" });
+      }
+      where.date = { gte: startOfDay(from), lte: endOfDay(to) };
     }
-    where.date = { gte: startOfDay(from), lte: endOfDay(to) };
 
     if (req.user?.role === "TIENDA") {
       where.locationId = req.user.locationId;

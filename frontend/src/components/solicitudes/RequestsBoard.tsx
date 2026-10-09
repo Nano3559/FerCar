@@ -11,6 +11,10 @@ import { STATUS_CONFIG, SOURCE_CONFIG, REQUEST_STATUSES } from "../../constants/
  * la tomó nadie, si ya salió, si llegó. Es una lectura, no una acción: los
  * cambios se siguen haciendo en la lista y en Despachos, y este tablero los
  * refleja solo (se refresca cada 30 s mientras la pestaña esté visible).
+ *
+ * Es diario: se ven las solicitudes creadas hoy y las que quedaron abiertas de
+ * días anteriores. Al pasar el día, las ya cerradas (recibidas por tienda o
+ * canceladas) se limpian solas; el registro no se borra, solo sale del tablero.
  */
 interface BoardRequest {
   id: number;
@@ -39,7 +43,7 @@ export default function RequestsBoard() {
   const fetchBoard = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
     try {
-      const res = await api.get("/requests", { params: { page: 1, limit: FETCH_LIMIT } });
+      const res = await api.get("/requests", { params: { page: 1, limit: FETCH_LIMIT, scope: "daily" } });
       setItems(Array.isArray(res.data?.requests) ? res.data.requests : []);
       setTotal(res.data?.pagination?.total ?? 0);
       setUpdatedAt(new Date());
@@ -102,7 +106,7 @@ export default function RequestsBoard() {
     return (
       <EmptyState
         icon={ClipboardList}
-        title="No hay solicitudes en los últimos 30 días"
+        title="No hay solicitudes de hoy ni pendientes"
         description="Cuando una tienda pida un producto aparecerá acá, por el paso en el que esté."
       />
     );
