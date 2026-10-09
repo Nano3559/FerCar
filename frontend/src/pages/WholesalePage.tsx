@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import {
   Plus, Minus, Trash2, X, Search, FileText,
   Check, Upload, RefreshCw, FileSpreadsheet, ShoppingCart,
-  Filter, ChevronLeft, ChevronRight, Wallet, Clock,
+  Filter, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Wallet, Clock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -39,7 +39,7 @@ interface WholesaleSale {
   location: { name: string } | null;
   user: { name: string } | null;
   payments: { method: string; amount: number }[];
-  items: { productId: number; quantity: number; deliveredQuantity?: number; unitPrice: number; subtotal: number; product: { id: number; name: string; itemCode: string; brand: string; model: string } }[];
+  items: { id: number; productId: number; quantity: number; deliveredQuantity?: number; unitPrice: number; subtotal: number; product: { id: number; name: string; itemCode: string; brand: string; model: string; manufacturer: string } }[];
   entrega?: { pendientes: number; pedidas: number; entregadas: number; completa: boolean };
 }
 
@@ -105,6 +105,9 @@ export default function WholesalePage() {
   const [histTotal, setHistTotal] = useState(0);
   const [histLocations, setHistLocations] = useState<{ id: number; name: string }[]>([]);
   const WHOLESALE_PAGE_SIZE = 20;
+  // Fila abierta del historial. Sin esto no habia forma de ver que productos
+  // componian una venta mayorista: solo estaba el boton de imprimir la nota.
+  const [expandedSale, setExpandedSale] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"venta" | "carrito" | "historial">("venta");
   const [showConfirm, setShowConfirm] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
@@ -695,6 +698,10 @@ export default function WholesalePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-dark-700/50">
+                    {/* La primera celda es la del boton de expandir, sin
+                        encabezado: sin ella todos los titulos caen una columna
+                        a la izquierda de sus datos. */}
+                    <th className="w-10 px-2 py-3" />
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Código</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Fecha</th>
                     <th className="text-left px-4 py-3 text-gray-400 font-medium">Cliente</th>
@@ -708,7 +715,7 @@ export default function WholesalePage() {
                 </thead>
                 <tbody>
                   {sales.length === 0 ? (
-                    <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                    <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">
                       {histDateFrom || histDateTo || histLocation
                         ? "No hay ventas mayoristas que coincidan con el filtro"
                         : "No hay ventas mayoristas registradas"}
@@ -716,7 +723,15 @@ export default function WholesalePage() {
                   ) : sales.map((s) => {
                     const paid = salePaid(s);
                     return (
-                    <tr key={s.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
+                    <Fragment key={s.id}>
+                    <tr className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
+                      <td className="px-2 py-3">
+                        <button onClick={() => setExpandedSale(expandedSale === s.id ? null : s.id)}
+                          className="p-1.5 rounded-lg text-gray-500 hover:text-primary-400 hover:bg-dark-700/50 transition-all"
+                          title={expandedSale === s.id ? "Ocultar ítems" : "Ver ítems"}>
+                          {expandedSale === s.id ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                        </button>
+                      </td>
                       <td className="px-4 py-3 text-amber-400/90 font-mono text-xs whitespace-nowrap">{saleCode(s.id, s.saleDate)}</td>
                       <td className="px-4 py-3 text-gray-300">{formatDate(s.saleDate)}</td>
                       <td className="px-4 py-3 text-foreground font-medium">{s.customer?.name || "N/A"}</td>
@@ -761,6 +776,46 @@ export default function WholesalePage() {
                         </div>
                       </td>
                     </tr>
+                    {expandedSale === s.id && (
+                      <tr className="bg-dark-900/40">
+                        <td colSpan={10} className="px-4 py-3">
+                          <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Detalle de ítems</p>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-gray-500 border-b border-dark-700/50">
+                                  <th className="text-left px-2 py-1.5 font-medium">Producto</th>
+                                  <th className="text-left px-2 py-1.5 font-medium">Fabricante</th>
+                                  <th className="text-left px-2 py-1.5 font-medium">Código</th>
+                                  <th className="text-right px-2 py-1.5 font-medium">Cantidad</th>
+                                  <th className="text-right px-2 py-1.5 font-medium">Precio</th>
+                                  <th className="text-right px-2 py-1.5 font-medium">Subtotal</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {s.items.length === 0 ? (
+                                  <tr><td colSpan={6} className="px-2 py-3 text-center text-gray-600">Sin ítems</td></tr>
+                                ) : s.items.map((item) => (
+                                  <tr key={item.id} className="border-b border-dark-700/20">
+                                    <td className="px-2 py-1.5">
+                                      <span className="text-foreground">{item.product?.name || "Producto"}</span>
+                                      {item.product?.brand && <span className="text-gray-500 ml-2">{item.product.brand}</span>}
+                                      {item.product?.model && <span className="text-gray-600 ml-1">{item.product.model}</span>}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-gray-400">{item.product?.manufacturer || "-"}</td>
+                                    <td className="px-2 py-1.5 text-gray-400 font-mono">{item.product?.itemCode || "-"}</td>
+                                    <td className="px-2 py-1.5 text-right text-gray-300">{item.quantity}</td>
+                                    <td className="px-2 py-1.5 text-right text-gray-300">{formatBs(Number(item.unitPrice))}</td>
+                                    <td className="px-2 py-1.5 text-right text-emerald-400 font-medium">{formatBs(Number(item.subtotal))}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );})}
                 </tbody>
               </table>

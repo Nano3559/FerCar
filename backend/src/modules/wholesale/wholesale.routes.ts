@@ -526,7 +526,10 @@ router.get("/", async (req: AuthRequest, res: Response) => {
           user: { select: { id: true, name: true } },
           location: { select: { id: true, name: true } },
           customer: true,
-          items: { include: { product: { select: { id: true, name: true, itemCode: true } } } },
+          // Marca, modelo y fabricante hacen falta para el detalle del
+          // historial y para la nota de venta que se imprime desde ahi: sin
+          // ellos la tabla salia vacia y la nota imprimia "undefined".
+          items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true, model: true, manufacturer: true } } } },
           payments: true,
         },
         orderBy: { saleDate: "desc" },
