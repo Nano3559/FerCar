@@ -204,16 +204,25 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     // Una solicitud manual no reserva stock: sigue en su ubicacion hasta que se
     // despacha. Sin este control se podian pedir mas unidades de las que hay en
     // toda la cadena (37 de un producto que tenia 20) y el faltante se descubria
-    // recien cuando inventario no encontraba la mercaderia.
+    // recien cuando inventario no encontraba la mercaderia. El techo se mide
+    // contra la ubicacion ORIGEN: dos pedidos a la misma tienda no pueden
+    // prometer mas de lo que esa tienda tiene (3 a una tienda con 2).
     const [inventario, abiertas] = await Promise.all([
-      prisma.inventory.findMany({ where: { productId }, select: { stock: true } }),
+      prisma.inventory.findMany({
+        where: { productId, ...(fromLocationId ? { locationId: fromLocationId } : {}) },
+        select: { stock: true },
+      }),
       prisma.productRequest.findMany({
-        where: { productId, status: { in: [...ESTADOS_ABIERTOS] } },
+        where: {
+          productId,
+          status: { in: [...ESTADOS_ABIERTOS] },
+          ...(fromLocationId ? { fromLocationId } : {}),
+        },
         select: { quantity: true, source: true },
       }),
     ]);
     const disponibilidad = calcularDisponibilidad(inventario, abiertas);
-    const error = errorSiExcede(quantity, disponibilidad, product.name);
+    const error = errorSiExcede(quantity, disponibilidad, product.name, fromLocation?.name);
     if (error) return res.status(400).json({ message: error });
 
     const request = await prisma.productRequest.create({

@@ -82,3 +82,19 @@ test("sin error devuelve null", () => {
   const d: Disponibilidad = { totalCadena: 20, comprometido: 0, disponible: 20 };
   assert.equal(errorSiExcede(3, d, "X"), null);
 });
+
+test("el mensaje nombra el origen y lo que queda cuando se pasa la ubicación", () => {
+  // El caso reportado: SILES con 2 y una solicitud de 1 encima de otra de 2.
+  const d = calcularDisponibilidad([{ stock: 2 }], [{ quantity: 2, source: "MANUAL" }]);
+  const err = errorSiExcede(1, d, "P015", "SILES");
+  assert.ok(err);
+  assert.match(err, /SILES/);
+  assert.match(err, /quedan 0/);
+});
+
+test("avisa cuando el origen no tiene stock", () => {
+  const d = calcularDisponibilidad([{ stock: 0 }], []);
+  const err = errorSiExcede(1, d, "P015", "SILES");
+  assert.ok(err);
+  assert.match(err, /no tiene stock en SILES/);
+});

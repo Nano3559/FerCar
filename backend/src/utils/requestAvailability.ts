@@ -5,10 +5,13 @@
 // seguidas podian Commitmentar mas de lo que existe en toda la cadena (el caso
 // reportado: un producto con 20 unidades en total y un pedido de 37).
 //
-// La regla es que la suma de lo que hay en todas las tiendas y almacenes, menos
-// lo que ya esta comprometido en solicitudes abiertas, es el techo. No se
-// recorta en silencio: si el pedido excede el techo la ruta lo rechaza con el
-// numero exacto, para que el vendedor decida.
+// El techo se calcula por ubicacion ORIGEN: lo que hay en la tienda/almacen al
+// que se le pide, menos lo que ya esta comprometido en solicitudes abiertas de
+// ese mismo origen. Antes se sumaba toda la cadena, asi que se podian pedir 3
+// unidades a una tienda que solo tenia 2 mientras hubiera stock en cualquier
+// otra ubicacion (el caso reportado: SILES con 2 y dos pedidos de 2 y 1).
+// No se recorta en silencio: si el pedido excede el techo la ruta lo rechaza
+// con el numero exacto, para que el vendedor decida.
 
 // Las de venta no se suman: su stock ya se desconto al cobrar, o sea que ya
 // estan fuera del inventario disponible.
@@ -53,24 +56,28 @@ export const calcularDisponibilidad = (
 
 /**
  * Mensaje de error si la cantidad excede el techo, o null si esta bien.
- * `nombre` es el nombre del producto para que el mensaje sea util.
+ * `nombre` es el nombre del producto para que el mensaje sea util. `origen` es
+ * el nombre de la ubicacion a la que se le pide; si se omite el mensaje habla
+ * de "toda la cadena" (compatibilidad con el techo global).
  */
 export const errorSiExcede = (
   cantidad: number,
   disp: Disponibilidad,
   nombre: string,
+  origen?: string | null,
 ): string | null => {
   if (cantidad <= disp.disponible) return null;
+  const donde = origen ? `en ${origen}` : "en toda la cadena";
   if (disp.totalCadena === 0) {
-    return `"${nombre}" no tiene stock en ninguna tienda ni almacén: no hay nada que pedir.`;
+    return origen
+      ? `"${nombre}" no tiene stock en ${origen}: no hay nada que pedir de ahí.`
+      : `"${nombre}" no tiene stock en ninguna tienda ni almacén: no hay nada que pedir.`;
   }
   if (disp.comprometido > 0) {
     return (
-      `No podés pedir ${cantidad} unidades de "${nombre}": hay ${disp.totalCadena} en toda la cadena ` +
+      `No podés pedir ${cantidad} unidades de "${nombre}": ${donde} hay ${disp.totalCadena} ` +
       `y ${disp.comprometido} ya están comprometidas en solicitudes abiertas, así que quedan ${disp.disponible}.`
     );
   }
-  return (
-    `No podés pedir ${cantidad} unidades de "${nombre}": en todas las tiendas y almacenes hay ${disp.totalCadena}.`
-  );
+  return `No podés pedir ${cantidad} unidades de "${nombre}": ${donde} hay ${disp.totalCadena}.`;
 };

@@ -99,6 +99,15 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
   const [showInfo, setShowInfo] = useState(false);
   const [showHistory, setShowHistory] = useState<RequestRecord | null>(null);
 
+  // El techo de una solicitud es lo que hay en la ubicación ORIGEN elegida, no
+  // el total de la cadena. Sin origen no hay contra qué comparar (el backend
+  // cae al primer almacén). El servidor vuelve a validarlo igual.
+  const origenId = selectedOrigin ? Number(selectedOrigin) : null;
+  const stockEnOrigen = origenId !== null
+    ? selectedProduct?.stockByLocation?.find((l) => l.locationId === origenId)?.stock
+    : undefined;
+  const nombreOrigen = origenId !== null ? locations.find((l) => l.id === origenId)?.name : undefined;
+
   const newPanelRef = useDialogBehavior(showNew, () => { setShowNew(false); clearProduct(); });
   const historyPanelRef = useDialogBehavior(showHistory !== null, () => setShowHistory(null));
   const infoPanelRef = useDialogBehavior(showInfo, () => setShowInfo(false));
@@ -204,11 +213,10 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
     if (qty <= 0) { toast.error("La cantidad debe ser mayor a 0"); return; }
 
     // El backend es el que manda, pero avisar aca evita mandar un pedido que
-    // seguro va a ser rechazado: la mercaderia no puede sumar mas que lo que hay
-    // sumando todas las tiendas y los almacenes.
-    const totalCadena = selectedProduct.stockByLocation?.reduce((s, l) => s + (l.stock || 0), 0);
-    if (totalCadena !== undefined && qty > totalCadena) {
-      toast.error(`No podés pedir ${qty}: en toda la cadena hay ${totalCadena} unidades`);
+    // seguro va a ser rechazado: no se puede pedir mas de lo que hay en la
+    // ubicacion origen elegida.
+    if (stockEnOrigen !== undefined && qty > stockEnOrigen) {
+      toast.error(`No podés pedir ${qty}: en ${nombreOrigen || "el origen"} hay ${stockEnOrigen} unidad(es)`);
       return;
     }
 
@@ -652,11 +660,17 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
                   className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
                 {selectedProduct?.stockByLocation && (
                   <p className="text-xs text-gray-500 mt-1.5">
-                    En toda la cadena hay{" "}
-                    <span className="text-gray-300 font-medium">
-                      {selectedProduct.stockByLocation.reduce((s, l) => s + (l.stock || 0), 0)}
-                    </span>{" "}
-                    unidad(es). No se puede pedir más de eso.
+                    {stockEnOrigen !== undefined ? (
+                      <>
+                        En <span className="text-gray-300 font-medium">{nombreOrigen || "el origen"}</span> hay{" "}
+                        <span className="text-gray-300 font-medium">{stockEnOrigen}</span> unidad(es). No se puede pedir más de lo que hay ahí.
+                      </>
+                    ) : (
+                      <>
+                        Elegí el origen para ver cuánto hay ahí (en toda la cadena hay{" "}
+                        {selectedProduct.stockByLocation.reduce((s, l) => s + (l.stock || 0), 0)}).
+                      </>
+                    )}
                   </p>
                 )}
               </div>
