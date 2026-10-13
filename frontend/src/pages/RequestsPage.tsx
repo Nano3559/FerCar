@@ -233,22 +233,67 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
     }
   };
 
-  const canPerformAction = (actionTo: string, record: RequestRecord): boolean => {
-    // El stock lo mueve la nota de despacho. Con nota asignada, entregar o
-    // cancelar a mano dejaría la nota con unidades que ya no corresponden.
-    if (record.despatchNoteId && (actionTo === "ENTREGADO" || actionTo === "CANCELADO")) return false;
-    // Sin nota no hay documento ni movimiento: esas dos acciones solo las hace
-    // la entrega de la nota, así que no se ofrecen acá.
-    if (!record.despatchNoteId && (actionTo === "ENTREGADO" || actionTo === "RECIBIDO_POR_TIENDA")) {
-      return false;
+  // Resuelve, para cada paso del flujo, si el usuario puede darlo ahora. Un paso
+  // que el usuario SÍ podría dar pero que el proceso bloquea (por ejemplo,
+  // entregar sin nota de despacho) se muestra deshabilitado CON el motivo, para
+  // que el flujo quede a la vista en vez de desaparecer sin explicación.
+  const resolveAction = (
+    actionTo: string,
+    record: RequestRecord,
+  ): { show: boolean; enabled: boolean; reason: string } => {
+    const tieneNota = !!record.despatchNoteId;
+    const nota = record.despatchNote?.noteNumber ?? "";
+
+    if (actionTo === "ENTREGADO") {
+      // Solo lo produce la entrega de la nota de despacho, que es la que mueve el stock.
+      return {
+        show: isInventario,
+        enabled: false,
+        reason: tieneNota
+          ? `Se entrega con la nota ${nota}: entrá a Despachos y entregala para mover el stock.`
+          : "Este paso lo da la nota de despacho: generá la nota en Despachos y entregala para mover el stock.",
+      };
     }
-    if (role === "ADMIN") return true;
-    if (["RECIBIDO_POR_INVENTARIO", "PREPARANDO", "ENTREGADO"].includes(actionTo)) return isInventario;
-    // La llegada del producto la confirma quien lo pidió.
+
     if (actionTo === "RECIBIDO_POR_TIENDA") {
-      return isTienda && !!user && record.requestedBy.id === user.id;
+      if (!tieneNota) {
+        return {
+          show: isTienda,
+          enabled: false,
+          reason: "Primero se entrega la nota de despacho; recién ahí se puede confirmar la llegada a la tienda.",
+        };
+      }
+      if (role !== "ADMIN" && (!user || record.requestedBy.id !== user.id)) {
+        return {
+          show: isTienda,
+          enabled: false,
+          reason: `Solo ${record.requestedBy.name} (o un Admin) puede confirmar esta recepción.`,
+        };
+      }
+      return { show: true, enabled: true, reason: "" };
     }
-    return false;
+
+    if (actionTo === "CANCELADO") {
+      if (tieneNota) {
+        return {
+          show: true,
+          enabled: false,
+          reason: `Está dentro de la nota ${nota}: anulá la nota primero.`,
+        };
+      }
+      return {
+        show: role === "ADMIN",
+        enabled: role === "ADMIN",
+        reason: "Solo un Admin puede cancelar una solicitud.",
+      };
+    }
+
+    // RECIBIDO_POR_INVENTARIO y PREPARANDO.
+    return {
+      show: isInventario,
+      enabled: isInventario,
+      reason: "Solo Inventario o Admin pueden dar este paso.",
+    };
   };
 
   const changeStatus = async (id: number, newStatus: string) => {
@@ -420,32 +465,48 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
                           <button onClick={() => setShowHistory(r)} className="p-2 rounded-xl text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Ver historial">
                             <History size={15} />
                           </button>
-                          {actions.filter((a) => canPerformAction(a.to, r)).map((action) => {
+                          {actions.map((action) => {
                             const ActionIcon = action.icon;
+                            const { show, enabled, reason } = resolveAction(action.to, r);
+                            if (!show) return null;
+                            const tooltip = enabled ? action.label : `${action.label}: ${reason}`;
                             return (
                               <div key={action.to} className="relative group">
                                 <button
-                                  onClick={() => changeStatus(r.id, action.to)}
-                                  className={`p-2 rounded-xl border transition-all duration-200 ${action.color} ${action.hoverColor} hover:shadow-lg active:scale-95`}
+                                  onClick={() => { if (enabled) changeStatus(r.id, action.to); }}
+                                  disabled={!enabled}
+                                  aria-disabled={!enabled}
+                                  aria-label={tooltip}
+                                  title={tooltip}
+                                  className={
+                                    enabled
+                                      ? `p-2 rounded-xl border transition-all duration-200 ${action.color} ${action.hoverColor} hover:shadow-lg active:scale-95`
+                                      : "p-2 rounded-xl border border-dark-700/50 bg-dark-900/40 text-gray-600 cursor-not-allowed"
+                                  }
                                 >
                                   <ActionIcon size={15} />
                                 </button>
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-dark-950 border border-dark-700 rounded-lg text-xs text-foreground whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-xl z-10">
-                                  {action.label}
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-dark-950 border border-dark-700 rounded-lg text-xs text-foreground text-left w-max max-w-[240px] opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-xl z-20">
+                                  {tooltip}
                                 </div>
                               </div>
                             );
                           })}
-                          {!r.despatchNoteId && (r.status === "PREPARANDO" || r.status === "ENTREGADO") && (
+                          {(r.status === "PREPARANDO" || r.status === "ENTREGADO") && (
                             <div className="relative group">
                               <button
                                 onClick={() => navigate("/panel/despachos")}
+                                aria-label={r.despatchNoteId ? `Ir a la nota ${r.despatchNote?.noteNumber}` : "Generar nota de despacho"}
                                 className="p-2 rounded-xl border transition-all duration-200 text-primary-400 bg-primary-500/10 border-primary-500/20 hover:bg-primary-500/20 hover:border-primary-500/40 hover:shadow-lg active:scale-95"
                               >
                                 <FileText size={15} />
                               </button>
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-dark-950 border border-dark-700 rounded-lg text-xs text-foreground whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-xl z-10">
-                                Generar nota de despacho
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-dark-950 border border-dark-700 rounded-lg text-xs text-foreground text-left w-max max-w-[240px] opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-xl z-20">
+                                {r.despatchNoteId
+                                  ? r.despatchNote?.status === "EMITIDA"
+                                    ? `Entregá la nota ${r.despatchNote?.noteNumber ?? ""} en Despachos para mover el stock`
+                                    : `Ver la nota ${r.despatchNote?.noteNumber ?? ""} en Despachos`
+                                  : "Generar nota de despacho"}
                               </div>
                             </div>
                           )}
