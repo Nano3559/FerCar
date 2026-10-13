@@ -218,7 +218,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
           status: { in: [...ESTADOS_ABIERTOS] },
           ...(fromLocationId ? { fromLocationId } : {}),
         },
-        select: { quantity: true, source: true },
+        select: { quantity: true, saleItemId: true },
       }),
     ]);
     const disponibilidad = calcularDisponibilidad(inventario, abiertas);

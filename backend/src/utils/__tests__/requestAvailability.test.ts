@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   calcularDisponibilidad,
   errorSiExcede,
+  retieneStockEnOrigen,
   type Disponibilidad,
 } from "../requestAvailability";
 
@@ -21,27 +22,37 @@ test("sin solicitudes abiertas se puede pedir todo el stock", () => {
 });
 
 test("descuenta lo que ya está comprometido en solicitudes abiertas", () => {
-  const d = calcularDisponibilidad(stock(20), [{ quantity: 8, source: "MANUAL" }]);
+  const d = calcularDisponibilidad(stock(20), [{ quantity: 8 }]);
   assert.equal(d.comprometido, 8);
   assert.equal(d.disponible, 12);
 });
 
-test("no cuenta las solicitudes de venta porque su stock ya bajó", () => {
-  const d = calcularDisponibilidad(stock(20), [{ quantity: 15, source: "VENTA" }]);
+test("no cuenta las solicitudes de venta porque su origen ya bajó", () => {
+  // Con línea de venta el origen se descuenta al cobrar: contarla restaría doble.
+  const d = calcularDisponibilidad(stock(20), [{ quantity: 15, saleItemId: 55 }]);
   assert.equal(d.comprometido, 0);
   assert.equal(d.disponible, 20);
 });
 
+test("una solicitud sin línea de venta compromete aunque sea reposición", () => {
+  const d = calcularDisponibilidad(stock(2), [{ quantity: 2, saleItemId: null }]);
+  assert.equal(d.comprometido, 2);
+  assert.equal(d.disponible, 0);
+});
+
+test("retieneStockEnOrigen distingue por línea de venta", () => {
+  assert.equal(retieneStockEnOrigen({ quantity: 1 }), true);
+  assert.equal(retieneStockEnOrigen({ quantity: 1, saleItemId: null }), true);
+  assert.equal(retieneStockEnOrigen({ quantity: 1, saleItemId: 9 }), false);
+});
+
 test("acumula varias solicitudes abiertas", () => {
-  const d = calcularDisponibilidad(stock(20), [
-    { quantity: 6, source: "MANUAL" },
-    { quantity: 9, source: "STOCK_MINIMO" },
-  ]);
+  const d = calcularDisponibilidad(stock(20), [{ quantity: 6 }, { quantity: 9 }]);
   assert.equal(d.disponible, 5);
 });
 
 test("el disponible nunca queda negativo", () => {
-  const d = calcularDisponibilidad(stock(4), [{ quantity: 30, source: "MANUAL" }]);
+  const d = calcularDisponibilidad(stock(4), [{ quantity: 30 }]);
   assert.equal(d.disponible, 0);
 });
 
@@ -65,7 +76,7 @@ test("rechaza pedir 37 cuando en toda la cadena hay 20", () => {
 });
 
 test("el error dice cuánto queda cuando ya hay solicitudes abiertas", () => {
-  const d = calcularDisponibilidad(stock(20), [{ quantity: 8, source: "MANUAL" }]);
+  const d = calcularDisponibilidad(stock(20), [{ quantity: 8 }]);
   const err = errorSiExcede(15, d, "TYD1126CIR");
   assert.ok(err);
   assert.match(err, /quedan 12/);
@@ -85,7 +96,7 @@ test("sin error devuelve null", () => {
 
 test("el mensaje nombra el origen y lo que queda cuando se pasa la ubicación", () => {
   // El caso reportado: SILES con 2 y una solicitud de 1 encima de otra de 2.
-  const d = calcularDisponibilidad([{ stock: 2 }], [{ quantity: 2, source: "MANUAL" }]);
+  const d = calcularDisponibilidad([{ stock: 2 }], [{ quantity: 2 }]);
   const err = errorSiExcede(1, d, "P015", "SILES");
   assert.ok(err);
   assert.match(err, /SILES/);

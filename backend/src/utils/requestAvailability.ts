@@ -1,21 +1,17 @@
-// Cuanto se puede pedir a mano de un producto sin passarse.
+// Cuanto se puede pedir a una ubicacion sin pasarse.
 //
-// Una solicitud manual no reserva nada: la mercaderia sigue en su ubicacion
-// hasta que se despacha. Como no descuenta al crearse, tres solicitudes
-// seguidas podian Commitmentar mas de lo que existe en toda la cadena (el caso
-// reportado: un producto con 20 unidades en total y un pedido de 37).
+// Una solicitud abierta que todavia NO descontó el origen mantiene su
+// mercaderia prometida pero fisicamente quieta ahi. El techo se calcula por
+// ubicacion ORIGEN: lo que hay en la tienda/almacen al que se le pide, menos lo
+// que esas solicitudes ya prometieron desde ese mismo origen.
 //
-// El techo se calcula por ubicacion ORIGEN: lo que hay en la tienda/almacen al
-// que se le pide, menos lo que ya esta comprometido en solicitudes abiertas de
-// ese mismo origen. Antes se sumaba toda la cadena, asi que se podian pedir 3
-// unidades a una tienda que solo tenia 2 mientras hubiera stock en cualquier
-// otra ubicacion (el caso reportado: SILES con 2 y dos pedidos de 2 y 1).
-// No se recorta en silencio: si el pedido excede el techo la ruta lo rechaza
-// con el numero exacto, para que el vendedor decida.
-
-// Las de venta no se suman: su stock ya se desconto al cobrar, o sea que ya
-// estan fuera del inventario disponible.
-export const SOURCES_MANUALES = new Set(["MANUAL", "STOCK_MINIMO"]);
+// Antes se sumaba toda la cadena, asi que se podian pedir 3 unidades a una
+// tienda que solo tenia 2 mientras hubiera stock en cualquier otra ubicacion
+// (el caso reportado: SILES con 2 y dos pedidos de 2 y 1).
+//
+// Las solicitudes atadas a una linea de venta NO se cuentan: su origen ya se
+// desconto al cobrar la venta (ver origenYaDescontado), asi que restarlas de
+// nuevo lo contaria dos veces.
 
 // Mientras no se entregue, estas solicitudes todavia no movieron nada.
 export const ESTADOS_ABIERTOS = [
@@ -27,21 +23,29 @@ export const ESTADOS_ABIERTOS = [
 
 export interface SolicitudViva {
   quantity: number;
-  source: string | null;
+  /** Linea de venta que la origino. Si es null, el origen aun no se descontó. */
+  saleItemId?: number | null;
 }
 
 export interface Disponibilidad {
-  /** Suma del stock del producto en todas las ubicaciones. */
+  /** Stock de la ubicacion evaluada (el origen). */
   totalCadena: number;
-  /** Cuanto de ese stock ya esta prometido en solicitudes abiertas. */
+  /** Cuanto de ese stock ya esta prometido por solicitudes abiertas sin descontar. */
   comprometido: number;
   /** Cuanto se puede pedir todavia. Nunca negativo. */
   disponible: number;
 }
 
 /**
- * Calcula el techo de una solicitud manual. Las solicitudes de venta se
- * ignoran porque su stock ya bajo cuando se cobro la venta.
+ * true si la solicitud todavia tiene su mercaderia en el origen: no la descontó
+ * al crearse. Es el mismo criterio que usa el despacho (origenYaDescontado).
+ */
+export const retieneStockEnOrigen = (s: SolicitudViva): boolean =>
+  s.saleItemId === null || s.saleItemId === undefined;
+
+/**
+ * Calcula el techo. Las solicitudes con linea de venta se ignoran porque su
+ * stock ya baja del origen cuando se cobra la venta.
  */
 export const calcularDisponibilidad = (
   filasInventario: { stock: number }[],
@@ -49,7 +53,7 @@ export const calcularDisponibilidad = (
 ): Disponibilidad => {
   const totalCadena = filasInventario.reduce((s, f) => s + Math.max(0, f.stock || 0), 0);
   const comprometido = solicitudesAbiertas
-    .filter((s) => !s.source || SOURCES_MANUALES.has(s.source))
+    .filter(retieneStockEnOrigen)
     .reduce((s, r) => s + Math.max(0, r.quantity || 0), 0);
   return { totalCadena, comprometido, disponible: Math.max(0, totalCadena - comprometido) };
 };
@@ -58,7 +62,7 @@ export const calcularDisponibilidad = (
  * Mensaje de error si la cantidad excede el techo, o null si esta bien.
  * `nombre` es el nombre del producto para que el mensaje sea util. `origen` es
  * el nombre de la ubicacion a la que se le pide; si se omite el mensaje habla
- * de "toda la cadena" (compatibilidad con el techo global).
+ * de "toda la cadena".
  */
 export const errorSiExcede = (
   cantidad: number,

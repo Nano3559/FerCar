@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient, RequestStatus } from "@prisma/client";
 import { nextDayAt8 } from "./replenish";
+import { calcularDisponibilidad, retieneStockEnOrigen } from "./requestAvailability";
 
 type Db = Prisma.TransactionClient | PrismaClient;
 
@@ -11,6 +12,33 @@ const OPEN_STATUSES: RequestStatus[] = [
 ];
 
 export type RestockSource = "VENTA" | "STOCK_MINIMO";
+
+// Cuanto queda en una ubicacion origen: su stock menos las solicitudes abiertas
+// que todavia no lo descontaron. Es el techo de una solicitud nueva o de lo que
+// se sume a una existente.
+async function disponibleEnOrigen(
+  db: Db,
+  productId: number,
+  originId: number,
+  excluirRequestId: number | null,
+): Promise<number> {
+  const [inv, abiertas] = await Promise.all([
+    db.inventory.findUnique({
+      where: { productId_locationId: { productId, locationId: originId } },
+      select: { stock: true },
+    }),
+    db.productRequest.findMany({
+      where: {
+        productId,
+        fromLocationId: originId,
+        status: { in: OPEN_STATUSES },
+        ...(excluirRequestId ? { id: { not: excluirRequestId } } : {}),
+      },
+      select: { quantity: true, saleItemId: true },
+    }),
+  ]);
+  return calcularDisponibilidad([{ stock: inv?.stock ?? 0 }], abiertas).disponible;
+}
 
 export interface RestockArgs {
   productId: number;
@@ -79,6 +107,20 @@ export async function ensureRestockRequest(db: Db, args: RestockArgs): Promise<n
     // inflaria la cantidad sin limite.
     if (source !== "VENTA") return null;
 
+    // El origen todavia tiene la mercaderia (no es una solicitud de venta ya
+    // descontada): lo que se sume tiene que caber en lo que queda ahi.
+    const origenExistente = open.fromLocationId ?? open.locationId;
+    const disponible = await disponibleEnOrigen(db, productId, origenExistente, open.id);
+    const ocupado = retieneStockEnOrigen(open) ? open.quantity : 0;
+    const margen = disponible - ocupado;
+    if (margen <= 0) {
+      console.warn(
+        `[replenish] ${productId}: el origen ${origenExistente} no tiene margen para sumar a la solicitud #${open.id}`,
+      );
+      return open.id;
+    }
+    quantity = Math.min(quantity, margen);
+
     const nuevaCantidad = open.quantity + quantity;
     const [product, destination] = await Promise.all([
       db.product.findUnique({ where: { id: productId }, select: { name: true } }),
@@ -145,6 +187,20 @@ export async function ensureRestockRequest(db: Db, args: RestockArgs): Promise<n
     db.product.findUnique({ where: { id: productId }, select: { name: true } }),
     db.location.findUnique({ where: { id: destinationId }, select: { name: true } }),
   ]);
+
+  // Lo que no nace de una linea de venta (reposicion automatica de una venta,
+  // stock minimo) todavia tiene la mercaderia en el origen: la solicitud no
+  // puede prometer mas de lo que queda ahi.
+  if (!args.saleItemId && originId !== null) {
+    const disponible = await disponibleEnOrigen(db, productId, originId, null);
+    if (disponible <= 0) {
+      console.warn(
+        `[replenish] ${productId}: el origen ${originId} no tiene stock; no se crea la solicitud para ${destinationId}`,
+      );
+      return null;
+    }
+    quantity = Math.min(quantity, disponible);
+  }
 
   const request = await db.productRequest.create({
     data: {
