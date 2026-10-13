@@ -57,6 +57,7 @@ interface ProductResult {
   detalles: string | null; oemCode: string | null; factoryCode: string | null;
   wholesalePrice: number | null; stock: number; category: string | null;
   price1?: number; price2?: number;
+  stockTotal?: number;
   stockByLocation?: StockByLocation[];
 }
 
@@ -249,6 +250,7 @@ export default function WholesalePage() {
             detalles: p.detalles, oemCode: p.oemCode || null, factoryCode: p.factoryCode || null,
             wholesalePrice: p.wholesalePrice ? Number(p.wholesalePrice) : null,
             stock: Number(p.stock) || 0, category: p.category || null,
+            stockTotal: typeof p.stockTotal === "number" ? Number(p.stockTotal) : undefined,
             stockByLocation: p.stockByLocation || undefined,
           })));
           setSearchTotal(res.data.pagination?.total || 0);
@@ -976,6 +978,11 @@ export default function WholesalePage() {
                             <td className="px-3 py-2 text-right text-emerald-400 font-medium whitespace-nowrap">{p.wholesalePrice ? formatBs(p.wholesalePrice) : "—"}</td>
                             <td className="px-3 py-2 text-center">
                               <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span>
+                              {typeof p.stockTotal === "number" && p.stockTotal !== p.stock && (
+                                <p className="text-[10px] text-gray-500 mt-0.5 whitespace-nowrap" title="Suma de todas las tiendas y almacenes">
+                                  {p.stockTotal} en toda la cadena
+                                </p>
+                              )}
                             </td>
                             <td className="px-3 py-2 text-center">
                               <button onClick={() => addItem(p)}
@@ -999,6 +1006,9 @@ export default function WholesalePage() {
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-xs font-medium text-emerald-400">{p.wholesalePrice ? formatBs(p.wholesalePrice) : "—"}</span>
                             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>Stock: {p.stock}</span>
+                            {typeof p.stockTotal === "number" && p.stockTotal !== p.stock && (
+                              <span className="block text-[10px] text-gray-500" title="Suma de todas las tiendas y almacenes">{p.stockTotal} en toda la cadena</span>
+                            )}
                           </div>
                         </div>
                         <button onClick={() => addItem(p)} title="Agregar al pedido"
