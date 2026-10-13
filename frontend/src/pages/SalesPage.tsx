@@ -24,6 +24,7 @@ import {
   StockByLocation,
   hayFaltantesSinAsignar,
   resumenDeFaltantes,
+  completarAllocations,
 } from "../utils/origenes";
 
 const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Datos de envío", "Datos de factura", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Estado", "Pagos", "Nota"];
@@ -521,11 +522,13 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [requestQty, setRequestQty] = useState(1);
   const [requestNote, setRequestNote] = useState("");
   const [requestSaving, setRequestSaving] = useState(false);
-  const [requestSources, setRequestSources] = useState<{ locationId: number; locationName: string; locationType: string; stock: number }[]>([]);
+  const [requestSources, setRequestSources] = useState<StockByLocation[]>([]);
   // Cuando la solicitud sale del modal Ampliar, el destino es la tienda de
   // esa venta y no la del selector de arriba.
   const [requestDestino, setRequestDestino] = useState<{ id: number; name: string } | null>(null);
-  const [requestFrom, setRequestFrom] = useState<number | null>(null);
+  // Reparto de la cantidad pedida entre varias ubicaciones (3 de SILES y 4 de
+  // CHIQUICOLLO, por ejemplo). Cada origen elegido genera su propia solicitud.
+  const [requestAllocations, setRequestAllocations] = useState<OriginAllocation[]>([]);
   const [requestSourcesLoading, setRequestSourcesLoading] = useState(false);
   const requestPanelRef = useDialogBehavior(showRequest, () => { setShowRequest(false); setRequestTarget(null); });
 
@@ -1342,12 +1345,28 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
         ? Number(selectedLocationId)
         : locations.find((l: Location) => l.type === "TIENDA")?.id;
 
+  // Reparto sugerido para la cantidad pedida: cubre lo que falte con las
+  // ubicaciones que tengan stock (primero otras tiendas, después almacenes).
+  const requestAsignadas = requestAllocations.filter((a) => a.quantity > 0);
+  const sugerirRepartoRequest = (
+    productId: number,
+    qty: number,
+    sources: StockByLocation[],
+    storeId: number,
+  ): OriginAllocation[] =>
+    completarAllocations(
+      [{ productId, quantity: qty > 0 ? qty : 1, stockByLocation: sources }],
+      [],
+      storeId,
+    );
+
   const openRequestProduct = async (p: Product, destino?: { id: number; name: string }, cantidad?: number) => {
+    const qtyInicial = cantidad && cantidad > 0 ? cantidad : 1;
     setRequestTarget(p);
-    setRequestQty(cantidad && cantidad > 0 ? cantidad : 1);
+    setRequestQty(qtyInicial);
     setRequestNote("");
     setRequestSources([]);
-    setRequestFrom(null);
+    setRequestAllocations([]);
     setRequestDestino(destino ?? null);
     setShowRequest(true);
     setRequestSourcesLoading(true);
@@ -1361,18 +1380,19 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
             ? Number(selectedLocationId)
             : locations.find((l: Location) => l.type === "TIENDA")?.id;
       // No se puede pedir a la misma tienda que pide.
-      const candidatas = (res.data?.locations || [])
-        .map((l: any) => ({ locationId: l.locationId, locationName: l.locationName, locationType: l.locationType, stock: Number(l.stock) || 0 }))
-        .filter((l: any) => l.locationId !== destinoId);
+      const candidatas: StockByLocation[] = (res.data?.locations || [])
+        .map((l: any) => ({
+          locationId: l.locationId,
+          locationName: l.locationName,
+          locationType: l.locationType === "ALMACEN" ? "ALMACEN" : "TIENDA",
+          stock: Number(l.stock) || 0,
+        }))
+        .filter((l: StockByLocation) => l.locationId !== destinoId);
       setRequestSources(candidatas);
-      // Por defecto se pide a una tienda con stock: hay mas stock antes en
-      // otra tienda que en el almacen. Si no hay ninguna, al almacen.
-      const conStock = candidatas.filter((l: any) => l.stock > 0);
-      const otraTienda = conStock.find((l: any) => l.locationType === "TIENDA");
-      const almacen = conStock.find((l: any) => l.locationType === "ALMACEN");
-      setRequestFrom((otraTienda || almacen)?.locationId ?? null);
+      setRequestAllocations(sugerirRepartoRequest(p.id, qtyInicial, candidatas, destinoId ?? -1));
     } catch {
       setRequestSources([]);
+      setRequestAllocations([]);
     } finally {
       setRequestSourcesLoading(false);
     }
@@ -1384,22 +1404,37 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
       toast.error("Selecciona la tienda solicitante");
       return;
     }
-    const qty = Number(requestQty) > 0 ? Number(requestQty) : 1;
+    const asignadas = requestAllocations.filter((a) => a.quantity > 0);
+    if (asignadas.length === 0) {
+      toast.error("Elegí de dónde sale el producto");
+      return;
+    }
     setRequestSaving(true);
+    let enviadas = 0;
     try {
-      await api.post("/requests", {
-        productId: requestTarget.id,
-        quantity: qty,
-        locationId: requestDestinoId,
-        fromLocationId: requestFrom,
-        note: requestNote.trim() || null,
-      });
-      const origen = requestSources.find((s) => s.locationId === requestFrom);
-      toast.success(origen ? `Solicitud enviada a ${origen.locationName}` : "Solicitud enviada al almacén");
+      for (const a of asignadas) {
+        await api.post("/requests", {
+          productId: requestTarget.id,
+          quantity: a.quantity,
+          locationId: requestDestinoId,
+          fromLocationId: a.fromLocationId,
+          note: requestNote.trim() || null,
+        });
+        enviadas++;
+      }
+      const nombres = asignadas
+        .map((a) => requestSources.find((s) => s.locationId === a.fromLocationId)?.locationName)
+        .filter(Boolean);
+      toast.success(
+        asignadas.length === 1
+          ? `Solicitud enviada a ${nombres[0] ?? "el almacén"}`
+          : `${asignadas.length} solicitudes enviadas (${nombres.join(", ")})`,
+      );
       setShowRequest(false);
       setRequestTarget(null);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Error al solicitar el producto");
+      const msg = err.response?.data?.message || "Error al solicitar el producto";
+      toast.error(enviadas > 0 ? `Se enviaron ${enviadas} de ${asignadas.length}. ${msg}` : msg);
     } finally {
       setRequestSaving(false);
     }
@@ -2815,61 +2850,29 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                     No hay otras ubicaciones con este producto
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {(["TIENDA", "ALMACEN"] as const).map((tipo) => {
-                      const grupo = requestSources.filter((s) => s.locationType === tipo);
-                      if (grupo.length === 0) return null;
-                      return (
-                        <div key={tipo} className="space-y-1.5">
-                          <p className="text-[11px] text-gray-600 uppercase tracking-wider">
-                            {tipo === "TIENDA" ? "Otras tiendas" : "Almacén"}
-                          </p>
-                          {grupo.map((a) => {
-                            const elegido = requestFrom === a.locationId;
-                            return (
-                              <button key={a.locationId} type="button" onClick={() => setRequestFrom(a.locationId)}
-                                aria-pressed={elegido}
-                                className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
-                                  elegido
-                                    ? "bg-amber-500/10 border-amber-500/40"
-                                    : "bg-dark-900/50 border-dark-700/50 hover:border-amber-500/30"
-                                }`}>
-                                <span className="flex items-center gap-2 min-w-0">
-                                  <span className={`w-3.5 h-3.5 shrink-0 rounded-full border-2 flex items-center justify-center ${
-                                    elegido ? "border-amber-400" : "border-gray-600"
-                                  }`}>
-                                    {elegido && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
-                                  </span>
-                                  <span className="text-sm text-foreground truncate">{a.locationName}</span>
-                                </span>
-                                <span className={`shrink-0 px-2 py-0.5 text-xs font-medium rounded-full ${
-                                  a.stock === 0 ? "bg-red-500/10 text-red-400" : a.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"
-                                }`}>
-                                  {a.stock} disp.
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                    {requestFrom === null && (
-                      <p className="text-xs text-yellow-400">
-                        Ninguna ubicación tiene stock. La solicitud se enviará al almacén.
-                      </p>
-                    )}
-                  </div>
+                  <OrigenesSelector
+                    items={[{
+                      productId: requestTarget.id,
+                      quantity: requestQty > 0 ? requestQty : 1,
+                      stockByLocation: requestSources,
+                    }]}
+                    allocations={requestAllocations}
+                    storeLocationId={requestDestinoId ?? -1}
+                    storeName={locations.find((l) => l.id === requestDestinoId)?.name || "tu tienda"}
+                    onChange={setRequestAllocations}
+                    defaultAbierto
+                  />
                 )}
               </div>
               <div>
-                <span className="block text-xs text-gray-500 mb-1.5">Cantidad</span>
+                <span className="block text-xs text-gray-500 mb-1.5">Cantidad total</span>
                 <div className="flex items-center justify-center gap-1.5">
-                  <button onClick={() => setRequestQty(Math.max(1, requestQty - 1))} disabled={requestQty <= 1}
+                  <button onClick={() => { const n = Math.max(1, requestQty - 1); setRequestQty(n); setRequestAllocations(sugerirRepartoRequest(requestTarget.id, n, requestSources, requestDestinoId ?? -1)); }} disabled={requestQty <= 1}
                     className="p-2.5 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground transition-all disabled:opacity-30">
                     <Minus size={16} />
                   </button>
                   <span className="w-16 text-center text-foreground text-xl font-bold">{requestQty}</span>
-                  <button onClick={() => setRequestQty(requestQty + 1)}
+                  <button onClick={() => { const n = requestQty + 1; setRequestQty(n); setRequestAllocations(sugerirRepartoRequest(requestTarget.id, n, requestSources, requestDestinoId ?? -1)); }}
                     className="p-2.5 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground transition-all">
                     <Plus size={16} />
                   </button>
@@ -2890,7 +2893,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
               </button>
               <button onClick={submitRequest} disabled={requestSaving}
                 className="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                <Send size={16} /> {requestSaving ? "Enviando..." : "Enviar Solicitud"}
+                <Send size={16} /> {requestSaving ? "Enviando..." : requestAsignadas.length > 1 ? `Enviar ${requestAsignadas.length} solicitudes` : "Enviar Solicitud"}
               </button>
             </div>
           </div>

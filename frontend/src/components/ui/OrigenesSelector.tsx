@@ -20,6 +20,8 @@ interface Props {
   storeName: string;
   onChange: (allocations: OriginAllocation[]) => void;
   disabled?: boolean;
+  /** Abrir el panel desplegado la primera vez (usado dentro de un modal). */
+  defaultAbierto?: boolean;
 }
 
 /**
@@ -29,8 +31,8 @@ interface Props {
  * entre tiendas y almacenes: se puede pedir 3 a una y 4 a otra, y cada elección
  * genera su propia solicitud cuando se guarda la venta.
  */
-export default function OrigenesSelector({ items, allocations, storeLocationId, storeName, onChange, disabled }: Props) {
-  const [abierto, setAbierto] = useState(false);
+export default function OrigenesSelector({ items, allocations, storeLocationId, storeName, onChange, disabled, defaultAbierto = false }: Props) {
+  const [abierto, setAbierto] = useState(defaultAbierto);
 
   const pendientes = items
     .map((item) => ({
