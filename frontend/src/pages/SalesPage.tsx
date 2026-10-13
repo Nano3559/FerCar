@@ -57,6 +57,8 @@ interface CartItem {
   productId: number; itemCode: string; name: string; brand: string;
   unitPrice: number; priceTier: 1 | 2; price1: number; price2: number;
   quantity: number; availableStock: number;
+  /** Stock total en toda la cadena, para poder pedir más de lo que hay en la tienda. */
+  totalStock?: number;
   /** Stock del producto en cada ubicación, para proponer de dónde pedir lo que falta. */
   stockByLocation?: StockByLocation[];
 }
@@ -797,7 +799,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
         </td>
       );
     }
-    if (column === "Cantidad") return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1.5"><button onClick={() => updateQuantity(c.productId, c.quantity - 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Minus size={14} /></button><span className="w-10 text-center text-foreground text-sm font-medium">{c.quantity}</span><button onClick={() => updateQuantity(c.productId, c.quantity + 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Plus size={14} /></button></div><p className="text-center text-xs text-gray-600 mt-0.5">disp: {c.availableStock}</p></td>;
+    if (column === "Cantidad") return <td key={column} className="px-4 py-3"><div className="flex items-center justify-center gap-1.5"><button onClick={() => updateQuantity(c.productId, c.quantity - 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Minus size={14} /></button><span className="w-10 text-center text-foreground text-sm font-medium">{c.quantity}</span><button onClick={() => updateQuantity(c.productId, c.quantity + 1)} className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400"><Plus size={14} /></button></div><p className="text-center text-xs text-gray-600 mt-0.5">disp en tienda: {c.availableStock}{typeof c.totalStock === "number" && c.totalStock > c.availableStock ? ` · total: ${c.totalStock}` : ""}</p></td>;
     if (column === "Subtotal") return <td key={column} className="px-4 py-3 text-right text-green-400 font-medium">{formatBs(c.unitPrice * c.quantity)}</td>;
     if (column === "Eliminar") return <td key={column} className="px-5 py-3 text-center"><button onClick={() => removeItem(c.productId)} className="p-1.5 rounded-lg text-gray-500 hover:text-red-400"><Trash2 size={14} /></button></td>;
     return null;
@@ -824,6 +826,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
         productId: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
         unitPrice: price, priceTier: tier, price1: Number(p.price1), price2: Number(p.price2),
         quantity: qty, availableStock: p.stock,
+        totalStock: disponible,
         stockByLocation: p.stockByLocation,
       }];
     });
@@ -984,9 +987,13 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
     if (newQty < 1) return;
     updateActiveCart((prev) => prev.map((c) => {
       if (c.productId !== productId) return c;
-      if (newQty > c.availableStock) {
-        toast.error(`Stock máximo: ${c.availableStock}`);
-        return { ...c, quantity: c.availableStock };
+      // El tope es lo que existe en toda la cadena, no solo en la tienda: lo que
+      // pase del stock propio se reparte y se pide a otras tiendas/almacenes
+      // (como en Ventas X Mayor).
+      const tope = typeof c.totalStock === "number" ? c.totalStock : c.availableStock;
+      if (newQty > tope) {
+        toast.error(`Solo existen ${tope} unidad(es) en toda la cadena`);
+        return { ...c, quantity: tope };
       }
       return { ...c, quantity: newQty };
     }));
@@ -2020,7 +2027,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                           className="p-1 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 active:text-foreground transition-all">
                           <Plus size={14} />
                         </button>
-                        <span className="text-xs text-gray-600 ml-1">máx: {c.availableStock}</span>
+                        <span className="text-xs text-gray-600 ml-1">máx: {typeof c.totalStock === "number" ? c.totalStock : c.availableStock}</span>
                       </div>
                       <p className="text-green-400 font-medium text-sm">{formatBs(c.unitPrice * c.quantity)}</p>
                     </div>
@@ -2770,7 +2777,12 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs text-gray-500">Cantidad</span>
-                  <span className="text-xs text-gray-500">Stock disponible: <b className="text-foreground">{addTarget.stock}</b></span>
+                  <div className="text-right">
+                    <span className="text-xs text-gray-500">En tu tienda: <b className="text-foreground">{addTarget.stock}</b></span>
+                    {typeof addTarget.stockTotal === "number" && addTarget.stockTotal > addTarget.stock && (
+                      <span className="block text-xs text-gray-600">Toda la cadena: <b className="text-foreground">{addTarget.stockTotal}</b></span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center justify-center gap-1.5">
                   <button onClick={() => setAddQty(Math.max(1, addQty - 1))} disabled={addQty <= 1}
@@ -2778,7 +2790,8 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                     <Minus size={16} />
                   </button>
                   <span className="w-16 text-center text-foreground text-xl font-bold">{addQty}</span>
-                  <button onClick={() => setAddQty(Math.min(addTarget.stock, addQty + 1))} disabled={addQty >= addTarget.stock}
+                  <button onClick={() => setAddQty(Math.min(typeof addTarget.stockTotal === "number" ? addTarget.stockTotal : addTarget.stock, addQty + 1))}
+                    disabled={addQty >= (typeof addTarget.stockTotal === "number" ? addTarget.stockTotal : addTarget.stock)}
                     className="p-2.5 rounded-lg bg-dark-900/50 border border-dark-600/50 text-gray-400 hover:text-foreground transition-all disabled:opacity-30">
                     <Plus size={16} />
                   </button>
