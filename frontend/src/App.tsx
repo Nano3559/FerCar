@@ -17,6 +17,7 @@ import SalesPage from "./pages/SalesPage";
 import WholesalePage from "./pages/WholesalePage";
 import ReturnsPage from "./pages/ReturnsPage";
 import QuotesPage from "./pages/QuotesPage";
+import InvoicesPage from "./pages/InvoicesPage";
 import SolicitudesDespachosPage from "./pages/SolicitudesDespachosPage";
 import MovementsPage from "./pages/MovementsPage";
 import CostsPage from "./pages/CostsPage";
@@ -156,6 +157,13 @@ export default function App() {
           <Route path="notas-compra" element={
             <RoleRoute allowedRoles={["ADMIN"]} module="notas-compra">
               <PurchaseNotesPage />
+            </RoleRoute>
+          } />
+
+          {/* Facturas — solo ADMIN por ahora */}
+          <Route path="facturas" element={
+            <RoleRoute allowedRoles={["ADMIN"]} module="facturas">
+              <InvoicesPage />
             </RoleRoute>
           } />
 

@@ -28,6 +28,7 @@ import notificationsRoutes from "./modules/notifications/notifications.routes";
 import purchaseNotesRoutes from "./modules/purchase-notes/purchaseNotes.routes";
 import despatchNotesRoutes from "./modules/despatch-notes/despatchNotes.routes";
 import quotesRoutes from "./modules/quotes/quotes.routes";
+import invoicesRoutes from "./modules/invoices/invoices.routes";
 
 const app = express();
 
@@ -95,6 +96,7 @@ app.use("/api/notifications", notificationsRoutes);
 app.use("/api/purchase-notes", purchaseNotesRoutes);
 app.use("/api/despatch-notes", despatchNotesRoutes);
 app.use("/api/quotes", quotesRoutes);
+app.use("/api/invoices", invoicesRoutes);
 app.use("/api/public", publicRoutes);
 
 app.use(errorHandler);

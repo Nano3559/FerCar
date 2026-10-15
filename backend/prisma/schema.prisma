@@ -39,6 +39,7 @@ model User {
   purchaseNotes     PurchaseNote[]   @relation("PurchaseNoteUser")
   despatchNotes     DespatchNote[]   @relation("DespatchNoteUser")
   quotes            Quote[]
+  invoices          Invoice[]         @relation("InvoiceCreatedBy")
 }
 
 model Location {
@@ -58,6 +59,7 @@ model Location {
   users         User[]
   purchaseNotes PurchaseNote[]
   quotes        Quote[]          @relation("QuoteLocation")
+  invoices      Invoice[]
 }
 
 model Category {
@@ -102,6 +104,7 @@ model Product {
   purchaseItems  PurchaseNoteItem[]
   despatchItems  DespatchNoteItem[]
   quoteItems     QuoteItem[]
+  invoiceItems   InvoiceItem[]
 }
 
 model Inventory {
@@ -338,6 +341,7 @@ model Supplier {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   costs     Cost[]
+  invoices  Invoice[]
 }
 
 model Cost {
@@ -456,11 +460,12 @@ model DespatchNoteItem {
 }
 
 model Manufacturer {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
   description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  invoices    Invoice[]
 }
 
 model Importer {
@@ -557,6 +562,80 @@ model AuditLog {
   newValue   Json?
   createdAt  DateTime @default(now())
   user       User?    @relation(fields: [userId], references: [id])
+}
+
+enum InvoiceStatus {
+  ACTIVA
+  ANULADA
+}
+
+model Invoice {
+  id             Int           @id @default(autoincrement())
+  invoiceNumber  String        @unique
+  date           DateTime      @default(now())
+  supplierId     Int?
+  supplierName   String
+  manufacturerId Int?
+  manufacturerName String?
+  locationId     Int
+  locationName   String?
+  exchangeRate   Decimal
+  expensesPer    Decimal       @default(0)
+  marginTienda   Decimal       @default(0)
+  dimCode        String?
+  fileUrl        String?
+  totalUnits     Int           @default(0)
+  totalCostUSD   Decimal       @default(0)
+  totalCostBS    Decimal       @default(0)
+  status         InvoiceStatus @default(ACTIVA)
+  cancelledAt    DateTime?
+  cancelledReason String?
+  createdById    Int
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  supplier       Supplier?     @relation(fields: [supplierId], references: [id])
+  manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id])
+  location       Location      @relation(fields: [locationId], references: [id])
+  createdBy      User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  items          InvoiceItem[]
+
+  @@index([date])
+  @@index([locationId])
+}
+
+model InvoiceItem {
+  id           Int     @id @default(autoincrement())
+  invoiceId    Int
+  productId    Int?
+  factoryCode  String?
+  itemCode     String?
+  name         String
+  brand        String
+  model        String
+  year         String
+  oemCode      String?
+  quantity     Int
+  costUSD      Decimal
+  costBS       Decimal
+  costTienda   Decimal
+  price1       Decimal?
+  price2       Decimal?
+  priceMayor   Decimal?
+  price10      Decimal?
+  price20      Decimal?
+  price30      Decimal?
+  price40      Decimal?
+  price50      Decimal?
+  price60      Decimal?
+  price70      Decimal?
+  price80      Decimal?
+  lineTotalBS  Decimal?
+  product      Product? @relation(fields: [productId], references: [id])
+  invoice      Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@index([factoryCode])
 }
 
 model Notification {

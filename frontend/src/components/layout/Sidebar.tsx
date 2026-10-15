@@ -17,6 +17,7 @@ const allLinks = [
   { to: "/panel/cotizaciones", label: "Cotizaciones", icon: FileText, module: "ventas", anyModule: ["ventas-mayor"] },
   { to: "/panel/devoluciones", label: "Devoluciones", icon: RotateCcw, module: "devoluciones" },
   { to: "/panel/solicitudes", label: "Solicitudes y Despachos", icon: Send, module: "solicitudes", anyModule: ["despachos"] },
+  { to: "/panel/facturas", label: "Facturas", icon: FileText, module: "facturas" },
   { to: "/panel/movimientos", label: "Movimientos", icon: ArrowLeftRight, module: "movimientos" },
   { to: "/panel/costos", label: "Costos", icon: DollarSign, module: "costos" },
   { to: "/panel/precios", label: "Precios", icon: Tags, module: "precios" },
