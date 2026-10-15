@@ -1,8 +1,8 @@
 import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Package, ShoppingCart, TrendingUp,
-  ArrowLeftRight, DollarSign, BarChart3, Settings,
-  RotateCcw, Send, Tags, LogOut, X, ClipboardList, Map, FileText,
+  ArrowLeftRight, BarChart3, Settings,
+  RotateCcw, Send, LogOut, X, Map, FileText,
 } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { useNavigate } from "react-router-dom";
@@ -19,9 +19,6 @@ const allLinks = [
   { to: "/panel/solicitudes", label: "Solicitudes y Despachos", icon: Send, module: "solicitudes", anyModule: ["despachos"] },
   { to: "/panel/facturas", label: "Facturas", icon: FileText, module: "facturas" },
   { to: "/panel/movimientos", label: "Movimientos", icon: ArrowLeftRight, module: "movimientos" },
-  { to: "/panel/costos", label: "Costos", icon: DollarSign, module: "costos" },
-  { to: "/panel/precios", label: "Precios", icon: Tags, module: "precios" },
-  { to: "/panel/notas-compra", label: "Notas de Compra", icon: ClipboardList, module: "notas-compra" },
   { to: "/panel/reportes", label: "Reportes", icon: BarChart3, module: "reportes" },
   { to: "/panel/configuracion", label: "Configuración", icon: Settings, module: "configuracion" },
 ];
