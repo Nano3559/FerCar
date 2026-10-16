@@ -3,6 +3,10 @@ import { Upload, Eye } from "lucide-react";
 import api from "../services/api";
 import toast from "react-hot-toast";
 
+// El backend sirve los archivos subidos; el href debe apuntar al host del API,
+// no al frontend (por eso "Ver" abría una pestaña en blanco).
+const API_HOST = (import.meta.env.VITE_API_URL || "http://localhost:3000/api").replace(/\/api\/?$/, "");
+
 interface InvoiceRow {
   id: number;
   invoiceNumber: string;
@@ -147,7 +151,7 @@ export default function InvoicesPage() {
                   <td className="py-3 text-sm text-gray-300">{inv.status}</td>
                   <td className="py-3 text-sm text-right">
                     {inv.fileUrl && (
-                      <a href={`/api/invoices/invoice/${inv.fileUrl}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300">
+                      <a href={`${API_HOST}/api/invoices/invoice/${inv.fileUrl}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300">
                         <Eye size={14} /> Ver
                       </a>
                     )}
