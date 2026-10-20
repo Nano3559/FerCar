@@ -11,9 +11,9 @@ model RoleModel {
   id           Int      @id @default(autoincrement())
   name         String   @unique
   permissions  String[]
-  columnConfig Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  columnConfig Json?
   users        User[]
 }
 
@@ -24,22 +24,21 @@ model User {
   password          String
   roleId            Int
   locationId        Int?
-  active            Boolean          @default(true)
-  columnPrefs       Json?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+  columnPrefs       Json?
+  active            Boolean          @default(true)
+  auditLogs         AuditLog[]
+  despatchNotes     DespatchNote[]   @relation("DespatchNoteUser")
   movements         Movement[]
-  requests          ProductRequest[] @relation("RequestedBy")
+  notifications     Notification[]
   confirmedRequests ProductRequest[] @relation("RequestConfirmedBy")
+  requests          ProductRequest[] @relation("RequestedBy")
+  purchaseNotes     PurchaseNote[]   @relation("PurchaseNoteUser")
+  quotes            Quote[]
   sales             Sale[]
   location          Location?        @relation(fields: [locationId], references: [id])
   role              RoleModel        @relation(fields: [roleId], references: [id])
-  auditLogs         AuditLog[]
-  notifications     Notification[]
-  purchaseNotes     PurchaseNote[]   @relation("PurchaseNoteUser")
-  despatchNotes     DespatchNote[]   @relation("DespatchNoteUser")
-  quotes            Quote[]
-  invoices          Invoice[]         @relation("InvoiceCreatedBy")
 }
 
 model Location {
@@ -49,17 +48,16 @@ model Location {
   address       String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
+  despatchNotes DespatchNote[]   @relation("DespatchNoteDestination")
   inventories   Inventory[]
   movementsFrom Movement[]       @relation("MovementFrom")
   movementsTo   Movement[]       @relation("MovementTo")
-  requests      ProductRequest[] @relation("RequestDestination")
   requestsFrom  ProductRequest[] @relation("RequestOrigin")
-  despatchNotes DespatchNote[]   @relation("DespatchNoteDestination")
-  salesFrom     Sale[]           @relation("SaleFromLocation")
-  users         User[]
+  requests      ProductRequest[] @relation("RequestDestination")
   purchaseNotes PurchaseNote[]
   quotes        Quote[]          @relation("QuoteLocation")
-  invoices      Invoice[]
+  salesFrom     Sale[]           @relation("SaleFromLocation")
+  users         User[]
 }
 
 model Category {
@@ -82,29 +80,28 @@ model Product {
   oemCode        String?
   factoryCode    String?
   image          String?
-  images         String[]           @default([])
   price1         Decimal
   price2         Decimal
   wholesalePrice Decimal?
   cost           Decimal?
-  unitPrice      Decimal?
-  priceHermana   Decimal?
   categoryId     Int?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
+  images         String[]           @default([])
   detalles       String?
+  unitPrice      Decimal?
+  priceHermana   Decimal?
   costs          Cost[]
+  despatchItems  DespatchNoteItem[]
   inventories    Inventory[]
   movements      Movement[]
   category       Category?          @relation(fields: [categoryId], references: [id])
   importers      ProductImporter[]
   requests       ProductRequest[]
+  purchaseItems  PurchaseNoteItem[]
+  quoteItems     QuoteItem[]
   returns        Return[]
   saleItems      SaleItem[]
-  purchaseItems  PurchaseNoteItem[]
-  despatchItems  DespatchNoteItem[]
-  quoteItems     QuoteItem[]
-  invoiceItems   InvoiceItem[]
 }
 
 model Inventory {
@@ -116,16 +113,13 @@ model Inventory {
   location   Location @relation(fields: [locationId], references: [id])
   product    Product  @relation(fields: [productId], references: [id])
 
-  // El indice compuesto sirve para buscar por producto, pero no para agrupar
-  // el stock por ubicacion, que es lo que hace el dashboard.
-  @@index([locationId])
   @@unique([productId, locationId])
 }
 
 model Customer {
   id        Int      @id @default(autoincrement())
   name      String
-  nit       String?  @unique
+  nit       String?
   phone     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -133,54 +127,38 @@ model Customer {
 }
 
 model Sale {
-  id            Int        @id @default(autoincrement())
-  saleDate      DateTime   @default(now())
-  total         Decimal
-  type          SaleType
-  userId        Int
-  locationId    Int
-  customerId    Int?
-  seller        String?
-  paraQuien     String?
-  lugarEntrega  String?
-  datosFactura  String?
-  formaPago     String?
-  origen        String?
-  note          String?
-  nitName       String?
+  id              Int              @id @default(autoincrement())
+  saleDate        DateTime         @default(now())
+  total           Decimal
+  type            SaleType
+  userId          Int
+  locationId      Int
+  customerId      Int?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  seller          String?
+  paraQuien       String?
+  lugarEntrega    String?
+  datosFactura    String?
+  formaPago       String?
+  origen          String?
+  envioExterior   Boolean          @default(false)
+  quienRecoge     String?
+  telefono        String?
+  note            String?
+  status          SaleStatus       @default(PENDIENTE)
+  nitName         String?
   telefonoFactura String?
-  status        SaleStatus @default(PENDIENTE)
-  envioExterior Boolean    @default(false)
-  quienRecoge   String?
-  telefono      String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  payments      Payment[]
-  returns       Return[]
-  customer      Customer?  @relation(fields: [customerId], references: [id])
-  location      Location   @relation("SaleFromLocation", fields: [locationId], references: [id])
-  user          User       @relation(fields: [userId], references: [id])
-  items         SaleItem[]
-  quote         Quote?
-  /// Solicitudes de reposicion que nacieron de stock faltante en esta venta.
-  requests      ProductRequest[]
-
-  // El dashboard resume ventas por fecha, por tienda y por vendedor: cada una
-  // se buscaba haciendo un recorrido completo de la tabla.
-  @@index([saleDate])
-  @@index([locationId])
-  @@index([userId])
+  payments        Payment[]
+  requests        ProductRequest[]
+  quote           Quote?
+  returns         Return[]
+  customer        Customer?        @relation(fields: [customerId], references: [id])
+  location        Location         @relation("SaleFromLocation", fields: [locationId], references: [id])
+  user            User             @relation(fields: [userId], references: [id])
+  items           SaleItem[]
 }
 
-enum QuoteStatus {
-  PENDIENTE
-  CONVERTIDA
-  ANULADA
-}
-
-// Una cotizacion queda registrada aunque nunca se cobre. Guarda una copia del
-// producto (codigo, nombre, marca) y del precio, para que el documento siga
-// siendo reproducible aunque el catalogo cambie despues.
 model Quote {
   id         Int         @id @default(autoincrement())
   date       DateTime    @default(now())
@@ -195,9 +173,9 @@ model Quote {
   saleId     Int?        @unique
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
-  user       User        @relation(fields: [userId], references: [id])
   location   Location    @relation("QuoteLocation", fields: [locationId], references: [id])
   sale       Sale?       @relation(fields: [saleId], references: [id])
+  user       User        @relation(fields: [userId], references: [id])
   items      QuoteItem[]
 
   @@index([date])
@@ -218,32 +196,28 @@ model QuoteItem {
   unitPrice Decimal
   priceTier Int?
   subtotal  Decimal
-  quote     Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   product   Product @relation(fields: [productId], references: [id])
+  quote     Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([quoteId])
 }
 
 model SaleItem {
-  id       Int @id @default(autoincrement())
-  saleId   Int
-  productId Int
-  quantity Int
+  id                Int              @id @default(autoincrement())
+  saleId            Int
+  productId         Int
+  quantity          Int
+  unitPrice         Decimal
+  subtotal          Decimal
   /// Unidades entregadas de verdad al cliente. La diferencia con quantity es
   /// lo que quedo pendiente: se vendio pero aun no hay mercaderia en la tienda
   /// y esta en camino desde el almacen.
-  deliveredQuantity Int     @default(0)
-  unitPrice Decimal
-  subtotal Decimal
-  product   Product @relation(fields: [productId], references: [id])
-  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  /// Solicitudes abiertas que estan traeniendo estas unidades faltantes.
-  requests  ProductRequest[]
+  deliveredQuantity Int              @default(0)
+  requests          ProductRequest[]
+  product           Product          @relation(fields: [productId], references: [id])
+  sale              Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@index([productId])
-  // Cada renglon se busca por su venta: es el cruce que hace el dashboard
-  // al agrupar unidades y totales.
-  @@index([saleId])
 }
 
 model Payment {
@@ -253,9 +227,6 @@ model Payment {
   amount Decimal
   date   DateTime      @default(now())
   sale   Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
-
-  // Agrupar los pagos por metodo exige cruzar cada uno con su venta.
-  @@index([saleId])
 }
 
 model Return {
@@ -278,19 +249,15 @@ model Movement {
   toLocationId   Int
   quantity       Int
   userId         Int
-  requestId      Int?
-  requester      String?
   date           DateTime        @default(now())
   observation    String?
+  requestId      Int?
+  requester      String?
   fromLocation   Location        @relation("MovementFrom", fields: [fromLocationId], references: [id])
   product        Product         @relation(fields: [productId], references: [id])
+  request        ProductRequest? @relation(fields: [requestId], references: [id])
   toLocation     Location        @relation("MovementTo", fields: [toLocationId], references: [id])
   user           User            @relation(fields: [userId], references: [id])
-  request        ProductRequest? @relation(fields: [requestId], references: [id])
-
-  // El historial siempre se ordena por fecha descendente y el dashboard
-  // toma los ultimos 10 movimientos.
-  @@index([date])
 }
 
 model ProductRequest {
@@ -299,49 +266,44 @@ model ProductRequest {
   quantity       Int
   requestedById  Int
   locationId     Int
-  fromLocationId Int?
-  confirmedById  Int?
-  confirmedAt    DateTime?
-  despatchNoteId Int?
-  /// Venta que origino la solicitud cuando se genero por stock faltante al
-  /// vender. Permite completar la venta cuando la mercaderia llega.
-  saleId        Int?
-  saleItemId    Int?
-  source         String           @default("MANUAL")
   status         RequestStatus    @default(PENDIENTE)
-  note           String?
-  expectedDate   DateTime?
   date           DateTime         @default(now())
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
-  location       Location         @relation("RequestDestination", fields: [locationId], references: [id])
-  fromLocation   Location?        @relation("RequestOrigin", fields: [fromLocationId], references: [id])
-  product        Product          @relation(fields: [productId], references: [id])
-  requestedBy    User             @relation("RequestedBy", fields: [requestedById], references: [id])
+  note           String?
+  expectedDate   DateTime?
+  fromLocationId Int?
+  confirmedById  Int?
+  confirmedAt    DateTime?
+  source         String           @default("MANUAL")
+  despatchNoteId Int?
+  /// Venta que origino la solicitud cuando se genero por stock faltante al
+  /// vender. Permite completar la venta cuando la mercaderia llega.
+  saleId         Int?
+  saleItemId     Int?
+  movements      Movement[]
   confirmedBy    User?            @relation("RequestConfirmedBy", fields: [confirmedById], references: [id])
   despatchNote   DespatchNote?    @relation(fields: [despatchNoteId], references: [id])
-  sale           Sale?            @relation(fields: [saleId], references: [id], onDelete: SetNull)
-  saleItem       SaleItem?        @relation(fields: [saleItemId], references: [id], onDelete: SetNull)
+  fromLocation   Location?        @relation("RequestOrigin", fields: [fromLocationId], references: [id])
+  location       Location         @relation("RequestDestination", fields: [locationId], references: [id])
+  product        Product          @relation(fields: [productId], references: [id])
+  requestedBy    User             @relation("RequestedBy", fields: [requestedById], references: [id])
+  sale           Sale?            @relation(fields: [saleId], references: [id])
+  saleItem       SaleItem?        @relation(fields: [saleItemId], references: [id])
   history        RequestHistory[]
-  movements      Movement[]
 
-  // Se busca por venta para saber que pedido cierra cada solicitud cuando
-  // llega la mercaderia.
   @@index([saleId])
   @@index([saleItemId])
-  // Pedidos pendientes, ordenados por fecha de creacion.
-  @@index([status, createdAt])
 }
 
 model Supplier {
   id        Int      @id @default(autoincrement())
   name      String
-  nit       String?  @unique
+  nit       String?
   phone     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   costs     Cost[]
-  invoices  Invoice[]
 }
 
 model Cost {
@@ -373,12 +335,12 @@ model PurchaseNote {
   totalUnits      Int                @default(0)
   totalCost       Decimal            @default(0)
   userId          Int
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
   status          PurchaseNoteStatus @default(ACTIVA)
   cancelledAt     DateTime?
   cancelledReason String?
   cancelledBy     Int?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
   location        Location           @relation(fields: [locationId], references: [id])
   user            User               @relation("PurchaseNoteUser", fields: [userId], references: [id])
   items           PurchaseNoteItem[]
@@ -403,8 +365,8 @@ model PurchaseNoteItem {
   priceD40  Decimal?
   priceD50  Decimal?
   lineTotal Decimal
-  product   Product      @relation(fields: [productId], references: [id])
   note      PurchaseNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  product   Product      @relation(fields: [productId], references: [id])
 
   @@index([noteId])
   @@index([productId])
@@ -422,7 +384,6 @@ model DespatchNote {
   date            DateTime           @default(now())
   userId          Int
   totalUnits      Int                @default(0)
-  destinationId   Int?
   status          DespatchNoteStatus @default(EMITIDA)
   entregadoA      String?
   entregadoAt     DateTime?
@@ -432,8 +393,9 @@ model DespatchNote {
   cancelledBy     Int?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
-  user            User               @relation("DespatchNoteUser", fields: [userId], references: [id])
+  destinationId   Int?
   destination     Location?          @relation("DespatchNoteDestination", fields: [destinationId], references: [id])
+  user            User               @relation("DespatchNoteUser", fields: [userId], references: [id])
   items           DespatchNoteItem[]
   requests        ProductRequest[]
 }
@@ -452,20 +414,19 @@ model DespatchNoteItem {
   locationType String
   quantity     Int
   createdAt    DateTime     @default(now())
-  product      Product      @relation(fields: [productId], references: [id])
   note         DespatchNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id])
 
   @@index([noteId])
   @@index([productId])
 }
 
 model Manufacturer {
-  id          Int       @id @default(autoincrement())
-  name        String    @unique
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
   description String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  invoices    Invoice[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Importer {
@@ -490,6 +451,109 @@ model ProductImporter {
   product    Product  @relation(fields: [productId], references: [id])
 
   @@unique([productId, importerId])
+}
+
+model RequestHistory {
+  id             Int            @id @default(autoincrement())
+  requestId      Int
+  previousStatus String?
+  newStatus      String
+  userId         Int
+  userRole       String
+  createdAt      DateTime       @default(now())
+  request        ProductRequest @relation(fields: [requestId], references: [id])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  action     String
+  targetType String
+  targetId   Int?
+  oldValue   Json?
+  newValue   Json?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+}
+
+model Invoice {
+  id               Int           @id @default(autoincrement())
+  invoiceNumber    String        @unique
+  date             DateTime      @default(now())
+  supplierId       Int?
+  supplierName     String
+  manufacturerId   Int?
+  manufacturerName String?
+  locationId       Int
+  locationName     String?
+  exchangeRate     Decimal
+  expensesPer      Decimal       @default(0)
+  marginTienda     Decimal       @default(0)
+  dimCode          String?
+  fileUrl          String?
+  totalUnits       Int           @default(0)
+  totalCostUSD     Decimal       @default(0)
+  totalCostBS      Decimal       @default(0)
+  status           InvoiceStatus @default(ACTIVA)
+  cancelledAt      DateTime?
+  cancelledReason  String?
+  createdById      Int
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([date])
+  @@index([locationId])
+}
+
+model InvoiceItem {
+  id          Int      @id @default(autoincrement())
+  invoiceId   Int
+  productId   Int?
+  factoryCode String?
+  itemCode    String?
+  name        String
+  brand       String
+  model       String
+  year        String
+  oemCode     String?
+  quantity    Int
+  costUSD     Decimal
+  costBS      Decimal
+  costTienda  Decimal
+  price1      Decimal?
+  price2      Decimal?
+  priceMayor  Decimal?
+  price10     Decimal?
+  price20     Decimal?
+  price30     Decimal?
+  price40     Decimal?
+  price50     Decimal?
+  price60     Decimal?
+  price70     Decimal?
+  price80     Decimal?
+  lineTotalBS Decimal?
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@index([factoryCode])
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  title     String
+  message   String
+  type      String   @default("INFO")
+  read      Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+enum QuoteStatus {
+  PENDIENTE
+  CONVERTIDA
+  ANULADA
 }
 
 enum Role {
@@ -541,111 +605,7 @@ enum RequestStatus {
   CANCELADO
 }
 
-model RequestHistory {
-  id             Int            @id @default(autoincrement())
-  requestId      Int
-  previousStatus String?
-  newStatus      String
-  userId         Int
-  userRole       String
-  createdAt      DateTime       @default(now())
-  request        ProductRequest @relation(fields: [requestId], references: [id])
-}
-
-model AuditLog {
-  id         Int      @id @default(autoincrement())
-  userId     Int
-  action     String
-  targetType String
-  targetId   Int?
-  oldValue   Json?
-  newValue   Json?
-  createdAt  DateTime @default(now())
-  user       User?    @relation(fields: [userId], references: [id])
-}
-
 enum InvoiceStatus {
   ACTIVA
   ANULADA
-}
-
-model Invoice {
-  id             Int           @id @default(autoincrement())
-  invoiceNumber  String        @unique
-  date           DateTime      @default(now())
-  supplierId     Int?
-  supplierName   String
-  manufacturerId Int?
-  manufacturerName String?
-  locationId     Int
-  locationName   String?
-  exchangeRate   Decimal
-  expensesPer    Decimal       @default(0)
-  marginTienda   Decimal       @default(0)
-  dimCode        String?
-  fileUrl        String?
-  totalUnits     Int           @default(0)
-  totalCostUSD   Decimal       @default(0)
-  totalCostBS    Decimal       @default(0)
-  status         InvoiceStatus @default(ACTIVA)
-  cancelledAt    DateTime?
-  cancelledReason String?
-  createdById    Int
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  supplier       Supplier?     @relation(fields: [supplierId], references: [id])
-  manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id])
-  location       Location      @relation(fields: [locationId], references: [id])
-  createdBy      User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
-  items          InvoiceItem[]
-
-  @@index([date])
-  @@index([locationId])
-}
-
-model InvoiceItem {
-  id           Int     @id @default(autoincrement())
-  invoiceId    Int
-  productId    Int?
-  factoryCode  String?
-  itemCode     String?
-  name         String
-  brand        String
-  model        String
-  year         String
-  oemCode      String?
-  quantity     Int
-  costUSD      Decimal
-  costBS       Decimal
-  costTienda   Decimal
-  price1       Decimal?
-  price2       Decimal?
-  priceMayor   Decimal?
-  price10      Decimal?
-  price20      Decimal?
-  price30      Decimal?
-  price40      Decimal?
-  price50      Decimal?
-  price60      Decimal?
-  price70      Decimal?
-  price80      Decimal?
-  lineTotalBS  Decimal?
-  product      Product? @relation(fields: [productId], references: [id])
-  invoice      Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-
-  @@index([invoiceId])
-  @@index([productId])
-  @@index([factoryCode])
-}
-
-model Notification {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  title     String
-  message   String
-  type      String   @default("INFO")
-  read      Boolean  @default(false)
-  linkUrl   String?
-  createdAt DateTime @default(now())
-  user      User?    @relation(fields: [userId], references: [id])
 }
