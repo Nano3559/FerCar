@@ -353,19 +353,35 @@ router.get("/:id/export-excel", authenticate, authorize("ADMIN"), async (req: Au
   const inv = await prisma.invoice.findUnique({ where: { id }, include: { items: true } });
   if (!inv) return res.status(404).json({ message: "Factura no encontrada" });
   const data = inv.items.map((it: any) => ({
+    PROVEEDOR: inv.supplierName || "",
+    FABRICANTE: inv.manufacturerName || "",
+    PRODUCTO: it.name || "",
+    MARCA: it.brand || "",
+    MODELO: it.model || "",
+    AÑO: it.year || "",
+    DETALLES: it.detail || it.detalles || "",
+    "COD OEM": it.oemCode || "",
     "COD FABRICA": it.factoryCode || "",
-    "PRODUCTO": it.name || "",
-    "MARCA": it.brand || "",
-    "MODELO": it.model || "",
-    "AÑO": it.year || "",
-    "DETALLES": it.detail || it.detalles || "",
-    "PRECIO MAYOR ": it.priceMayor !== null && it.priceMayor !== undefined ? Number(it.priceMayor) : "",
+    "COSTO $": it.costUSD !== null && it.costUSD !== undefined ? Number(it.costUSD) : "",
+    "COSTO BS": it.costBS !== null && it.costBS !== undefined ? Number(it.costBS) : "",
+    "COSTO TIENDAS": it.costTienda !== null && it.costTienda !== undefined ? Number(it.costTienda) : "",
+    "20": it.price20 !== null && it.price20 !== undefined ? Number(it.price20) : "",
+    "30": it.price30 !== null && it.price30 !== undefined ? Number(it.price30) : "",
+    "40": it.price40 !== null && it.price40 !== undefined ? Number(it.price40) : "",
+    "50": it.price50 !== null && it.price50 !== undefined ? Number(it.price50) : "",
+    "60": it.price60 !== null && it.price60 !== undefined ? Number(it.price60) : "",
+    "70": it.price70 !== null && it.price70 !== undefined ? Number(it.price70) : "",
+    "80": it.price80 !== null && it.price80 !== undefined ? Number(it.price80) : "",
+    "PRECIO 1": it.price1 !== null && it.price1 !== undefined ? Number(it.price1) : "",
+    "PRECIO 2": it.price2 !== null && it.price2 !== undefined ? Number(it.price2) : "",
+    "PRECIO MAYOR": it.priceMayor !== null && it.priceMayor !== undefined ? Number(it.priceMayor) : "",
+    CANTIDAD: it.quantity !== null && it.quantity !== undefined ? Number(it.quantity) : "",
   }));
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(data);
-  XLSX.utils.book_append_sheet(wb, ws, "Factura");
+  XLSX.utils.book_append_sheet(wb, ws, "COLUMNAS PARA VEREDITAR");
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-  res.setHeader("Content-Disposition", `attachment; filename=${inv.invoiceNumber}.xlsx`);
+  res.setHeader("Content-Disposition", `inline; filename=${inv.invoiceNumber}.xlsx`);
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.send(buf);
 });
