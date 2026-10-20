@@ -91,7 +91,7 @@ export default function InvoicesPage() {
     fd.append("file", f);
     try {
       const res = await api.post("/invoices/preview", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      setItems((res.data.items || []).map((it: any) => ({ ...it, detail: it.detail || "" })));
+      setItems((res.data.items || []).map((it: any) => ({ ...it, detail: it.detail || it.detalles || "" })));
     } catch (e: any) {
       toast.error(e?.response?.data?.message || "Error previsualizando");
     }
