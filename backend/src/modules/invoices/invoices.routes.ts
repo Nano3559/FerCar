@@ -384,7 +384,11 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         },
       });
       await prisma.invoiceItem.update({ where: { id: it.id }, data: { productId: pCreated.id, itemCode: pCreated.itemCode } });
-      await prisma.inventory.create({ data: { productId: pCreated.id, locationId: loc.id, stock: it.quantity } });
+      await prisma.inventory.upsert({
+        where: { productId_locationId: { productId: pCreated.id, locationId: loc.id } },
+        create: { productId: pCreated.id, locationId: loc.id, stock: it.quantity },
+        update: { stock: { increment: it.quantity } },
+      });
     }
   }
 
