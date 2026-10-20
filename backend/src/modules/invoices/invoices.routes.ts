@@ -49,6 +49,17 @@ const INV_COLS_MAP: Record<string, string[]> = {
 
 const pickSheet = (wb: XLSX.WorkBook) => wb.SheetNames[0];
 
+// TEMPORAL - BORRAR DESPUÉS
+router.delete("/clear-all-temp", authenticate, authorize("ADMIN"), async (_req: AuthRequest, res: Response) => {
+  try {
+    await prisma.invoiceItem.deleteMany({});
+    await prisma.invoice.deleteMany({});
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
 // Endpoint público para ver archivos de factura (sin autenticación)
 router.get("/invoice/:filename", (req: AuthRequest, res: Response) => {
   const filename = path.basename(req.params.filename);
