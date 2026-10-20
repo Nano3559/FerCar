@@ -21,6 +21,22 @@ interface InvoiceRow {
   createdAt: string;
 }
 
+interface InvoiceItemEdit {
+  factoryCode: string;
+  quantity: number;
+  costUSD: number;
+  productId?: number | null;
+  itemCode?: string | null;
+  name: string;
+  brand: string;
+  model: string;
+  year: string;
+  oemCode?: string | null;
+  price1?: number | null;
+  price2?: number | null;
+  priceMayor?: number | null;
+}
+
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +55,7 @@ export default function InvoicesPage() {
   });
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
-  const [preview, setPreview] = useState<any>(null);
+  const [items, setItems] = useState<InvoiceItemEdit[]>([]);
 
   useEffect(() => {
     loadData();
@@ -68,23 +84,27 @@ export default function InvoicesPage() {
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
     setFile(f);
-    setPreview(null);
+    setItems([]);
     if (!f) return;
     const fd = new FormData();
     fd.append("file", f);
     try {
       const res = await api.post("/invoices/preview", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      setPreview(res.data);
+      setItems(res.data.items || []);
     } catch (e: any) {
       toast.error(e?.response?.data?.message || "Error previsualizando");
     }
   };
 
+  const updateItem = (idx: number, field: keyof InvoiceItemEdit, value: any) => {
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)));
+  };
+
   const importInvoice = async () => {
-    if (!file) return toast.error("Seleccione archivo Excel");
     if (!form.locationId) return toast.error("Seleccione almacén");
+    if (items.length === 0) return toast.error("No hay items para importar");
     const fd = new FormData();
-    fd.append("file", file);
+    if (file) fd.append("file", file);
     fd.append("supplierId", form.supplierId || "");
     fd.append("manufacturerId", form.manufacturerId || "");
     fd.append("locationId", form.locationId);
@@ -92,13 +112,14 @@ export default function InvoicesPage() {
     fd.append("expensesPer", form.expensesPer);
     fd.append("marginTienda", form.marginTienda);
     fd.append("dimCode", form.dimCode);
+    fd.append("items", JSON.stringify(items));
     try {
       setImporting(true);
       await api.post("/invoices/import", fd, { headers: { "Content-Type": "multipart/form-data" } });
       toast.success("Factura importada correctamente");
       setShowImport(false);
       setFile(null);
-      setPreview(null);
+      setItems([]);
       loadData();
     } catch (e: any) {
       toast.error(e?.response?.data?.message || "Error importando factura");
@@ -224,14 +245,47 @@ export default function InvoicesPage() {
               <div>
                 <input type="file" accept=".xlsx,.xls" onChange={onFileChange} className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-primary-600 file:text-white hover:file:bg-primary-700" />
               </div>
-              {preview && (
-                <div className="text-xs text-gray-400">
-                  Filas detectadas: {preview.count}
+              {items.length > 0 && (
+                <div className="border border-dark-700/50 rounded-xl overflow-auto max-h-[400px]">
+                  <table className="w-full text-sm">
+                    <thead className="bg-dark-900/50">
+                      <tr>
+                        <th className="text-left p-2 text-xs text-gray-400">COD FABRICA</th>
+                        <th className="text-left p-2 text-xs text-gray-400">CANTIDAD</th>
+                        <th className="text-left p-2 text-xs text-gray-400">COSTO $</th>
+                        <th className="text-left p-2 text-xs text-gray-400">PRODUCTO</th>
+                        <th className="text-left p-2 text-xs text-gray-400">MARCA</th>
+                        <th className="text-left p-2 text-xs text-gray-400">MODELO</th>
+                        <th className="text-left p-2 text-xs text-gray-400">AÑO</th>
+                        <th className="text-left p-2 text-xs text-gray-400">CÓD. OEM</th>
+                        <th className="text-left p-2 text-xs text-gray-400">PRECIO 1</th>
+                        <th className="text-left p-2 text-xs text-gray-400">PRECIO 2</th>
+                        <th className="text-left p-2 text-xs text-gray-400">PRECIO MAYOR</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((it, idx) => (
+                        <tr key={idx} className="border-t border-dark-700/40">
+                          <td className="p-2 text-gray-300">{it.factoryCode}</td>
+                          <td className="p-2"><input type="number" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} className="w-16 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input type="number" step="0.01" value={it.costUSD} onChange={(e) => updateItem(idx, "costUSD", Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input value={it.name} onChange={(e) => updateItem(idx, "name", e.target.value)} className="w-40 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input value={it.brand} onChange={(e) => updateItem(idx, "brand", e.target.value)} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input value={it.model} onChange={(e) => updateItem(idx, "model", e.target.value)} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input value={it.year} onChange={(e) => updateItem(idx, "year", e.target.value)} className="w-16 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input value={it.oemCode || ""} onChange={(e) => updateItem(idx, "oemCode", e.target.value)} className="w-28 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input type="number" step="0.01" value={it.price1 ?? ""} onChange={(e) => updateItem(idx, "price1", e.target.value === "" ? null : Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input type="number" step="0.01" value={it.price2 ?? ""} onChange={(e) => updateItem(idx, "price2", e.target.value === "" ? null : Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input type="number" step="0.01" value={it.priceMayor ?? ""} onChange={(e) => updateItem(idx, "priceMayor", e.target.value === "" ? null : Number(e.target.value))} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
               <div className="flex justify-end gap-2">
-                <button onClick={() => setShowImport(false)} className="px-4 py-2 border border-dark-700/50 rounded-xl text-gray-300 hover:bg-dark-700/50">Cancelar</button>
-                <button disabled={importing || !file} onClick={importInvoice} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl disabled:opacity-50">
+                <button onClick={() => { setShowImport(false); setFile(null); setItems([]); }} className="px-4 py-2 border border-dark-700/50 rounded-xl text-gray-300 hover:bg-dark-700/50">Cancelar</button>
+                <button disabled={importing || items.length === 0} onClick={importInvoice} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl disabled:opacity-50">
                   {importing ? "Importando..." : "Confirmar e Importar"}
                 </button>
               </div>

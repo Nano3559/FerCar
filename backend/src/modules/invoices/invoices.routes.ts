@@ -238,7 +238,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       expensesPer: expPer,
       marginTienda: mT,
       dimCode: dimCode || null,
-      fileUrl: req.file.filename,
+      fileUrl: req.file?.filename || null,
       totalUnits,
       totalCostUSD: toDec(totalCostUSD),
       totalCostBS: toDec(totalCostBS),
@@ -285,13 +285,14 @@ router.get("/:id/export-excel", authenticate, authorize("ADMIN"), async (req: Au
   const id = Number(req.params.id);
   const inv = await prisma.invoice.findUnique({ where: { id }, include: { items: true } });
   if (!inv) return res.status(404).json({ message: "Factura no encontrada" });
-  const data = inv.items.map((it) => ({
+  const data = inv.items.map((it: any) => ({
     "COD FABRICA": it.factoryCode || "",
     "PRODUCTO": it.name || "",
     "MARCA": it.brand || "",
     "MODELO": it.model || "",
     "AÑO": it.year || "",
-    "PRECIO MAYOR": it.priceMayor !== null && it.priceMayor !== undefined ? Number(it.priceMayor) : "",
+    "DETALLES": it.detail || it.detalles || "",
+    "PRECIO MAYOR ": it.priceMayor !== null && it.priceMayor !== undefined ? Number(it.priceMayor) : "",
   }));
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(data);
