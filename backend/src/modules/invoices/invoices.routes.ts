@@ -102,7 +102,6 @@ router.get("/invoice/:filename", (req: AuthRequest, res: Response) => {
 router.get("/", authenticate, authorize("ADMIN"), async (_req: AuthRequest, res: Response) => {
   const invoices = await prisma.invoice.findMany({
     orderBy: { createdAt: "desc" },
-    include: { supplier: true, manufacturer: true, location: true },
   });
   res.json({
     invoices: invoices.map((i) => ({
@@ -309,12 +308,12 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       totalCostBS: toDec(totalCostBS),
       status: InvoiceStatus.ACTIVA,
       createdById: req.user!.userId,
-      items: { create: invoiceItemsData },
-    },
-    include: { items: true },
+    } as any,
   });
+  await prisma.invoiceItem.createMany({ data: invoiceItemsData.map((x: any) => ({ ...x, invoiceId: invoice.id })) });
 
-  for (const it of invoice.items) {
+  const invoiceItems = await prisma.invoiceItem.findMany({ where: { invoiceId: invoice.id } });
+  for (const it of invoiceItems) {
     if (it.productId && it.quantity > 0) {
       await prisma.inventory.upsert({
         where: { productId_locationId: { productId: it.productId, locationId: loc.id } },
@@ -348,9 +347,10 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
 
 router.get("/:id/export-excel", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
   const id = Number(req.params.id);
-  const inv = await prisma.invoice.findUnique({ where: { id }, include: { items: true } });
+  const inv = await prisma.invoice.findUnique({ where: { id } });
   if (!inv) return res.status(404).json({ message: "Factura no encontrada" });
-  const data = inv.items.map((it: any) => ({
+  const items = await prisma.invoiceItem.findMany({ where: { invoiceId: inv.id } });
+  const data = items.map((it: any) => ({
     PROVEEDOR: inv.supplierName || "",
     FABRICANTE: inv.manufacturerName || "",
     PRODUCTO: it.name || "",
