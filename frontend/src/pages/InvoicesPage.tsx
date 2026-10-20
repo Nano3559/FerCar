@@ -282,7 +282,7 @@ export default function InvoicesPage() {
                         const costTienda = costBS * (1 + mT / 100);
                         const mk = (pct: number) => costBS * (1 + pct / 100);
                         return (
-                        <tr key={idx} className="border-t border-dark-700/40">
+                          <tr key={idx} className="border-t border-dark-700/40">
                           <td className="p-2 text-gray-300 whitespace-nowrap">{it.factoryCode}</td>
                           <td className="p-2"><input value={it.name} onChange={(e) => updateItem(idx, "name", e.target.value)} className="w-40 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
                           <td className="p-2"><input value={it.brand} onChange={(e) => updateItem(idx, "brand", e.target.value)} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
@@ -305,7 +305,8 @@ export default function InvoicesPage() {
                           <td className="p-2"><input type="number" step="0.01" value={it.price2 ?? ""} onChange={(e) => updateItem(idx, "price2", e.target.value === "" ? null : Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
                           <td className="p-2"><input type="number" step="0.01" value={it.priceMayor ?? ""} onChange={(e) => updateItem(idx, "priceMayor", e.target.value === "" ? null : Number(e.target.value))} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
                         </tr>
-                      )})}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
