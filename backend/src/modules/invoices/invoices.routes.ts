@@ -139,8 +139,7 @@ router.post("/preview", authenticate, authorize("ADMIN"), upload.single("file"),
 });
 
 router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), async (req: AuthRequest, res: Response) => {
-  if (!req.file) return res.status(400).json({ message: "Archivo Excel requerido" });
-  const { supplierId, manufacturerId, locationId, exchangeRate, expensesPer, marginTienda, dimCode } = req.body as any;
+  const { supplierId, manufacturerId, locationId, exchangeRate, expensesPer, marginTienda, dimCode, items: itemsJson } = req.body as any;
   if (!locationId) return res.status(400).json({ message: "Almacén requerido" });
   const ex = num(exchangeRate) || 0;
   const expPer = num(expensesPer) || 0;
@@ -152,31 +151,92 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
   const sup = supplierId ? await prisma.supplier.findUnique({ where: { id: Number(supplierId) } }) : null;
   const man = manufacturerId ? await prisma.manufacturer.findUnique({ where: { id: Number(manufacturerId) } }) : null;
 
-  const wb = XLSX.readFile(req.file.path);
-  const sheetName = pickSheet(wb);
-  const ws = wb.Sheets[sheetName];
-  const rowsRaw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[];
-  const headers = rowsRaw[0].map((x: any) => (x === null || x === undefined ? "" : String(x)));
-  const cFac = findCol(headers, INV_COLS_MAP.factoryCode);
-  const cCant = findCol(headers, INV_COLS_MAP.cantidad);
-  const cUsd = findCol(headers, INV_COLS_MAP.costoUSD);
-  if (cFac < 0 || cCant < 0 || cUsd < 0) return res.status(400).json({ message: "Columnas no encontradas" });
+  let items: any[] = [];
+  if (itemsJson) {
+    try {
+      const parsed = JSON.parse(itemsJson);
+      items = parsed
+        .filter((x: any) => x.factoryCode)
+        .map((x: any) => ({
+          factoryCode: String(x.factoryCode).trim(),
+          quantity: Math.max(0, Math.floor(num(x.quantity))),
+          costUSD: num(x.costUSD),
+          name: x.name || "",
+          brand: x.brand || "",
+          model: x.model || "",
+          year: x.year || "",
+          oemCode: x.oemCode || null,
+          price1: x.price1 !== null && x.price1 !== undefined && x.price1 !== "" ? num(x.price1) : null,
+          price2: x.price2 !== null && x.price2 !== undefined && x.price2 !== "" ? num(x.price2) : null,
+          priceMayor: x.priceMayor !== null && x.priceMayor !== undefined && x.priceMayor !== "" ? num(x.priceMayor) : null,
+          productId: x.productId || null,
+        }))
+        .filter((x: any) => x.quantity > 0 && x.costUSD > 0);
+    } catch (e: any) {
+      return res.status(400).json({ message: "Items inválidos" });
+    }
+  } else {
+    if (!req.file) return res.status(400).json({ message: "Archivo Excel requerido" });
+    const wb = XLSX.readFile(req.file.path);
+    const sheetName = pickSheet(wb);
+    const ws = wb.Sheets[sheetName];
+    const rowsRaw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[];
+    const headers = rowsRaw[0].map((x: any) => (x === null || x === undefined ? "" : String(x)));
+    const cFac = findCol(headers, INV_COLS_MAP.factoryCode);
+    const cCant = findCol(headers, INV_COLS_MAP.cantidad);
+    const cUsd = findCol(headers, INV_COLS_MAP.costoUSD);
+    if (cFac < 0 || cCant < 0 || cUsd < 0) return res.status(400).json({ message: "Columnas no encontradas" });
 
-  const items: any[] = [];
-  for (let i = 1; i < rowsRaw.length; i++) {
-    const r = rowsRaw[i];
-    const facRaw = cFac < r.length ? r[cFac] : "";
-    const fac = facRaw === null || facRaw === undefined ? "" : String(facRaw).trim();
-    if (!fac) continue;
-    const cant = Math.max(0, Math.floor(num(cCant < r.length ? r[cCant] : 0)));
-    const usd = num(cUsd < r.length ? r[cUsd] : 0);
-    if (cant <= 0 || usd <= 0) continue;
-    items.push({ factoryCode: fac, quantity: cant, costUSD: usd });
+    for (let i = 1; i < rowsRaw.length; i++) {
+      const r = rowsRaw[i];
+      const facRaw = cFac < r.length ? r[cFac] : "";
+      const fac = facRaw === null || facRaw === undefined ? "" : String(facRaw).trim();
+      if (!fac) continue;
+      const cant = Math.max(0, Math.floor(num(cCant < r.length ? r[cCant] : 0)));
+      const usd = num(cUsd < r.length ? r[cUsd] : 0);
+      if (cant <= 0 || usd <= 0) continue;
+      items.push({ factoryCode: fac, quantity: cant, costUSD: usd });
+    }
   }
   if (items.length === 0) return res.status(400).json({ message: "No hay filas válidas" });
 
   const factoryCodes = items.map((x) => x.factoryCode);
   const existingProducts = await prisma.product.findMany({ where: { factoryCode: { in: factoryCodes } } });
+
+  const productMap = new Map(existingProducts.map((p) => [p.factoryCode, p]));
+  const toCreate: any[] = [];
+  for (const it of items) {
+    if (!productMap.has(it.factoryCode)) {
+      toCreate.push(it);
+    }
+  }
+  for (const it of toCreate) {
+    const itemCode = it.factoryCode || `FAC-${Date.now()}`;
+    const created = await prisma.product.create({
+      data: {
+        itemCode,
+        factoryCode: it.factoryCode,
+        name: it.name || it.factoryCode,
+        brand: it.brand || "",
+        model: it.model || "",
+        year: it.year || "",
+        oemCode: it.oemCode || null,
+        manufacturer: man?.name || "",
+        supplierId: sup?.id || null,
+        categoryId: null,
+        price1: it.price1 !== null && it.price1 !== undefined ? it.price1.toString() : "0",
+        price2: it.price2 !== null && it.price2 !== undefined ? it.price2.toString() : "0",
+        wholesalePrice: it.priceMayor !== null && it.priceMayor !== undefined ? it.priceMayor.toString() : "0",
+        cost: null,
+        unitPrice: null,
+        priceHermana: null,
+        detail: null,
+        detalles: null,
+        stock: 0,
+      },
+    });
+    productMap.set(it.factoryCode, created);
+  }
 
   let totalUnits = 0;
   let totalCostUSD = 0;
@@ -189,25 +249,25 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const costBSUnit = toDec(it.costUSD * (1 + expPer / 100) * ex);
     const costTiendaUnit = toDec(costBSUnit * (1 + mT / 100));
     totalCostBS += toDec(costBSUnit * it.quantity);
-    const p = existingProducts.find((ep) => ep.factoryCode === it.factoryCode);
+    const p = productMap.get(it.factoryCode);
     const base = costBSUnit;
     const mk = (pct: number) => money(base * (1 + pct / 100));
     invoiceItemsData.push({
       factoryCode: it.factoryCode,
       productId: p?.id || null,
       itemCode: p?.itemCode || null,
-      name: p?.name || "",
-      brand: p?.brand || "",
-      model: p?.model || "",
-      year: p?.year || "",
-      oemCode: p?.oemCode || null,
+      name: p?.name || it.name || "",
+      brand: p?.brand || it.brand || "",
+      model: p?.model || it.model || "",
+      year: p?.year || it.year || "",
+      oemCode: p?.oemCode || it.oemCode || null,
       quantity: it.quantity,
       costUSD: toDec(it.costUSD),
       costBS: costBSUnit,
       costTienda: costTiendaUnit,
-      price1: p?.price1 ? Number(p.price1) : null,
-      price2: p?.price2 ? Number(p.price2) : null,
-      priceMayor: p?.wholesalePrice ? Number(p.wholesalePrice) : null,
+      price1: p?.price1 ? Number(p.price1) : it.price1 || null,
+      price2: p?.price2 ? Number(p.price2) : it.price2 || null,
+      priceMayor: p?.wholesalePrice ? Number(p.wholesalePrice) : it.priceMayor || null,
       price10: mk(10),
       price20: mk(20),
       price30: mk(30),
