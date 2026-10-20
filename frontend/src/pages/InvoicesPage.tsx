@@ -244,7 +244,7 @@ export default function InvoicesPage() {
               <div>
                 <input type="file" accept=".xlsx,.xls" onChange={onFileChange} className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-primary-600 file:text-white hover:file:bg-primary-700" />
               </div>
-              {items.length > 0 && (
+              {items && items.length > 0 && (
                 <div className="border border-dark-700/50 rounded-xl overflow-auto max-h-[400px]">
                   <table className="w-full text-sm">
                     <thead className="bg-dark-900/50">
@@ -273,7 +273,7 @@ export default function InvoicesPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((it, idx) => {
+                      {items && items.map((it, idx) => {
                         const ex = Number(form.exchangeRate) || 0;
                         const expPer = Number(form.expensesPer) || 0;
                         const mT = Number(form.marginTienda) || 0;
@@ -313,7 +313,7 @@ export default function InvoicesPage() {
               )}
               <div className="flex justify-end gap-2">
                 <button onClick={() => { setShowImport(false); setFile(null); setItems([]); }} className="px-4 py-2 border border-dark-700/50 rounded-xl text-gray-300 hover:bg-dark-700/50">Cancelar</button>
-                <button disabled={importing || items.length === 0} onClick={importInvoice} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl disabled:opacity-50">
+                <button disabled={importing || !items || items.length === 0} onClick={importInvoice} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl disabled:opacity-50">
                   {importing ? "Importando..." : "Confirmar e Importar"}
                 </button>
               </div>
