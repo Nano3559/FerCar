@@ -52,8 +52,17 @@ const pickSheet = (wb: XLSX.WorkBook) => wb.SheetNames[0];
 // Endpoint público para ver archivos de factura (sin autenticación)
 router.get("/invoice/:filename", (req: AuthRequest, res: Response) => {
   const filename = path.basename(req.params.filename);
-  const filePath = path.join(uploadDir, filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ message: "Archivo no encontrado" });
+  let filePath = path.join(uploadDir, filename);
+  if (!fs.existsSync(filePath)) {
+    // Fallback: buscar también en uploads/ raíz (archivos antiguos)
+    const altDir = path.join(__dirname, "../../../uploads");
+    const altPath = path.join(altDir, filename);
+    if (fs.existsSync(altPath)) {
+      filePath = altPath;
+    } else {
+      return res.status(404).json({ message: "Archivo no encontrado" });
+    }
+  }
   res.sendFile(filePath);
 });
 
