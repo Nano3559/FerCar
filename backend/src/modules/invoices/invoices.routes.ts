@@ -132,14 +132,54 @@ router.post("/preview", authenticate, authorize("ADMIN"), upload.single("file"),
   const cCant = findCol(headers, INV_COLS_MAP.cantidad);
   const cUsd = findCol(headers, INV_COLS_MAP.costoUSD);
   if (cFac < 0 || cCant < 0 || cUsd < 0) return res.status(400).json({ message: "Columnas requeridas: COD FABRICA, CANTIDAD, COSTO $" });
-  let count = 0;
+
+  const items: any[] = [];
   for (let i = 1; i < rowsRaw.length; i++) {
-    const r = rowsRaw[i];
-    const fac = cFac < r.length ? r[cFac] : "";
-    if (fac === "" || fac === null || fac === undefined) continue;
-    count++;
+    const r = rowsRaw[i] || [];
+    const facRaw = cFac < r.length ? r[cFac] : "";
+    const fac = facRaw === null || facRaw === undefined ? "" : String(facRaw).trim();
+    if (!fac) continue;
+    const cant = Math.max(0, Math.floor(num(cCant < r.length ? r[cCant] : 0)));
+    const usd = num(cUsd < r.length ? r[cUsd] : 0);
+    if (cant <= 0 || usd <= 0) continue;
+    items.push({
+      factoryCode: fac,
+      quantity: cant,
+      costUSD: usd,
+      name: "",
+      brand: "",
+      model: "",
+      year: "",
+      oemCode: null,
+      detail: "",
+      price1: null,
+      price2: null,
+      priceMayor: null,
+      productId: null,
+    });
   }
-  res.json({ count, sheetName });
+
+  const factoryCodes = items.map((x) => x.factoryCode);
+  const existingProducts = await prisma.product.findMany({ where: { factoryCode: { in: factoryCodes } } });
+  const productMap = new Map(existingProducts.map((p) => [p.factoryCode, p]));
+
+  const enriched = items.map((it) => {
+    const p = productMap.get(it.factoryCode);
+    if (!p) return it;
+    return {
+      ...it,
+      productId: p.id,
+      itemCode: p.itemCode,
+      name: p.name || it.name,
+      brand: p.brand || it.brand,
+      model: p.model || it.model,
+      year: p.year || it.year,
+      oemCode: p.oemCode || it.oemCode,
+      detail: p.detail || p.detalles || it.detail || "",
+    };
+  });
+
+  res.json({ count: enriched.length, sheetName, items: enriched });
 });
 
 router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), async (req: AuthRequest, res: Response) => {
