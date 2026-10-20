@@ -52,17 +52,34 @@ const pickSheet = (wb: XLSX.WorkBook) => wb.SheetNames[0];
 // Endpoint público para ver archivos de factura (sin autenticación)
 router.get("/invoice/:filename", (req: AuthRequest, res: Response) => {
   const filename = path.basename(req.params.filename);
-  let filePath = path.join(uploadDir, filename);
-  if (!fs.existsSync(filePath)) {
-    // Fallback: buscar también en uploads/ raíz (archivos antiguos)
-    const altDir = path.join(__dirname, "../../../uploads");
-    const altPath = path.join(altDir, filename);
-    if (fs.existsSync(altPath)) {
-      filePath = altPath;
-    } else {
-      return res.status(404).json({ message: "Archivo no encontrado" });
-    }
+  const candidates = [
+    path.join(uploadDir, filename),
+    path.join(__dirname, "../../../uploads", filename),
+    path.join(process.cwd(), "uploads", "facturas", filename),
+    path.join(process.cwd(), "uploads", filename),
+  ];
+  let filePath = candidates.find((p) => fs.existsSync(p));
+  if (!filePath) {
+    // Buscar recursivamente en uploads/
+    try {
+      const uploadsRoot = path.join(process.cwd(), "uploads");
+      const walk = (dir: string): string | undefined => {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const e of entries) {
+          const full = path.join(dir, e.name);
+          if (e.isDirectory()) {
+            const found = walk(full);
+            if (found) return found;
+          } else if (e.isFile() && e.name === filename) {
+            return full;
+          }
+        }
+        return undefined;
+      };
+      filePath = walk(uploadsRoot);
+    } catch {}
   }
+  if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ message: "Archivo no encontrado" });
   res.sendFile(filePath);
 });
 
