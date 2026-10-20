@@ -166,6 +166,9 @@ router.post("/preview", authenticate, authorize("ADMIN"), upload.single("file"),
   const enriched = items.map((it) => {
     const p = productMap.get(it.factoryCode);
     if (!p) return it;
+    const p1 = p.price1 === null || p.price1 === undefined ? null : num(p.price1);
+    const p2 = p.price2 === null || p.price2 === undefined ? null : num(p.price2);
+    const pM = p.wholesalePrice === null || p.wholesalePrice === undefined ? null : num(p.wholesalePrice);
     return {
       ...it,
       productId: p.id,
@@ -176,6 +179,9 @@ router.post("/preview", authenticate, authorize("ADMIN"), upload.single("file"),
       year: p.year || it.year,
       oemCode: p.oemCode || it.oemCode,
       detail: p.detail || p.detalles || it.detail || "",
+      price1: p1,
+      price2: p2,
+      priceMayor: pM,
     };
   });
 
