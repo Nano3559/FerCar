@@ -35,6 +35,7 @@ interface InvoiceItemEdit {
   price1?: number | null;
   price2?: number | null;
   priceMayor?: number | null;
+  detail?: string;
 }
 
 export default function InvoicesPage() {
@@ -90,7 +91,7 @@ export default function InvoicesPage() {
     fd.append("file", f);
     try {
       const res = await api.post("/invoices/preview", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      setItems(res.data.items || []);
+      setItems((res.data.items || []).map((it: any) => ({ ...it, detail: it.detail || "" })));
     } catch (e: any) {
       toast.error(e?.response?.data?.message || "Error previsualizando");
     }
@@ -251,34 +252,62 @@ export default function InvoicesPage() {
                     <thead className="bg-dark-900/50">
                       <tr>
                         <th className="text-left p-2 text-xs text-gray-400">COD FABRICA</th>
-                        <th className="text-left p-2 text-xs text-gray-400">CANTIDAD</th>
-                        <th className="text-left p-2 text-xs text-gray-400">COSTO $</th>
                         <th className="text-left p-2 text-xs text-gray-400">PRODUCTO</th>
                         <th className="text-left p-2 text-xs text-gray-400">MARCA</th>
                         <th className="text-left p-2 text-xs text-gray-400">MODELO</th>
                         <th className="text-left p-2 text-xs text-gray-400">AÑO</th>
-                        <th className="text-left p-2 text-xs text-gray-400">CÓD. OEM</th>
+                        <th className="text-left p-2 text-xs text-gray-400">DETALLES</th>
+                        <th className="text-left p-2 text-xs text-gray-400">COD OEM</th>
+                        <th className="text-left p-2 text-xs text-gray-400">CANTIDAD</th>
+                        <th className="text-left p-2 text-xs text-gray-400">COSTO $</th>
+                        <th className="text-left p-2 text-xs text-gray-400">COSTO BS</th>
+                        <th className="text-left p-2 text-xs text-gray-400">COSTO TIENDAS</th>
+                        <th className="text-center p-2 text-xs text-gray-400">20</th>
+                        <th className="text-center p-2 text-xs text-gray-400">30</th>
+                        <th className="text-center p-2 text-xs text-gray-400">40</th>
+                        <th className="text-center p-2 text-xs text-gray-400">50</th>
+                        <th className="text-center p-2 text-xs text-gray-400">60</th>
+                        <th className="text-center p-2 text-xs text-gray-400">70</th>
+                        <th className="text-center p-2 text-xs text-gray-400">80</th>
                         <th className="text-left p-2 text-xs text-gray-400">PRECIO 1</th>
                         <th className="text-left p-2 text-xs text-gray-400">PRECIO 2</th>
                         <th className="text-left p-2 text-xs text-gray-400">PRECIO MAYOR</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((it, idx) => (
+                      {items.map((it, idx) => {
+                        const ex = Number(form.exchangeRate) || 0;
+                        const expPer = Number(form.expensesPer) || 0;
+                        const mT = Number(form.marginTienda) || 0;
+                        const costUSD = Number(it.costUSD) || 0;
+                        const costBS = ex > 0 ? costUSD * (1 + expPer / 100) * ex : 0;
+                        const costTienda = costBS * (1 + mT / 100);
+                        const mk = (pct: number) => costBS * (1 + pct / 100);
+                        return (
                         <tr key={idx} className="border-t border-dark-700/40">
-                          <td className="p-2 text-gray-300">{it.factoryCode}</td>
-                          <td className="p-2"><input type="number" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} className="w-16 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
-                          <td className="p-2"><input type="number" step="0.01" value={it.costUSD} onChange={(e) => updateItem(idx, "costUSD", Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2 text-gray-300 whitespace-nowrap">{it.factoryCode}</td>
                           <td className="p-2"><input value={it.name} onChange={(e) => updateItem(idx, "name", e.target.value)} className="w-40 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
                           <td className="p-2"><input value={it.brand} onChange={(e) => updateItem(idx, "brand", e.target.value)} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
                           <td className="p-2"><input value={it.model} onChange={(e) => updateItem(idx, "model", e.target.value)} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
                           <td className="p-2"><input value={it.year} onChange={(e) => updateItem(idx, "year", e.target.value)} className="w-16 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input value={it.detail || ""} onChange={(e) => updateItem(idx, "detail", e.target.value)} className="w-32 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
                           <td className="p-2"><input value={it.oemCode || ""} onChange={(e) => updateItem(idx, "oemCode", e.target.value)} className="w-28 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input type="number" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} className="w-16 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2"><input type="number" step="0.01" value={it.costUSD} onChange={(e) => updateItem(idx, "costUSD", Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
+                          <td className="p-2 text-gray-300 text-center">{costBS.toFixed(2)}</td>
+                          <td className="p-2 text-gray-300 text-center">{costTienda.toFixed(2)}</td>
+                          <td className="p-2 text-gray-300 text-center">{mk(20).toFixed(2)}</td>
+                          <td className="p-2 text-gray-300 text-center">{mk(30).toFixed(2)}</td>
+                          <td className="p-2 text-gray-300 text-center">{mk(40).toFixed(2)}</td>
+                          <td className="p-2 text-gray-300 text-center">{mk(50).toFixed(2)}</td>
+                          <td className="p-2 text-gray-300 text-center">{mk(60).toFixed(2)}</td>
+                          <td className="p-2 text-gray-300 text-center">{mk(70).toFixed(2)}</td>
+                          <td className="p-2 text-gray-300 text-center">{mk(80).toFixed(2)}</td>
                           <td className="p-2"><input type="number" step="0.01" value={it.price1 ?? ""} onChange={(e) => updateItem(idx, "price1", e.target.value === "" ? null : Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
                           <td className="p-2"><input type="number" step="0.01" value={it.price2 ?? ""} onChange={(e) => updateItem(idx, "price2", e.target.value === "" ? null : Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
                           <td className="p-2"><input type="number" step="0.01" value={it.priceMayor ?? ""} onChange={(e) => updateItem(idx, "priceMayor", e.target.value === "" ? null : Number(e.target.value))} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" /></td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
