@@ -49,9 +49,15 @@ const INV_COLS_MAP: Record<string, string[]> = {
 
 const pickSheet = (wb: XLSX.WorkBook) => wb.SheetNames[0];
 
-router.use(authenticate);
+// Endpoint público para ver archivos de factura (sin autenticación)
+router.get("/invoice/:filename", (req: AuthRequest, res: Response) => {
+  const filename = path.basename(req.params.filename);
+  const filePath = path.join(uploadDir, filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ message: "Archivo no encontrado" });
+  res.sendFile(filePath);
+});
 
-router.get("/", authorize("ADMIN"), async (_req: AuthRequest, res: Response) => {
+router.get("/", authenticate, authorize("ADMIN"), async (_req: AuthRequest, res: Response) => {
   const invoices = await prisma.invoice.findMany({
     orderBy: { createdAt: "desc" },
     include: { supplier: true, manufacturer: true, location: true },
@@ -73,7 +79,7 @@ router.get("/", authorize("ADMIN"), async (_req: AuthRequest, res: Response) => 
   });
 });
 
-router.post("/preview", authorize("ADMIN"), upload.single("file"), async (req: AuthRequest, res: Response) => {
+router.post("/preview", authenticate, authorize("ADMIN"), upload.single("file"), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ message: "Archivo Excel requerido" });
   const wb = XLSX.readFile(req.file.path);
   const sheetName = pickSheet(wb);
@@ -95,7 +101,7 @@ router.post("/preview", authorize("ADMIN"), upload.single("file"), async (req: A
   res.json({ count, sheetName });
 });
 
-router.post("/import", authorize("ADMIN"), upload.single("file"), async (req: AuthRequest, res: Response) => {
+router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ message: "Archivo Excel requerido" });
   const { supplierId, manufacturerId, locationId, exchangeRate, expensesPer, marginTienda, dimCode } = req.body as any;
   if (!locationId) return res.status(400).json({ message: "Almacén requerido" });
@@ -238,7 +244,7 @@ router.post("/import", authorize("ADMIN"), upload.single("file"), async (req: Au
   res.json({ ok: true, invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber });
 });
 
-router.get("/:id/export-excel", authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
+router.get("/:id/export-excel", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
   const id = Number(req.params.id);
   const inv = await prisma.invoice.findUnique({ where: { id }, include: { items: true } });
   if (!inv) return res.status(404).json({ message: "Factura no encontrada" });
