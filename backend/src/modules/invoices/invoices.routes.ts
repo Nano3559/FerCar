@@ -47,7 +47,12 @@ const INV_COLS_MAP: Record<string, string[]> = {
   costoUSD: ["costo $", "costo$", "cost $", "cost$", "costo usd", "cost usd", "usd", "precio $", "precio$"],
 };
 
-const pickSheet = (wb: XLSX.WorkBook) => wb.SheetNames[0];
+const pickSheet = (wb: XLSX.WorkBook) => {
+  const names = wb.SheetNames || [];
+  const found = names.find((n) => String(n).toUpperCase().includes("ARCHIVO IMPORTAR"));
+  if (found) return found;
+  return names[0];
+};
 
 // TEMPORAL - BORRAR DESPUÉS
 router.delete("/clear-all-temp", authenticate, authorize("ADMIN"), async (_req: AuthRequest, res: Response) => {
