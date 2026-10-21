@@ -329,7 +329,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       price70: mk(70),
       price80: mk(80),
       lineTotalBS: toDec(costBSUnit * it.quantity),
-    });
+    } as any);
   }
 
   const last = await prisma.invoice.findFirst({ orderBy: { id: "desc" } });
