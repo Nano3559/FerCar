@@ -224,6 +224,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         }))
         .filter((x: any) => x.quantity > 0 && x.costUSD > 0);
     } catch (e: any) {
+      console.error("Error parsing items:", e);
       return res.status(400).json({ message: "Items inválidos" });
     }
   } else {
