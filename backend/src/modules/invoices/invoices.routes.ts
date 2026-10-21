@@ -189,17 +189,18 @@ router.post("/preview", authenticate, authorize("ADMIN"), upload.single("file"),
 });
 
 router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), async (req: AuthRequest, res: Response) => {
-  const { supplierId, manufacturerId, locationId, exchangeRate, expensesPer, marginTienda, dimCode, items: itemsJson } = req.body as any;
-  if (!locationId) return res.status(400).json({ message: "Almacén requerido" });
-  const ex = num(exchangeRate) || 0;
-  const expPer = num(expensesPer) || 0;
-  const mT = num(marginTienda) || 0;
-  if (ex <= 0) return res.status(400).json({ message: "Tipo de cambio inválido" });
+  try {
+    const { supplierId, manufacturerId, locationId, exchangeRate, expensesPer, marginTienda, dimCode, items: itemsJson } = req.body as any;
+    if (!locationId) return res.status(400).json({ message: "Almacén requerido" });
+    const ex = num(exchangeRate) || 0;
+    const expPer = num(expensesPer) || 0;
+    const mT = num(marginTienda) || 0;
+    if (ex <= 0) return res.status(400).json({ message: "Tipo de cambio inválido" });
 
-  const loc = await prisma.location.findUnique({ where: { id: Number(locationId) } });
-  if (!loc) return res.status(400).json({ message: "Almacén no encontrado" });
-  const sup = supplierId ? await prisma.supplier.findUnique({ where: { id: Number(supplierId) } }) : null;
-  const man = manufacturerId ? await prisma.manufacturer.findUnique({ where: { id: Number(manufacturerId) } }) : null;
+    const loc = await prisma.location.findUnique({ where: { id: Number(locationId) } });
+    if (!loc) return res.status(400).json({ message: "Almacén no encontrado" });
+    const sup = supplierId ? await prisma.supplier.findUnique({ where: { id: Number(supplierId) } }) : null;
+    const man = manufacturerId ? await prisma.manufacturer.findUnique({ where: { id: Number(manufacturerId) } }) : null;
 
   let items: any[] = [];
   if (itemsJson) {
@@ -225,7 +226,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         }))
         .filter((x: any) => x.quantity > 0 && x.costUSD > 0);
     } catch (e: any) {
-      console.error("Error parsing items:", e);
+      console.error("Error parsing items:", e?.message || e);
       return res.status(400).json({ message: "Items inválidos" });
     }
   } else {
@@ -400,6 +401,10 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
   }
 
   res.json({ ok: true, invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber });
+  } catch (e: any) {
+    console.error("Error importando factura:", e);
+    res.status(500).json({ message: e?.message || "Error importando factura" });
+  }
 });
 
 router.get("/:id/export-excel", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
