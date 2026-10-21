@@ -172,9 +172,9 @@ export default function InvoicesPage() {
                   <td className="py-3 text-sm text-gray-300">{inv.dimCode || "-"}</td>
                   <td className="py-3 text-sm text-gray-300">{inv.status}</td>
                   <td className="py-3 text-sm text-right">
-                    <button onClick={() => { window.open(`${API_HOST}/api/invoices/${inv.id}/export-excel`, '_blank', 'noopener,noreferrer'); }} className="inline-flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300">
+                    <a href={`${API_HOST}/api/invoices/invoice/${inv.fileUrl}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300">
                       <Eye size={14} /> Ver
-                    </button>
+                    </a>
                   </td>
                 </tr>
               ))}
