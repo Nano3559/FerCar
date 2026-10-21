@@ -13,13 +13,7 @@ const prisma = new PrismaClient();
 const uploadDir = path.join(__dirname, "../../../uploads/facturas");
 fs.mkdirSync(uploadDir, { recursive: true });
 
-const storage = multer.diskStorage({
-  destination: (_req: any, _file: any, cb: (err: Error | null, dest: string) => void) => cb(null, uploadDir),
-  filename: (_req: any, file: any, cb: (err: Error | null, name: string) => void) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, unique + path.extname(file.originalname));
-  },
-});
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 const num = (v: any): number => {
@@ -122,7 +116,7 @@ router.get("/", authenticate, authorize("ADMIN"), async (_req: AuthRequest, res:
 
 router.post("/preview", authenticate, authorize("ADMIN"), upload.single("file"), async (req: AuthRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ message: "Archivo Excel requerido" });
-  const wb = XLSX.readFile(req.file.path);
+  const wb = XLSX.read(req.file.buffer, { type: "buffer" });
   const sheetName = pickSheet(wb);
   const ws = wb.Sheets[sheetName];
   const rowsRaw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[];
@@ -231,7 +225,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     }
   } else {
     if (!req.file) return res.status(400).json({ message: "Archivo Excel requerido" });
-    const wb = XLSX.readFile(req.file.path);
+    const wb = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheetName = pickSheet(wb);
     const ws = wb.Sheets[sheetName];
     const rowsRaw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[];
@@ -350,7 +344,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       expensesPer: expPer,
       marginTienda: mT,
       dimCode: dimCode || null,
-      fileUrl: req.file?.filename || null,
+      fileUrl: req.file?.originalname || null,
       totalUnits,
       totalCostUSD: toDec(totalCostUSD),
       totalCostBS: toDec(totalCostBS),
@@ -359,6 +353,22 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     } as any,
   });
   await prisma.invoiceItem.createMany({ data: invoiceItemsData.map((x: any) => ({ ...x, invoiceId: invoice.id })) });
+
+  if (req.file && req.file.buffer) {
+    try {
+      await prisma.invoiceFile.create({
+        data: {
+          invoiceId: invoice.id,
+          filename: req.file.originalname || `${invoice.invoiceNumber}.xlsx`,
+          mimeType: req.file.mimetype || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          data: req.file.buffer,
+          size: req.file.size || req.file.buffer.length,
+        },
+      });
+    } catch (e: any) {
+      console.error("Error guardando archivo de factura:", e?.message || e);
+    }
+  }
 
   const invoiceItems = await prisma.invoiceItem.findMany({ where: { invoiceId: invoice.id } });
   for (const it of invoiceItems) {
@@ -474,6 +484,19 @@ router.get("/invoice/:filename", (req: AuthRequest, res: Response) => {
   }
   if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ message: "Archivo no encontrado" });
   res.sendFile(filePath);
+});
+
+router.get("/:id/view-file", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const file = await prisma.invoiceFile.findUnique({ where: { invoiceId: id } });
+    if (!file) return res.status(404).json({ message: "Archivo no encontrado" });
+    res.setHeader("Content-Type", file.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `inline; filename="${file.filename}"`);
+    res.send(file.data);
+  } catch (e: any) {
+    res.status(500).json({ message: e?.message || "Error" });
+  }
 });
 
 export default router;

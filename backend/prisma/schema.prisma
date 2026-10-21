@@ -500,9 +500,21 @@ model Invoice {
   createdById      Int
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+  file             InvoiceFile?
 
   @@index([date])
   @@index([locationId])
+}
+
+model InvoiceFile {
+  id        Int      @id @default(autoincrement())
+  invoiceId Int      @unique
+  filename  String
+  mimeType  String
+  data      Bytes
+  size      Int
+  createdAt DateTime @default(now())
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
 
 model InvoiceItem {
