@@ -370,28 +370,32 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
         update: { stock: { increment: it.quantity } },
       });
     } else if (!it.productId) {
-      const pCreated = await prisma.product.create({
-        data: {
-          itemCode: `P-${Date.now()}-${Math.round(Math.random() * 999)}`,
-          manufacturer: man?.name || "",
-          name: it.name || `Producto ${it.factoryCode}`,
-          brand: it.brand || "",
-          model: it.model || "",
-          year: it.year || "",
-          factoryCode: it.factoryCode,
-          oemCode: it.oemCode || null,
-          price1: it.price1 ? it.price1.toString() : "0",
-          price2: it.price2 ? it.price2.toString() : "0",
-          wholesalePrice: it.priceMayor ? it.priceMayor.toString() : null,
-          cost: it.costBS ? it.costBS.toString() : null,
-        },
-      });
-      await prisma.invoiceItem.update({ where: { id: it.id }, data: { productId: pCreated.id, itemCode: pCreated.itemCode } });
-      await prisma.inventory.upsert({
-        where: { productId_locationId: { productId: pCreated.id, locationId: loc.id } },
-        create: { productId: pCreated.id, locationId: loc.id, stock: it.quantity },
-        update: { stock: { increment: it.quantity } },
-      });
+      try {
+        const pCreated = await prisma.product.create({
+          data: {
+            itemCode: `P-${Date.now()}-${Math.round(Math.random() * 999)}`,
+            manufacturer: man?.name || "",
+            name: it.name || `Producto ${it.factoryCode || "SIN-COD"}`,
+            brand: it.brand || "",
+            model: it.model || "",
+            year: it.year || "",
+            factoryCode: it.factoryCode || null,
+            oemCode: it.oemCode || null,
+            price1: it.price1 ? it.price1.toString() : "0",
+            price2: it.price2 ? it.price2.toString() : "0",
+            wholesalePrice: it.priceMayor ? it.priceMayor.toString() : null,
+            cost: it.costBS ? it.costBS.toString() : null,
+          } as any,
+        });
+        await prisma.invoiceItem.update({ where: { id: it.id }, data: { productId: pCreated.id, itemCode: pCreated.itemCode } });
+        await prisma.inventory.upsert({
+          where: { productId_locationId: { productId: pCreated.id, locationId: loc.id } },
+          create: { productId: pCreated.id, locationId: loc.id, stock: it.quantity },
+          update: { stock: { increment: it.quantity } },
+        });
+      } catch (e: any) {
+        console.error("Error creating product from invoice item:", e);
+      }
     }
   }
 
