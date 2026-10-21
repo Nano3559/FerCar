@@ -439,7 +439,7 @@ router.get("/:id/export-excel", authenticate, authorize("ADMIN"), async (req: Au
   const ws = XLSX.utils.json_to_sheet(data);
   XLSX.utils.book_append_sheet(wb, ws, "COLUMNAS PARA VEREDITAR");
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-  res.setHeader("Content-Disposition", `inline; filename=${inv.invoiceNumber}.xlsx`);
+  res.setHeader("Content-Disposition", `inline; filename="${inv.invoiceNumber}.xlsx"`);
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.send(buf);
 });
