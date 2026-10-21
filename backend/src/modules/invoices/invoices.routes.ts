@@ -221,6 +221,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
           price2: x.price2 !== null && x.price2 !== undefined && x.price2 !== "" ? num(x.price2) : null,
           priceMayor: x.priceMayor !== null && x.priceMayor !== undefined && x.priceMayor !== "" ? num(x.priceMayor) : null,
           productId: x.productId || null,
+          itemCode: x.itemCode || null,
         }))
         .filter((x: any) => x.quantity > 0 && x.costUSD > 0);
     } catch (e: any) {
