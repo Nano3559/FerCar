@@ -486,7 +486,7 @@ router.get("/invoice/:filename", (req: AuthRequest, res: Response) => {
   res.sendFile(filePath);
 });
 
-router.get("/:id/view-file", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
+router.get("/:id/view-file", async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
     const file = await prisma.invoiceFile.findUnique({ where: { invoiceId: id } });
