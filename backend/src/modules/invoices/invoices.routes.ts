@@ -500,4 +500,45 @@ router.get("/:id/view-file", async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.get("/:id/detail", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const invoice = await prisma.invoice.findUnique({ where: { id } });
+    if (!invoice) return res.status(404).json({ message: "Factura no encontrada" });
+    const items = await prisma.invoiceItem.findMany({ where: { invoiceId: id }, orderBy: { id: "asc" } });
+    res.json({ invoice, items });
+  } catch (e: any) {
+    res.status(500).json({ message: e?.message || "Error" });
+  }
+});
+
+router.put("/:id/items", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { items } = req.body as any;
+    if (!Array.isArray(items)) return res.status(400).json({ message: "Items inválidos" });
+    for (const it of items) {
+      if (!it.id) continue;
+      await prisma.invoiceItem.update({
+        where: { id: Number(it.id) },
+        data: {
+          name: it.name || "",
+          brand: it.brand || "",
+          model: it.model || "",
+          year: it.year || "",
+          oemCode: it.oemCode || null,
+          quantity: Number(it.quantity) || 0,
+          costUSD: it.costUSD !== undefined && it.costUSD !== null ? Number(it.costUSD) : undefined,
+          price1: it.price1 !== undefined && it.price1 !== null && it.price1 !== "" ? Number(it.price1) : null,
+          price2: it.price2 !== undefined && it.price2 !== null && it.price2 !== "" ? Number(it.price2) : null,
+          priceMayor: it.priceMayor !== undefined && it.priceMayor !== null && it.priceMayor !== "" ? Number(it.priceMayor) : null,
+        } as any,
+      });
+    }
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ message: e?.message || "Error" });
+  }
+});
+
 export default router;
