@@ -307,6 +307,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       model: p?.model || it.model || "",
       year: p?.year || it.year || "",
       oemCode: p?.oemCode || it.oemCode || null,
+      detail: it.detail || null,
       quantity: it.quantity,
       costUSD: toDec(it.costUSD),
       costBS: costBSUnit,
@@ -517,26 +518,119 @@ router.put("/:id/items", authenticate, authorize("ADMIN"), async (req: AuthReque
     const id = Number(req.params.id);
     const { items } = req.body as any;
     if (!Array.isArray(items)) return res.status(400).json({ message: "Items inválidos" });
+
+    const invoice = await prisma.invoice.findUnique({ where: { id } });
+    if (!invoice) return res.status(404).json({ message: "Factura no encontrada" });
+
+    const ex = Number(invoice.exchangeRate) || 0;
+    const expPer = Number(invoice.expensesPer) || 0;
+    const mT = Number(invoice.marginTienda) || 0;
+
+    const existing = await prisma.invoiceItem.findMany({ where: { invoiceId: id } });
+    const existingMap = new Map(existing.map((x) => [x.id, x]));
+
     for (const it of items) {
-      if (!it.id) continue;
+      const itemId = Number(it.id);
+      const prev = existingMap.get(itemId);
+      if (!prev) continue;
+
+      const quantity = Math.max(0, Math.floor(Number(it.quantity) || 0));
+      const costUSD = Math.max(0, Number(it.costUSD) || 0);
+      const costBS = toDec(costUSD * (1 + expPer / 100) * ex);
+      const costTienda = toDec(costBS * (1 + mT / 100));
+      const mk = (pct: number) => money(costBS * (1 + pct / 100));
+      const numOrNull = (v: any) => (v !== undefined && v !== null && v !== "" ? Number(v) : null);
+
       await prisma.invoiceItem.update({
-        where: { id: Number(it.id) },
+        where: { id: itemId },
         data: {
           name: it.name || "",
           brand: it.brand || "",
           model: it.model || "",
           year: it.year || "",
           oemCode: it.oemCode || null,
-          quantity: Number(it.quantity) || 0,
-          costUSD: it.costUSD !== undefined && it.costUSD !== null ? Number(it.costUSD) : undefined,
-          price1: it.price1 !== undefined && it.price1 !== null && it.price1 !== "" ? Number(it.price1) : null,
-          price2: it.price2 !== undefined && it.price2 !== null && it.price2 !== "" ? Number(it.price2) : null,
-          priceMayor: it.priceMayor !== undefined && it.priceMayor !== null && it.priceMayor !== "" ? Number(it.priceMayor) : null,
+          detail: it.detail || null,
+          quantity,
+          costUSD: toDec(costUSD),
+          costBS,
+          costTienda,
+          price1: numOrNull(it.price1),
+          price2: numOrNull(it.price2),
+          priceMayor: numOrNull(it.priceMayor),
+          price10: mk(10),
+          price20: mk(20),
+          price30: mk(30),
+          price40: mk(40),
+          price50: mk(50),
+          price60: mk(60),
+          price70: mk(70),
+          price80: mk(80),
+          lineTotalBS: toDec(costBS * quantity),
         } as any,
       });
+
+      if (prev.productId) {
+        // Ajustar stock por la diferencia de cantidad (puede ser negativa)
+        const delta = quantity - prev.quantity;
+        if (delta !== 0) {
+          try {
+            const inv = await prisma.inventory.findUnique({
+              where: { productId_locationId: { productId: prev.productId, locationId: invoice.locationId } },
+            });
+            if (inv) {
+              await prisma.inventory.update({
+                where: { productId_locationId: { productId: prev.productId, locationId: invoice.locationId } },
+                data: { stock: Math.max(0, inv.stock + delta) },
+              });
+            } else if (delta > 0) {
+              await prisma.inventory.create({
+                data: { productId: prev.productId, locationId: invoice.locationId, stock: delta },
+              });
+            }
+          } catch (e: any) {
+            console.error("Error ajustando stock:", e?.message || e);
+          }
+        }
+
+        // Corregir también los datos del producto vinculado
+        try {
+          await prisma.product.update({
+            where: { id: prev.productId },
+            data: {
+              name: it.name || prev.name,
+              brand: it.brand || "",
+              model: it.model || "",
+              year: it.year || "",
+              oemCode: it.oemCode || null,
+              price1: it.price1 !== undefined && it.price1 !== null && it.price1 !== "" ? String(Number(it.price1)) : "0",
+              price2: it.price2 !== undefined && it.price2 !== null && it.price2 !== "" ? String(Number(it.price2)) : "0",
+              wholesalePrice:
+                it.priceMayor !== undefined && it.priceMayor !== null && it.priceMayor !== "" ? String(Number(it.priceMayor)) : null,
+            } as any,
+          });
+        } catch (e: any) {
+          console.error("Error actualizando producto:", e?.message || e);
+        }
+      }
     }
+
+    const updated = await prisma.invoiceItem.findMany({ where: { invoiceId: id } });
+    const totalUnits = updated.reduce((s, x) => s + x.quantity, 0);
+    const totalCostUSD = updated.reduce((s, x) => s + Number(x.costUSD) * x.quantity, 0);
+    const totalCostBS = updated.reduce((s, x) => s + Number(x.costBS) * x.quantity, 0);
+
+    await prisma.invoice.update({
+      where: { id },
+      data: {
+        totalUnits,
+        totalCostUSD: toDec(totalCostUSD),
+        totalCostBS: toDec(totalCostBS),
+      },
+    });
+
     res.json({ ok: true });
   } catch (e: any) {
+    console.error("Error actualizando factura:", e?.message || e);
     res.status(500).json({ message: e?.message || "Error" });
   }
 });

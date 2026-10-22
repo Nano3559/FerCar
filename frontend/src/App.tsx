@@ -18,6 +18,7 @@ import WholesalePage from "./pages/WholesalePage";
 import ReturnsPage from "./pages/ReturnsPage";
 import QuotesPage from "./pages/QuotesPage";
 import InvoicesPage from "./pages/InvoicesPage";
+import InvoiceDetailPage from "./pages/InvoiceDetailPage";
 import SolicitudesDespachosPage from "./pages/SolicitudesDespachosPage";
 import MovementsPage from "./pages/MovementsPage";
 import CostsPage from "./pages/CostsPage";
@@ -164,6 +165,11 @@ export default function App() {
           <Route path="facturas" element={
             <RoleRoute allowedRoles={["ADMIN"]} module="facturas">
               <InvoicesPage />
+            </RoleRoute>
+          } />
+          <Route path="facturas/:id" element={
+            <RoleRoute allowedRoles={["ADMIN"]} module="facturas">
+              <InvoiceDetailPage />
             </RoleRoute>
           } />
 

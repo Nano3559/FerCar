@@ -528,6 +528,7 @@ model InvoiceItem {
   model       String
   year        String
   oemCode     String?
+  detail      String?
   quantity    Int
   costUSD     Decimal
   costBS      Decimal
