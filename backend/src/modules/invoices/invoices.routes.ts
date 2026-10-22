@@ -492,8 +492,9 @@ router.get("/:id/view-file", async (req: AuthRequest, res: Response) => {
     const file = await prisma.invoiceFile.findUnique({ where: { invoiceId: id } });
     if (!file) return res.status(404).json({ message: "Archivo no encontrado" });
     res.setHeader("Content-Type", file.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `inline; filename="${file.filename}"`);
-    res.send(file.data);
+    res.setHeader("Content-Disposition", `inline; filename="${file.filename.replace(/"/g, '')}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(Buffer.from(file.data));
   } catch (e: any) {
     res.status(500).json({ message: e?.message || "Error" });
   }
