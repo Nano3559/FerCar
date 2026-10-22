@@ -602,6 +602,9 @@ router.put("/:id/items", authenticate, authorize("ADMIN"), async (req: AuthReque
               model: it.model || "",
               year: it.year || "",
               oemCode: it.oemCode || null,
+              cost: String(costBS),
+              detail: it.detail || null,
+              detalles: it.detail || null,
               price1: it.price1 !== undefined && it.price1 !== null && it.price1 !== "" ? String(Number(it.price1)) : "0",
               price2: it.price2 !== undefined && it.price2 !== null && it.price2 !== "" ? String(Number(it.price2)) : "0",
               wholesalePrice:
