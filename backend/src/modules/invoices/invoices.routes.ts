@@ -580,7 +580,9 @@ router.post("/:id/apply-inventory", authenticate, authorize("ADMIN"), async (req
             oemCode: it.oemCode ?? product.oemCode,
             detail: it.detail ?? product.detail,
             detalles: it.detail ?? product.detalles,
+            unitPrice: String(it.costUSD),
             cost: String(it.costBS),
+            priceHermana: String(it.costTienda),
           };
           if (price1 !== null) data.price1 = price1;
           if (price2 !== null) data.price2 = price2;
@@ -606,7 +608,9 @@ router.post("/:id/apply-inventory", authenticate, authorize("ADMIN"), async (req
               price1: price1 ?? "0",
               price2: price2 ?? "0",
               wholesalePrice: priceMayor,
+              unitPrice: String(it.costUSD),
               cost: String(it.costBS),
+              priceHermana: String(it.costTienda),
             } as any,
           });
         }
