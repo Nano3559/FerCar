@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Save, FileSpreadsheet, PackageCheck, CheckCircle2, Lock, Download } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 import api from "../services/api";
 import toast from "react-hot-toast";
 
@@ -119,71 +118,37 @@ export default function InvoiceDetailPage() {
     }
   };
 
-  const exportPdf = () => {
+  const exportExcel = () => {
     if (!invoice) return;
     try {
-      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-      const fecha = new Date(invoice.date).toLocaleDateString("es-VE", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      });
+      const rows = items.map((it) => ({
+        "COD FABRICA": it.factoryCode || "",
+        PRODUCTO: it.name || "",
+        MARCA: it.brand || "",
+        MODELO: it.model || "",
+        AÑO: it.year || "",
+        DETALLES: it.detail || "",
+        "PRECIO MAYOR":
+          it.priceMayor === null || it.priceMayor === undefined ? "" : Number(it.priceMayor),
+      }));
 
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text(`Factura ${invoice.invoiceNumber}`, 14, 14);
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [
+        { wch: 18 },
+        { wch: 40 },
+        { wch: 16 },
+        { wch: 18 },
+        { wch: 10 },
+        { wch: 36 },
+        { wch: 14 },
+      ];
 
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.text(
-        `Fecha: ${fecha}   Proveedor: ${invoice.supplierName || "-"}   Almacén: ${invoice.locationName || "-"}`,
-        14,
-        20
-      );
-
-      autoTable(doc, {
-        startY: 26,
-        head: [["COD FABRICA", "PRODUCTO", "MARCA", "MODELO", "AÑO", "DETALLES", "PRECIO MAYOR"]],
-        body: items.map((it) => [
-          it.factoryCode || "",
-          it.name || "",
-          it.brand || "",
-          it.model || "",
-          it.year || "",
-          it.detail || "",
-          it.priceMayor === null || it.priceMayor === undefined ? "" : Number(it.priceMayor).toFixed(2),
-        ]),
-        styles: { fontSize: 8, cellPadding: 1.6, overflow: "linebreak", valign: "middle" },
-        headStyles: { fillColor: [22, 101, 52], textColor: 255, fontStyle: "bold", halign: "center" },
-        alternateRowStyles: { fillColor: [244, 244, 244] },
-        columnStyles: {
-          0: { cellWidth: 30 },
-          1: { cellWidth: 62 },
-          2: { cellWidth: 26 },
-          3: { cellWidth: 28 },
-          4: { cellWidth: 16 },
-          5: { cellWidth: 62 },
-          6: { cellWidth: 25, halign: "right" },
-        },
-        margin: { left: 14, right: 14 },
-      });
-
-      const pageCount = doc.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.text(
-          `Página ${i} de ${pageCount}`,
-          doc.internal.pageSize.getWidth() - 14,
-          doc.internal.pageSize.getHeight() - 6,
-          { align: "right" }
-        );
-      }
-
-      doc.save(`Factura-${invoice.invoiceNumber}.pdf`);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "FACTURA");
+      XLSX.writeFile(wb, `Factura-${invoice.invoiceNumber}.xlsx`);
     } catch (e) {
       console.error(e);
-      toast.error("Error generando el PDF");
+      toast.error("Error generando el Excel");
     }
   };
 
@@ -236,12 +201,12 @@ export default function InvoiceDetailPage() {
             </a>
           )}
           <button
-            onClick={exportPdf}
+            onClick={exportExcel}
             disabled={!locked || items.length === 0}
-            title={!locked ? "Disponible cuando se actualice el inventario" : "Exportar factura en PDF"}
+            title={!locked ? "Disponible cuando se actualice el inventario" : "Exportar factura en Excel"}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <Download size={16} /> Exportar PDF
+            <Download size={16} /> Exportar Excel
           </button>
           {!locked && (
             <>
