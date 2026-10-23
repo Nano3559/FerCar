@@ -298,7 +298,7 @@ export default function InvoicesPage() {
                           <td className="p-2 text-gray-300 text-center">{mk(20).toFixed(2)}</td>
                           <td className="p-2 text-gray-300 text-center">{mk(30).toFixed(2)}</td>
                           <td className="p-2 text-gray-300 text-center">{mk(40).toFixed(2)}</td>
-                          <td className="p-2 text-red-200 text-center bg-red-500/10 border-x border-red-500/20">{mk(50).toFixed(2)}</td>
+                          <td className="p-2 text-red-200 text-center bg-red-500/10 border-x border-red-500/20 font-bold">{mk(50).toFixed(2)}</td>
                           <td className="p-2 text-gray-300 text-center">{mk(60).toFixed(2)}</td>
                           <td className="p-2 text-gray-300 text-center">{mk(70).toFixed(2)}</td>
                           <td className="p-2 text-gray-300 text-center">{mk(80).toFixed(2)}</td>
