@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Save, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, Save, FileSpreadsheet, PackageCheck, CheckCircle2, Lock } from "lucide-react";
 import api from "../services/api";
 import toast from "react-hot-toast";
 
@@ -47,13 +47,18 @@ interface InvoiceInfo {
   marginTienda?: number | string;
   fileUrl?: string | null;
   status: string;
+  inventoryAppliedAt?: string | null;
 }
+
+const inputClass =
+  "px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground disabled:opacity-60 disabled:cursor-not-allowed";
 
 export default function InvoiceDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [invoice, setInvoice] = useState<InvoiceInfo | null>(null);
   const [items, setItems] = useState<InvoiceItemEdit[]>([]);
 
@@ -74,7 +79,10 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  const locked = !!invoice?.inventoryAppliedAt;
+
   const updateItem = (idx: number, field: keyof InvoiceItemEdit, value: any) => {
+    if (locked) return;
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)));
   };
 
@@ -82,12 +90,30 @@ export default function InvoiceDetailPage() {
     try {
       setSaving(true);
       await api.put(`/invoices/${id}/items`, { items });
-      toast.success("Factura actualizada correctamente");
+      toast.success("Cambios guardados. El inventario aún no se ha actualizado.");
       loadDetail();
     } catch (e: any) {
       toast.error(e?.response?.data?.message || "Error guardando factura");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const applyInventory = async () => {
+    const total = items.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+    const ok = window.confirm(
+      `¿Actualizar el inventario con ${items.length} producto(s) y ${total} unidad(es)?\n\nDespués de esto la factura quedará bloqueada y no podrás modificar precios ni cantidades.`
+    );
+    if (!ok) return;
+    try {
+      setApplying(true);
+      await api.post(`/invoices/${id}/apply-inventory`);
+      toast.success("Inventario actualizado. La factura quedó bloqueada.");
+      loadDetail();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || "Error actualizando inventario");
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -128,7 +154,7 @@ export default function InvoiceDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {invoice.fileUrl && (
             <a
               href={`${API_HOST}/api/invoices/${invoice.id}/view-file`}
@@ -139,15 +165,50 @@ export default function InvoiceDetailPage() {
               <FileSpreadsheet size={16} /> Excel original
             </a>
           )}
-          <button
-            onClick={saveChanges}
-            disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl disabled:opacity-50"
-          >
-            <Save size={16} /> {saving ? "Guardando..." : "Guardar cambios"}
-          </button>
+          {!locked && (
+            <>
+              <button
+                onClick={saveChanges}
+                disabled={saving || applying}
+                className="flex items-center gap-2 px-4 py-2 border border-dark-700/50 rounded-xl text-gray-200 hover:bg-dark-700/50 disabled:opacity-50"
+              >
+                <Save size={16} /> {saving ? "Guardando..." : "Guardar cambios"}
+              </button>
+              <button
+                onClick={applyInventory}
+                disabled={applying || saving || items.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl disabled:opacity-50"
+              >
+                <PackageCheck size={16} /> {applying ? "Actualizando..." : "Actualizar inventario"}
+              </button>
+            </>
+          )}
+          {locked && (
+            <span className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
+              <CheckCircle2 size={16} /> Inventario actualizado
+            </span>
+          )}
         </div>
       </div>
+
+      {locked ? (
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 text-sm">
+          <Lock size={16} className="mt-0.5 shrink-0" />
+          <p>
+            El inventario se actualizó el{" "}
+            {new Date(invoice.inventoryAppliedAt as string).toLocaleString("es-VE")}. Esta factura está bloqueada y ya no
+            admite modificaciones.
+          </p>
+        </div>
+      ) : (
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-sm">
+          <PackageCheck size={16} className="mt-0.5 shrink-0" />
+          <p>
+            Esta factura está en borrador. Puedes editar precios y cantidades y guardar los cambios las veces que
+            necesites. El inventario se actualizará solo cuando presiones <strong>Actualizar inventario</strong>.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-dark-800 border border-dark-700/50 rounded-xl p-3">
@@ -210,28 +271,28 @@ export default function InvoiceDetailPage() {
                   <tr key={it.id} className="border-t border-dark-700/40">
                     <td className="p-2 text-gray-300 whitespace-nowrap">{it.factoryCode || "-"}</td>
                     <td className="p-2">
-                      <input value={it.name || ""} onChange={(e) => updateItem(idx, "name", e.target.value)} className="w-40 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} value={it.name || ""} onChange={(e) => updateItem(idx, "name", e.target.value)} className={`${inputClass} w-40`} />
                     </td>
                     <td className="p-2">
-                      <input value={it.brand || ""} onChange={(e) => updateItem(idx, "brand", e.target.value)} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} value={it.brand || ""} onChange={(e) => updateItem(idx, "brand", e.target.value)} className={`${inputClass} w-24`} />
                     </td>
                     <td className="p-2">
-                      <input value={it.model || ""} onChange={(e) => updateItem(idx, "model", e.target.value)} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} value={it.model || ""} onChange={(e) => updateItem(idx, "model", e.target.value)} className={`${inputClass} w-24`} />
                     </td>
                     <td className="p-2">
-                      <input value={it.year || ""} onChange={(e) => updateItem(idx, "year", e.target.value)} className="w-16 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} value={it.year || ""} onChange={(e) => updateItem(idx, "year", e.target.value)} className={`${inputClass} w-16`} />
                     </td>
                     <td className="p-2">
-                      <input value={it.detail || ""} onChange={(e) => updateItem(idx, "detail", e.target.value)} className="w-40 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} value={it.detail || ""} onChange={(e) => updateItem(idx, "detail", e.target.value)} className={`${inputClass} w-40`} />
                     </td>
                     <td className="p-2">
-                      <input value={it.oemCode || ""} onChange={(e) => updateItem(idx, "oemCode", e.target.value)} className="w-28 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} value={it.oemCode || ""} onChange={(e) => updateItem(idx, "oemCode", e.target.value)} className={`${inputClass} w-28`} />
                     </td>
                     <td className="p-2">
-                      <input type="number" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} className="w-16 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} type="number" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} className={`${inputClass} w-16`} />
                     </td>
                     <td className="p-2">
-                      <input type="number" step="0.01" value={it.costUSD} onChange={(e) => updateItem(idx, "costUSD", Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} type="number" step="0.01" value={it.costUSD} onChange={(e) => updateItem(idx, "costUSD", Number(e.target.value))} className={`${inputClass} w-20`} />
                     </td>
                     <td className="p-2 text-gray-300 text-center whitespace-nowrap">{costBS.toFixed(2)}</td>
                     <td className="p-2 text-gray-300 text-center whitespace-nowrap">{costTienda.toFixed(2)}</td>
@@ -243,13 +304,13 @@ export default function InvoiceDetailPage() {
                     <td className="p-2 text-gray-300 text-center">{mk(70).toFixed(2)}</td>
                     <td className="p-2 text-gray-300 text-center">{mk(80).toFixed(2)}</td>
                     <td className="p-2">
-                      <input type="number" step="0.01" value={it.price1 ?? ""} onChange={(e) => updateItem(idx, "price1", e.target.value === "" ? null : Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} type="number" step="0.01" value={it.price1 ?? ""} onChange={(e) => updateItem(idx, "price1", e.target.value === "" ? null : Number(e.target.value))} className={`${inputClass} w-20`} />
                     </td>
                     <td className="p-2">
-                      <input type="number" step="0.01" value={it.price2 ?? ""} onChange={(e) => updateItem(idx, "price2", e.target.value === "" ? null : Number(e.target.value))} className="w-20 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} type="number" step="0.01" value={it.price2 ?? ""} onChange={(e) => updateItem(idx, "price2", e.target.value === "" ? null : Number(e.target.value))} className={`${inputClass} w-20`} />
                     </td>
                     <td className="p-2">
-                      <input type="number" step="0.01" value={it.priceMayor ?? ""} onChange={(e) => updateItem(idx, "priceMayor", e.target.value === "" ? null : Number(e.target.value))} className="w-24 px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-foreground" />
+                      <input disabled={locked} type="number" step="0.01" value={it.priceMayor ?? ""} onChange={(e) => updateItem(idx, "priceMayor", e.target.value === "" ? null : Number(e.target.value))} className={`${inputClass} w-24`} />
                     </td>
                   </tr>
                 );

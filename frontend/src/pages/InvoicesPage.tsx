@@ -15,6 +15,7 @@ interface InvoiceRow {
   totalUnits: number;
   fileUrl?: string | null;
   status: "ACTIVA" | "ANULADA";
+  inventoryAppliedAt?: string | null;
   createdAt: string;
 }
 
@@ -114,12 +115,16 @@ export default function InvoicesPage() {
     fd.append("items", JSON.stringify(items));
     try {
       setImporting(true);
-      await api.post("/invoices/import", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      toast.success("Factura importada correctamente");
+      const res = await api.post("/invoices/import", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success("Factura guardada como borrador. Actualiza el inventario cuando esté lista.");
       setShowImport(false);
       setFile(null);
       setItems([]);
-      loadData();
+      if (res.data?.invoiceId) {
+        navigate(`/panel/facturas/${res.data.invoiceId}`);
+      } else {
+        loadData();
+      }
     } catch (e: any) {
       toast.error(e?.response?.data?.message || "Error importando factura");
     } finally {
@@ -132,7 +137,7 @@ export default function InvoicesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Facturas</h1>
-          <p className="text-gray-400 text-sm mt-1">Importar Excel, completar datos y subir a inventario</p>
+          <p className="text-gray-400 text-sm mt-1">Importar Excel, editar y actualizar el inventario</p>
         </div>
         <button
           onClick={() => setShowImport(true)}
@@ -155,6 +160,7 @@ export default function InvoicesPage() {
                 <th className="text-left text-xs text-gray-400 font-medium pb-3">Unidades</th>
                 <th className="text-left text-xs text-gray-400 font-medium pb-3">DIM</th>
                 <th className="text-left text-xs text-gray-400 font-medium pb-3">Estado</th>
+                <th className="text-left text-xs text-gray-400 font-medium pb-3">Inventario</th>
                 <th className="text-right text-xs text-gray-400 font-medium pb-3">Acciones</th>
               </tr>
             </thead>
@@ -169,6 +175,17 @@ export default function InvoicesPage() {
                   <td className="py-3 text-sm text-gray-300">{inv.totalUnits}</td>
                   <td className="py-3 text-sm text-gray-300">{inv.dimCode || "-"}</td>
                   <td className="py-3 text-sm text-gray-300">{inv.status}</td>
+                  <td className="py-3 text-sm">
+                    {inv.inventoryAppliedAt ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                        Actualizado
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                        Pendiente
+                      </span>
+                    )}
+                  </td>
                   <td className="py-3 text-sm text-right">
                     <button
                       onClick={() => navigate(`/panel/facturas/${inv.id}`)}
@@ -181,7 +198,7 @@ export default function InvoicesPage() {
               ))}
               {invoices.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-gray-400">Sin facturas cargadas</td>
+                  <td colSpan={10} className="py-8 text-center text-gray-400">Sin facturas cargadas</td>
                 </tr>
               )}
             </tbody>
@@ -315,7 +332,7 @@ export default function InvoicesPage() {
               <div className="flex justify-end gap-2">
                 <button onClick={() => { setShowImport(false); setFile(null); setItems([]); }} className="px-4 py-2 border border-dark-700/50 rounded-xl text-gray-300 hover:bg-dark-700/50">Cancelar</button>
                 <button disabled={importing || (Array.isArray(items) ? items.length === 0 : true)} onClick={importInvoice} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl disabled:opacity-50">
-                  {importing ? "Importando..." : "Confirmar e Importar"}
+                  {importing ? "Guardando..." : "Guardar factura"}
                 </button>
               </div>
             </div>

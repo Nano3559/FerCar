@@ -109,6 +109,7 @@ router.get("/", authenticate, authorize("ADMIN"), async (_req: AuthRequest, res:
       totalUnits: i.totalUnits,
       fileUrl: i.fileUrl,
       status: i.status,
+      inventoryAppliedAt: i.inventoryAppliedAt ? i.inventoryAppliedAt.toISOString() : null,
       createdAt: i.createdAt.toISOString(),
     })),
   });
@@ -250,39 +251,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
 
   const factoryCodes = items.map((x) => x.factoryCode);
   const existingProducts = await prisma.product.findMany({ where: { factoryCode: { in: factoryCodes } } });
-
   const productMap = new Map(existingProducts.map((p) => [p.factoryCode, p]));
-  const toCreate: any[] = [];
-  for (const it of items) {
-    if (!productMap.has(it.factoryCode)) {
-      toCreate.push(it);
-    }
-  }
-  for (const it of toCreate) {
-    const itemCode = it.factoryCode || `FAC-${Date.now()}`;
-    const created = await prisma.product.create({
-      data: {
-        itemCode,
-        factoryCode: it.factoryCode,
-        name: it.name || it.factoryCode,
-        brand: it.brand || "",
-        model: it.model || "",
-        year: it.year || "",
-        oemCode: it.oemCode || null,
-        manufacturer: man?.name || "",
-        categoryId: null,
-        price1: it.price1 !== null && it.price1 !== undefined && it.price1 !== "" ? it.price1.toString() : "0",
-        price2: it.price2 !== null && it.price2 !== undefined && it.price2 !== "" ? it.price2.toString() : "0",
-        wholesalePrice: it.priceMayor !== null && it.priceMayor !== undefined && it.priceMayor !== "" ? it.priceMayor.toString() : "0",
-        cost: null,
-        unitPrice: null,
-        priceHermana: null,
-        detail: it.detail || it.detalles || null,
-        detalles: it.detail || it.detalles || null,
-      },
-    });
-    productMap.set(it.factoryCode, created);
-  }
 
   let totalUnits = 0;
   let totalCostUSD = 0;
@@ -298,23 +267,28 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     const p = productMap.get(it.factoryCode);
     const base = costBSUnit;
     const mk = (pct: number) => money(base * (1 + pct / 100));
+    const pickPrice = (v: any, fallback: any) => {
+      if (v !== null && v !== undefined && v !== "") return Number(v);
+      if (fallback !== null && fallback !== undefined) return Number(fallback);
+      return null;
+    };
     invoiceItemsData.push({
       factoryCode: it.factoryCode,
       productId: p?.id || null,
       itemCode: p?.itemCode || null,
-      name: p?.name || it.name || "",
-      brand: p?.brand || it.brand || "",
-      model: p?.model || it.model || "",
-      year: p?.year || it.year || "",
-      oemCode: p?.oemCode || it.oemCode || null,
+      name: it.name || p?.name || "",
+      brand: it.brand || p?.brand || "",
+      model: it.model || p?.model || "",
+      year: it.year || p?.year || "",
+      oemCode: it.oemCode || p?.oemCode || null,
       detail: it.detail || null,
       quantity: it.quantity,
       costUSD: toDec(it.costUSD),
       costBS: costBSUnit,
       costTienda: costTiendaUnit,
-      price1: p?.price1 !== null && p?.price1 !== undefined ? Number(p.price1) : (it.price1 !== null && it.price1 !== undefined && it.price1 !== "" ? Number(it.price1) : null),
-      price2: p?.price2 !== null && p?.price2 !== undefined ? Number(p.price2) : (it.price2 !== null && it.price2 !== undefined && it.price2 !== "" ? Number(it.price2) : null),
-      priceMayor: p?.wholesalePrice !== null && p?.wholesalePrice !== undefined ? Number(p.wholesalePrice) : (it.priceMayor !== null && it.priceMayor !== undefined && it.priceMayor !== "" ? Number(it.priceMayor) : null),
+      price1: pickPrice(it.price1, p?.price1),
+      price2: pickPrice(it.price2, p?.price2),
+      priceMayor: pickPrice(it.priceMayor, p?.wholesalePrice),
       price10: mk(10),
       price20: mk(20),
       price30: mk(30),
@@ -368,44 +342,6 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       });
     } catch (e: any) {
       console.error("Error guardando archivo de factura:", e?.message || e);
-    }
-  }
-
-  const invoiceItems = await prisma.invoiceItem.findMany({ where: { invoiceId: invoice.id } });
-  for (const it of invoiceItems) {
-    if (it.productId && it.quantity > 0) {
-      await prisma.inventory.upsert({
-        where: { productId_locationId: { productId: it.productId, locationId: loc.id } },
-        create: { productId: it.productId, locationId: loc.id, stock: it.quantity },
-        update: { stock: { increment: it.quantity } },
-      });
-    } else if (!it.productId) {
-      try {
-        const pCreated = await prisma.product.create({
-          data: {
-            itemCode: `P-${Date.now()}-${Math.round(Math.random() * 999)}`,
-            manufacturer: man?.name || "",
-            name: it.name || `Producto ${it.factoryCode || "SIN-COD"}`,
-            brand: it.brand || "",
-            model: it.model || "",
-            year: it.year || "",
-            factoryCode: it.factoryCode || null,
-            oemCode: it.oemCode || null,
-            price1: it.price1 !== null && it.price1 !== undefined ? it.price1.toString() : "0",
-            price2: it.price2 !== null && it.price2 !== undefined ? it.price2.toString() : "0",
-            wholesalePrice: it.priceMayor !== null && it.priceMayor !== undefined ? it.priceMayor.toString() : null,
-            cost: it.costBS ? it.costBS.toString() : null,
-          } as any,
-        });
-        await prisma.invoiceItem.update({ where: { id: it.id }, data: { productId: pCreated.id, itemCode: pCreated.itemCode } });
-        await prisma.inventory.upsert({
-          where: { productId_locationId: { productId: pCreated.id, locationId: loc.id } },
-          create: { productId: pCreated.id, locationId: loc.id, stock: it.quantity },
-          update: { stock: { increment: it.quantity } },
-        });
-      } catch (e: any) {
-        console.error("Error creating product from invoice item:", e);
-      }
     }
   }
 
@@ -521,6 +457,9 @@ router.put("/:id/items", authenticate, authorize("ADMIN"), async (req: AuthReque
 
     const invoice = await prisma.invoice.findUnique({ where: { id } });
     if (!invoice) return res.status(404).json({ message: "Factura no encontrada" });
+    if (invoice.inventoryAppliedAt) {
+      return res.status(409).json({ message: "El inventario ya fue actualizado. Esta factura no se puede modificar." });
+    }
 
     const ex = Number(invoice.exchangeRate) || 0;
     const expPer = Number(invoice.expensesPer) || 0;
@@ -568,53 +507,6 @@ router.put("/:id/items", authenticate, authorize("ADMIN"), async (req: AuthReque
           lineTotalBS: toDec(costBS * quantity),
         } as any,
       });
-
-      if (prev.productId) {
-        // Ajustar stock por la diferencia de cantidad (puede ser negativa)
-        const delta = quantity - prev.quantity;
-        if (delta !== 0) {
-          try {
-            const inv = await prisma.inventory.findUnique({
-              where: { productId_locationId: { productId: prev.productId, locationId: invoice.locationId } },
-            });
-            if (inv) {
-              await prisma.inventory.update({
-                where: { productId_locationId: { productId: prev.productId, locationId: invoice.locationId } },
-                data: { stock: Math.max(0, inv.stock + delta) },
-              });
-            } else if (delta > 0) {
-              await prisma.inventory.create({
-                data: { productId: prev.productId, locationId: invoice.locationId, stock: delta },
-              });
-            }
-          } catch (e: any) {
-            console.error("Error ajustando stock:", e?.message || e);
-          }
-        }
-
-        // Corregir también los datos del producto vinculado
-        try {
-          await prisma.product.update({
-            where: { id: prev.productId },
-            data: {
-              name: it.name || prev.name,
-              brand: it.brand || "",
-              model: it.model || "",
-              year: it.year || "",
-              oemCode: it.oemCode || null,
-              cost: String(costBS),
-              detail: it.detail || null,
-              detalles: it.detail || null,
-              price1: it.price1 !== undefined && it.price1 !== null && it.price1 !== "" ? String(Number(it.price1)) : "0",
-              price2: it.price2 !== undefined && it.price2 !== null && it.price2 !== "" ? String(Number(it.price2)) : "0",
-              wholesalePrice:
-                it.priceMayor !== undefined && it.priceMayor !== null && it.priceMayor !== "" ? String(Number(it.priceMayor)) : null,
-            } as any,
-          });
-        } catch (e: any) {
-          console.error("Error actualizando producto:", e?.message || e);
-        }
-      }
     }
 
     const updated = await prisma.invoiceItem.findMany({ where: { invoiceId: id } });
@@ -635,6 +527,128 @@ router.put("/:id/items", authenticate, authorize("ADMIN"), async (req: AuthReque
   } catch (e: any) {
     console.error("Error actualizando factura:", e?.message || e);
     res.status(500).json({ message: e?.message || "Error" });
+  }
+});
+
+router.post("/:id/apply-inventory", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params.id);
+  try {
+    const invoice = await prisma.invoice.findUnique({ where: { id } });
+    if (!invoice) return res.status(404).json({ message: "Factura no encontrada" });
+
+    // Bloqueo atómico: solo el primer click aplica el inventario.
+    const claim = await prisma.invoice.updateMany({
+      where: { id, inventoryAppliedAt: null },
+      data: { inventoryAppliedAt: new Date() },
+    });
+    if (claim.count === 0) {
+      return res.status(409).json({ message: "El inventario de esta factura ya fue actualizado." });
+    }
+
+    try {
+      const items = await prisma.invoiceItem.findMany({ where: { invoiceId: id }, orderBy: { id: "asc" } });
+      if (items.length === 0) {
+        await prisma.invoice.update({ where: { id }, data: { inventoryAppliedAt: null } });
+        return res.status(400).json({ message: "La factura no tiene productos" });
+      }
+
+      let applied = 0;
+      for (const it of items) {
+        if (it.quantity <= 0) continue;
+
+        let product = it.productId
+          ? await prisma.product.findUnique({ where: { id: it.productId } })
+          : null;
+        if (!product && it.factoryCode) {
+          product = await prisma.product.findFirst({ where: { factoryCode: it.factoryCode } });
+        }
+        if (!product && it.itemCode) {
+          product = await prisma.product.findFirst({ where: { itemCode: it.itemCode } });
+        }
+
+        const price1 = it.price1 !== null && it.price1 !== undefined ? String(it.price1) : null;
+        const price2 = it.price2 !== null && it.price2 !== undefined ? String(it.price2) : null;
+        const priceMayor = it.priceMayor !== null && it.priceMayor !== undefined ? String(it.priceMayor) : null;
+
+        if (product) {
+          // Producto existente: se actualizan datos y se aplican los precios nuevos.
+          const data: any = {
+            name: it.name || product.name,
+            brand: it.brand || product.brand,
+            model: it.model || product.model,
+            year: it.year || product.year,
+            oemCode: it.oemCode ?? product.oemCode,
+            detail: it.detail ?? product.detail,
+            detalles: it.detail ?? product.detalles,
+            cost: String(it.costBS),
+          };
+          if (price1 !== null) data.price1 = price1;
+          if (price2 !== null) data.price2 = price2;
+          if (priceMayor !== null) data.wholesalePrice = priceMayor;
+          await prisma.product.update({ where: { id: product.id }, data });
+        } else {
+          let itemCode = it.itemCode || it.factoryCode || `P-${Date.now()}-${Math.round(Math.random() * 999)}`;
+          const taken = await prisma.product.findUnique({ where: { itemCode } });
+          if (taken) itemCode = `P-${Date.now()}-${Math.round(Math.random() * 999)}`;
+
+          product = await prisma.product.create({
+            data: {
+              itemCode,
+              factoryCode: it.factoryCode || null,
+              manufacturer: invoice.manufacturerName || "",
+              name: it.name || it.factoryCode || "SIN NOMBRE",
+              brand: it.brand || "",
+              model: it.model || "",
+              year: it.year || "",
+              oemCode: it.oemCode || null,
+              detail: it.detail || null,
+              detalles: it.detail || null,
+              price1: price1 ?? "0",
+              price2: price2 ?? "0",
+              wholesalePrice: priceMayor,
+              cost: String(it.costBS),
+            } as any,
+          });
+        }
+
+        await prisma.inventory.upsert({
+          where: { productId_locationId: { productId: product.id, locationId: invoice.locationId } },
+          create: { productId: product.id, locationId: invoice.locationId, stock: it.quantity },
+          update: { stock: { increment: it.quantity } },
+        });
+
+        if (it.productId !== product.id || it.itemCode !== product.itemCode) {
+          await prisma.invoiceItem.update({
+            where: { id: it.id },
+            data: { productId: product.id, itemCode: product.itemCode },
+          });
+        }
+        applied++;
+      }
+
+      const updated = await prisma.invoiceItem.findMany({ where: { invoiceId: id } });
+      const totalUnits = updated.reduce((s, x) => s + x.quantity, 0);
+      const totalCostUSD = updated.reduce((s, x) => s + Number(x.costUSD) * x.quantity, 0);
+      const totalCostBS = updated.reduce((s, x) => s + Number(x.costBS) * x.quantity, 0);
+
+      const finalInvoice = await prisma.invoice.update({
+        where: { id },
+        data: { totalUnits, totalCostUSD: toDec(totalCostUSD), totalCostBS: toDec(totalCostBS) },
+      });
+
+      res.json({
+        ok: true,
+        appliedItems: applied,
+        inventoryAppliedAt: finalInvoice.inventoryAppliedAt ? finalInvoice.inventoryAppliedAt.toISOString() : null,
+      });
+    } catch (e: any) {
+      // Si algo falla, se libera el bloqueo para poder reintentar.
+      await prisma.invoice.updateMany({ where: { id }, data: { inventoryAppliedAt: null } });
+      throw e;
+    }
+  } catch (e: any) {
+    console.error("Error actualizando inventario:", e?.message || e);
+    res.status(500).json({ message: e?.message || "Error actualizando inventario" });
   }
 });
 
