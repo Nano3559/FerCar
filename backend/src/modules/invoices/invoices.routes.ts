@@ -571,22 +571,22 @@ router.post("/:id/apply-inventory", authenticate, authorize("ADMIN"), async (req
         const priceMayor = it.priceMayor !== null && it.priceMayor !== undefined ? String(it.priceMayor) : null;
 
         if (product) {
-          // Producto existente: se actualizan datos y se aplican los precios nuevos.
+          // Producto existente: se actualizan datos y se aplican los valores de la factura.
           const data: any = {
             name: it.name || product.name,
-            brand: it.brand || product.brand,
-            model: it.model || product.model,
-            year: it.year || product.year,
-            oemCode: it.oemCode ?? product.oemCode,
-            detail: it.detail ?? product.detail,
-            detalles: it.detail ?? product.detalles,
+            brand: it.brand,
+            model: it.model,
+            year: it.year,
+            oemCode: it.oemCode || null,
+            detail: it.detail || null,
+            detalles: it.detail || null,
             unitPrice: String(it.costUSD),
             cost: String(it.costBS),
             priceHermana: String(it.costTienda),
+            price1: price1 ?? "0",
+            price2: price2 ?? "0",
+            wholesalePrice: priceMayor,
           };
-          if (price1 !== null) data.price1 = price1;
-          if (price2 !== null) data.price2 = price2;
-          if (priceMayor !== null) data.wholesalePrice = priceMayor;
           await prisma.product.update({ where: { id: product.id }, data });
         } else {
           let itemCode = it.itemCode || it.factoryCode || `P-${Date.now()}-${Math.round(Math.random() * 999)}`;
