@@ -177,7 +177,7 @@ export default function InvoicesPage() {
                   <td className="py-3 text-sm text-gray-300">{inv.status}</td>
                   <td className="py-3 text-sm">
                     {inv.inventoryAppliedAt ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-300 text-black border border-emerald-400 font-bold">
                         Actualizado
                       </span>
                     ) : (

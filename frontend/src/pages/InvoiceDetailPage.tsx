@@ -184,7 +184,7 @@ export default function InvoiceDetailPage() {
             </>
           )}
           {locked && (
-            <span className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
+            <span className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-300 border border-emerald-400 text-black font-bold text-sm">
               <CheckCircle2 size={16} /> Inventario actualizado
             </span>
           )}
@@ -192,7 +192,7 @@ export default function InvoiceDetailPage() {
       </div>
 
       {locked ? (
-        <div className="flex items-start gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 text-sm">
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-emerald-200 border border-emerald-400 text-black text-sm font-semibold">
           <Lock size={16} className="mt-0.5 shrink-0" />
           <p>
             El inventario se actualizó el{" "}
