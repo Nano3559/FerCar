@@ -191,7 +191,7 @@ export default function InvoiceDetailPage() {
                 <th className="text-center p-2 text-xs text-gray-400">20</th>
                 <th className="text-center p-2 text-xs text-gray-400">30</th>
                 <th className="text-center p-2 text-xs text-gray-400">40</th>
-                <th className="text-center p-2 text-xs text-red-300 bg-red-500/10 border-x border-red-500/20">50</th>
+                <th className="text-center p-2 text-xs text-black bg-red-300 border-x border-red-400/50">50</th>
                 <th className="text-center p-2 text-xs text-gray-400">60</th>
                 <th className="text-center p-2 text-xs text-gray-400">70</th>
                 <th className="text-center p-2 text-xs text-gray-400">80</th>
@@ -238,7 +238,7 @@ export default function InvoiceDetailPage() {
                     <td className="p-2 text-gray-300 text-center">{mk(20).toFixed(2)}</td>
                     <td className="p-2 text-gray-300 text-center">{mk(30).toFixed(2)}</td>
                     <td className="p-2 text-gray-300 text-center">{mk(40).toFixed(2)}</td>
-                    <td className="p-2 text-red-200 text-center bg-red-500/10 border-x border-red-500/20 font-bold">{mk(50).toFixed(2)}</td>
+                    <td className="p-2 text-black text-center bg-red-200 border-x border-red-400/50 font-bold">{mk(50).toFixed(2)}</td>
                     <td className="p-2 text-gray-300 text-center">{mk(60).toFixed(2)}</td>
                     <td className="p-2 text-gray-300 text-center">{mk(70).toFixed(2)}</td>
                     <td className="p-2 text-gray-300 text-center">{mk(80).toFixed(2)}</td>
