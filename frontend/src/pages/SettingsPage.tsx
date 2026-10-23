@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Users, Shield, Plus, Pencil, Trash2, X, User, RefreshCw, Check, History, Store, Home, UserX, UserCheck, Lock, Building2, Factory,
+  Database, Download, Upload, AlertTriangle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -100,7 +101,7 @@ const canRoleOpenModule = (roleName: string, mod: string): boolean => {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"users" | "roles" | "audit" | "locations" | "suppliers" | "manufacturers">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "roles" | "audit" | "locations" | "suppliers" | "manufacturers" | "backup">("users");
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -148,6 +149,10 @@ export default function SettingsPage() {
   const supplierPanelRef = useDialogBehavior(showSupplierModal, () => setShowSupplierModal(false));
   const deleteSupplierConfirmPanelRef = useDialogBehavior(showDeleteSupplierConfirm !== null, () => setShowDeleteSupplierConfirm(null));
 
+  const [backupFile, setBackupFile] = useState<File | null>(null);
+  const [exportingBackup, setExportingBackup] = useState(false);
+  const [restoringBackup, setRestoringBackup] = useState(false);
+
   const [showManufacturerModal, setShowManufacturerModal] = useState(false);
   const [editingManufacturer, setEditingManufacturer] = useState<number | null>(null);
   const [manufacturerForm, setManufacturerForm] = useState({ name: "", description: "" });
@@ -155,6 +160,61 @@ export default function SettingsPage() {
   const [showDeleteManufacturerConfirm, setShowDeleteManufacturerConfirm] = useState<number | null>(null);
   const manufacturerPanelRef = useDialogBehavior(showManufacturerModal, () => setShowManufacturerModal(false));
   const deleteManufacturerConfirmPanelRef = useDialogBehavior(showDeleteManufacturerConfirm !== null, () => setShowDeleteManufacturerConfirm(null));
+
+  const downloadBackup = async () => {
+    try {
+      setExportingBackup(true);
+      const res = await api.get("/backup/export", { responseType: "blob", timeout: 0 });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement("a");
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      link.href = url;
+      link.download = `respaldo-fercar-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Copia de seguridad descargada");
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error generando la copia de seguridad");
+    } finally {
+      setExportingBackup(false);
+    }
+  };
+
+  const restoreBackup = async () => {
+    if (!backupFile) return;
+    const typed = window.prompt(
+      "Esta acción reemplazará TODOS los datos actuales por los de la copia.\n\nEscribe RESTAURAR para confirmar:"
+    );
+    if (typed === null) return;
+    if (typed.trim().toUpperCase() !== "RESTAURAR") {
+      toast.error("Confirmación incorrecta");
+      return;
+    }
+
+    try {
+      setRestoringBackup(true);
+      const formData = new FormData();
+      formData.append("file", backupFile);
+      formData.append("confirm", "RESTAURAR");
+      const res = await api.post("/backup/import", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 0,
+      });
+      const total = Object.values(res.data?.counts || {}).reduce((sum: number, n: any) => sum + Number(n || 0), 0);
+      toast.success(`Copia restaurada correctamente (${total} registros). Vuelve a iniciar sesión.`);
+      setBackupFile(null);
+      setTimeout(() => {
+        window.location.href = "/login";
+      }, 1800);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Error restaurando la copia de seguridad");
+    } finally {
+      setRestoringBackup(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -534,7 +594,7 @@ export default function SettingsPage() {
         <p className="text-gray-400 text-sm mt-1">Gestión de usuarios, roles y permisos</p>
       </div>
 
-      <div className="flex gap-2 bg-dark-800/50 border border-dark-700/50 rounded-xl p-1">
+      <div className="flex flex-wrap gap-2 bg-dark-800/50 border border-dark-700/50 rounded-xl p-1">
         <button onClick={() => setActiveTab("users")}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
             activeTab === "users" ? "bg-primary-600/20 text-primary-400 border border-primary-600/30" : "text-gray-400 hover:text-gray-200 border border-transparent"
@@ -570,6 +630,12 @@ export default function SettingsPage() {
             activeTab === "manufacturers" ? "bg-primary-600/20 text-primary-400 border border-primary-600/30" : "text-gray-400 hover:text-gray-200 border border-transparent"
           }`}>
           <Factory size={16} /> Fabricantes
+        </button>
+        <button onClick={() => setActiveTab("backup")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === "backup" ? "bg-primary-600/20 text-primary-400 border border-primary-600/30" : "text-gray-400 hover:text-gray-200 border border-transparent"
+          }`}>
+          <Database size={16} /> Respaldo
         </button>
       </div>
 
@@ -1025,6 +1091,70 @@ export default function SettingsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "backup" && (
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <Download size={18} className="text-primary-400" />
+                <h3 className="text-foreground font-medium">Descargar copia de seguridad</h3>
+              </div>
+              <p className="text-sm text-gray-400 mb-4">
+                Descarga un archivo <span className="text-gray-200">.json</span> con toda la información del sistema:
+                productos, inventario, ventas, facturas, usuarios, proveedores y configuración.
+              </p>
+              <button
+                onClick={downloadBackup}
+                disabled={exportingBackup}
+                className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download size={16} /> {exportingBackup ? "Generando copia..." : "Descargar copia"}
+              </button>
+            </div>
+
+            <div className="bg-dark-800/50 border border-dark-700/50 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <Upload size={18} className="text-amber-400" />
+                <h3 className="text-foreground font-medium">Restaurar copia de seguridad</h3>
+              </div>
+              <p className="text-sm text-gray-400 mb-4">
+                Selecciona un archivo de respaldo para reemplazar la base de datos actual. Se pedirá confirmación
+                antes de aplicar los cambios.
+              </p>
+              <label className="flex items-center gap-2 mb-3 px-3 py-2 bg-dark-900 border border-dark-700/50 rounded-xl text-sm text-gray-300 cursor-pointer hover:border-primary-600/50">
+                <Upload size={15} />
+                <span className="truncate">{backupFile ? backupFile.name : "Seleccionar archivo .json"}</span>
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={(e) => setBackupFile(e.target.files?.[0] || null)}
+                />
+              </label>
+              <button
+                onClick={restoreBackup}
+                disabled={!backupFile || restoringBackup}
+                className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Upload size={16} /> {restoringBackup ? "Restaurando..." : "Restaurar copia"}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30">
+            <AlertTriangle size={18} className="text-amber-400 mt-0.5 shrink-0" />
+            <div className="text-sm text-amber-200">
+              <p className="font-semibold mb-1">Restaurar reemplaza todos los datos actuales</p>
+              <p>
+                Los productos, ventas, facturas, usuarios y movimientos que existan hoy serán eliminados y sustituidos
+                por los de la copia. Descarga una copia actual antes de restaurar. Al finalizar deberás iniciar sesión
+                nuevamente.
+              </p>
+            </div>
           </div>
         </div>
       )}
