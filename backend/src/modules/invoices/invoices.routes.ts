@@ -452,7 +452,7 @@ router.get("/:id/detail", authenticate, authorize("ADMIN"), async (req: AuthRequ
 router.put("/:id/items", authenticate, authorize("ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const { items } = req.body as any;
+    const { items, supplierId } = req.body as any;
     if (!Array.isArray(items)) return res.status(400).json({ message: "Items inválidos" });
 
     const invoice = await prisma.invoice.findUnique({ where: { id } });
@@ -514,14 +514,26 @@ router.put("/:id/items", authenticate, authorize("ADMIN"), async (req: AuthReque
     const totalCostUSD = updated.reduce((s, x) => s + Number(x.costUSD) * x.quantity, 0);
     const totalCostBS = updated.reduce((s, x) => s + Number(x.costBS) * x.quantity, 0);
 
-    await prisma.invoice.update({
-      where: { id },
-      data: {
-        totalUnits,
-        totalCostUSD: toDec(totalCostUSD),
-        totalCostBS: toDec(totalCostBS),
-      },
-    });
+    const invoiceData: any = {
+      totalUnits,
+      totalCostUSD: toDec(totalCostUSD),
+      totalCostBS: toDec(totalCostBS),
+    };
+
+    // El proveedor tambien se puede corregir mientras la factura es borrador.
+    if (supplierId !== undefined) {
+      if (supplierId === null || supplierId === "") {
+        invoiceData.supplierId = null;
+        invoiceData.supplierName = "";
+      } else {
+        const sup = await prisma.supplier.findUnique({ where: { id: Number(supplierId) } });
+        if (!sup) return res.status(400).json({ message: "Proveedor no encontrado" });
+        invoiceData.supplierId = sup.id;
+        invoiceData.supplierName = sup.name;
+      }
+    }
+
+    await prisma.invoice.update({ where: { id }, data: invoiceData });
 
     res.json({ ok: true });
   } catch (e: any) {
@@ -620,6 +632,20 @@ router.post("/:id/apply-inventory", authenticate, authorize("ADMIN"), async (req
           create: { productId: product.id, locationId: invoice.locationId, stock: it.quantity },
           update: { stock: { increment: it.quantity } },
         });
+
+        // El proveedor que se ve en inventario sale del ultimo costo registrado
+        // del producto. Al aplicar la factura se registra ese costo para que el
+        // proveedor de la factura quede reflejado en el inventario.
+        if (invoice.supplierId) {
+          await prisma.cost.create({
+            data: {
+              productId: product.id,
+              supplierId: invoice.supplierId,
+              costPrice: it.costBS,
+              exchangeRate: invoice.exchangeRate,
+            },
+          });
+        }
 
         if (it.productId !== product.id || it.itemCode !== product.itemCode) {
           await prisma.invoiceItem.update({

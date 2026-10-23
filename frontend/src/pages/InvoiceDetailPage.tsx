@@ -38,6 +38,7 @@ interface InvoiceInfo {
   id: number;
   invoiceNumber: string;
   date: string;
+  supplierId?: number | null;
   supplierName: string;
   manufacturerName?: string | null;
   locationName?: string | null;
@@ -62,9 +63,13 @@ export default function InvoiceDetailPage() {
   const [applying, setApplying] = useState(false);
   const [invoice, setInvoice] = useState<InvoiceInfo | null>(null);
   const [items, setItems] = useState<InvoiceItemEdit[]>([]);
+  const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([]);
 
   useEffect(() => {
     loadDetail();
+    api.get("/suppliers?limit=100")
+      .then((res) => setSuppliers(res.data.suppliers || []))
+      .catch(() => setSuppliers([]));
   }, [id]);
 
   const loadDetail = async () => {
@@ -87,10 +92,23 @@ export default function InvoiceDetailPage() {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)));
   };
 
+  const updateSupplier = (value: string) => {
+    if (locked) return;
+    const supplierId = value ? Number(value) : null;
+    setInvoice((prev) =>
+      prev
+        ? { ...prev, supplierId, supplierName: suppliers.find((s) => s.id === supplierId)?.name || "" }
+        : prev
+    );
+  };
+
+  const persistInvoice = () =>
+    api.put(`/invoices/${id}/items`, { items, supplierId: invoice?.supplierId ?? null });
+
   const saveChanges = async () => {
     try {
       setSaving(true);
-      await api.put(`/invoices/${id}/items`, { items });
+      await persistInvoice();
       toast.success("Cambios guardados. El inventario aún no se ha actualizado.");
       loadDetail();
     } catch (e: any) {
@@ -108,6 +126,8 @@ export default function InvoiceDetailPage() {
     if (!ok) return;
     try {
       setApplying(true);
+      // Guarda lo último editado (incluido el proveedor) antes de aplicar.
+      await persistInvoice();
       await api.post(`/invoices/${id}/apply-inventory`);
       toast.success("Inventario actualizado. La factura quedó bloqueada.");
       loadDetail();
@@ -253,10 +273,25 @@ export default function InvoiceDetailPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <div className="bg-dark-800 border border-dark-700/50 rounded-xl p-3">
           <p className="text-xs text-gray-400">Fabricante</p>
           <p className="text-sm text-foreground">{invoice.manufacturerName || "-"}</p>
+        </div>
+        <div className="bg-dark-800 border border-dark-700/50 rounded-xl p-3">
+          <label htmlFor="invoice-supplier" className="block text-xs text-gray-400 mb-1">Proveedor</label>
+          <select
+            id="invoice-supplier"
+            disabled={locked}
+            value={invoice.supplierId ?? ""}
+            onChange={(e) => updateSupplier(e.target.value)}
+            className="w-full px-2 py-1 bg-dark-900 border border-dark-700/50 rounded text-sm text-foreground disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <option value="">Sin proveedor</option>
+            {suppliers.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
         </div>
         <div className="bg-dark-800 border border-dark-700/50 rounded-xl p-3">
           <p className="text-xs text-gray-400">Unidades</p>
