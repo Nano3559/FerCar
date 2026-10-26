@@ -61,8 +61,12 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 router.get("/product/:productId", async (req: AuthRequest, res: Response) => {
   try {
     const productId = Number(req.params.productId);
+    const includeAll = req.query.all === "true";
     const inventoryWhere: any = { productId };
-    if (req.user?.role === "TIENDA") inventoryWhere.locationId = req.user.locationId;
+    // Para el modal de "Solicitar" desde Ventas, la tienda necesita ver todas las
+    // ubicaciones con stock para poder elegir de dónde pedir, aunque normalmente
+    // solo ve su propia ubicación.
+    if (req.user?.role === "TIENDA" && !includeAll) inventoryWhere.locationId = req.user.locationId;
     const inventories = await prisma.inventory.findMany({
       where: inventoryWhere,
       include: { location: true },

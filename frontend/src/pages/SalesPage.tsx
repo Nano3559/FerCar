@@ -1378,7 +1378,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
     setShowRequest(true);
     setRequestSourcesLoading(true);
     try {
-      const res = await api.get(`/inventory/product/${p.id}`);
+      const res = await api.get(`/inventory/product/${p.id}?all=true`);
       const destinoId = destino
         ? destino.id
         : isTienda
@@ -1394,7 +1394,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
           locationType: l.locationType === "ALMACEN" ? "ALMACEN" : "TIENDA",
           stock: Number(l.stock) || 0,
         }))
-        .filter((l: StockByLocation) => l.locationId !== destinoId);
+        .filter((l: StockByLocation) => l.locationId !== destinoId && (Number(l.stock) || 0) > 0);
       setRequestSources(candidatas);
       setRequestAllocations(sugerirRepartoRequest(p.id, qtyInicial, candidatas, destinoId ?? -1));
     } catch {
