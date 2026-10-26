@@ -101,6 +101,7 @@ const emptyForm: FormData = {
   image: "", stock: "", locationId: "",
 };
 
+const COST_COLUMNS = ["Costo $", "Costo Bs", "Costo Tiendas"];
 const ALL_COLUMNS = [
   "Proveedor", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
   "Cód. OEM", "Cód. Fábrica", "Costo $", "Costo Bs", "Costo Tiendas",
@@ -127,6 +128,7 @@ export default function InventoryPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const canEdit = user?.role === "ADMIN";
+  const isInventario = user?.role === "INVENTARIO";
   const [products, setProducts] = useState<Product[]>([]);
   const [filters, setFilters] = useState<Filters>({ brands: [], manufacturers: [], categories: [] });
   const [locations, setLocations] = useState<Location[]>([]);
@@ -152,7 +154,7 @@ export default function InventoryPage() {
   const [locationId, setLocationId] = useState("");
   const [showFilters, setShowFilters] = useState(true);
 
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(ALL_COLUMNS);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(isInventario ? ALL_COLUMNS.filter((c) => !COST_COLUMNS.includes(c)) : [...ALL_COLUMNS]);
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -712,17 +714,19 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
           <button onClick={fetchProducts} className="p-2.5 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all" title="Actualizar">
             <RefreshCw size={18} />
           </button>
-          <ColumnManager module="inventario" columns={ALL_COLUMNS} onVisibleChange={setVisibleColumns} />
+          <ColumnManager module="inventario" columns={isInventario ? ALL_COLUMNS.filter((c) => !COST_COLUMNS.includes(c)) : ALL_COLUMNS} onVisibleChange={setVisibleColumns} />
           {canEdit && (
             <>
               <button onClick={() => { setShowImportModal(true); setImportFile(null); setImportResult(null); }} className="flex items-center gap-2 px-4 py-2.5 bg-dark-700 hover:bg-dark-600 border border-dark-600 text-gray-200 rounded-xl text-sm font-medium transition-all">
                 <FileSpreadsheet size={18} />
                 <span className="hidden sm:inline">Importar Excel</span>
               </button>
-              <button onClick={openCreate} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-primary-600/20">
-                <Plus size={18} />
-                Nuevo Producto
-              </button>
+              {!isInventario && (
+                <button onClick={openCreate} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-primary-600/20">
+                  <Plus size={18} />
+                  Nuevo Producto
+                </button>
+              )}
             </>
           )}
         </div>
