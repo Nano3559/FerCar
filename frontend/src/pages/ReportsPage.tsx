@@ -30,8 +30,6 @@ interface InventoryItem {
     price1?: string | number | null;
     price2?: string | number | null;
     wholesalePrice?: string | number | null;
-    image?: string | null;
-    supplier?: { name: string } | null;
   };
   location: { id: number; name: string; type: string };
   status: string;
@@ -296,7 +294,6 @@ export default function ReportsPage() {
     || i.product.itemCode.toLowerCase().includes(filterSearch.toLowerCase())
     || (i.product.factoryCode || "").toLowerCase().includes(filterSearch.toLowerCase())
     || (i.product.oemCode || "").toLowerCase().includes(filterSearch.toLowerCase())
-    || (i.product.supplier?.name || "").toLowerCase().includes(filterSearch.toLowerCase())
   );
 
   const suppliersShow = (suppliersData?.suppliers || []).filter((sup) =>
@@ -638,7 +635,7 @@ export default function ReportsPage() {
           loading={inventoryLoading}
           refresh={() => fetchInventory(false)}
           onExportExcel={() => exportCSV(filteredInventory.map((i) => ({
-            Proveedor: i.product.supplier?.name || "N/A",
+            Proveedor: "N/A",
             Fabricante: i.product.manufacturer || "N/A",
             Producto: i.product.name,
             Marca: i.product.brand,
@@ -653,13 +650,12 @@ export default function ReportsPage() {
             "Precio 1": i.product.price1 || "0",
             "Precio 2": i.product.price2 || "0",
             "Precio Mayor": i.product.wholesalePrice || "0",
-            Imagen: i.product.image || "N/A",
             Stock: i.stock,
           })), "reporte_inventario")}
           onExportPDF={() => exportPDF(
-            ["Proveedor", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles", "Cód. OEM", "Cód. Fábrica", "Costo $", "Costo Bs", "Costo Tiendas", "Precio 1", "Precio 2", "Precio Mayor", "Imagen", "Stock"],
+            ["Proveedor", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles", "Cód. OEM", "Cód. Fábrica", "Costo $", "Costo Bs", "Costo Tiendas", "Precio 1", "Precio 2", "Precio Mayor", "Stock"],
             filteredInventory.map((i) => [
-              i.product.supplier?.name || "N/A",
+              "N/A",
               (i.product.manufacturer || "N/A").substring(0, 18),
               (i.product.name || "N/A").substring(0, 28),
               i.product.brand || "N/A",
@@ -674,7 +670,6 @@ export default function ReportsPage() {
               String(i.product.price1 || "0"),
               String(i.product.price2 || "0"),
               String(i.product.wholesalePrice || "0"),
-              i.product.image ? "SI" : "NO",
               String(i.stock),
             ]),
             "Reporte de Inventario", "reporte_inventario"
@@ -701,14 +696,13 @@ export default function ReportsPage() {
                     <RightTh>Precio 1</RightTh>
                     <RightTh>Precio 2</RightTh>
                     <RightTh>Precio Mayor</RightTh>
-                    <SortableTh>Imagen</SortableTh>
                     <CenterTh>Stock</CenterTh>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredInventory.map((i) => (
                     <tr key={i.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                      <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate" title={i.product.supplier?.name || ""}>{i.product.supplier?.name || "N/A"}</td>
+                      <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate">N/A</td>
                       <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate" title={i.product.manufacturer || ""}>{i.product.manufacturer || "N/A"}</td>
                       <td className="px-3 py-2 text-foreground font-medium max-w-[180px] truncate" title={i.product.name}>{i.product.name}</td>
                       <td className="px-3 py-2 text-gray-300">{i.product.brand}</td>
@@ -723,7 +717,6 @@ export default function ReportsPage() {
                       <td className="px-3 py-2 text-right text-emerald-400/80">{i.product.price1 || "0"}</td>
                       <td className="px-3 py-2 text-right text-emerald-400/80">{i.product.price2 || "0"}</td>
                       <td className="px-3 py-2 text-right text-emerald-400 font-medium">{i.product.wholesalePrice || "0"}</td>
-                      <td className="px-3 py-2 text-gray-400 text-center text-[10px]">{i.product.image ? "SI" : "NO"}</td>
                       <td className="px-3 py-2 text-center">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
                           i.stock === 0 ? "bg-red-500/20 text-red-400" :
@@ -747,7 +740,7 @@ export default function ReportsPage() {
           loading={inventoryLoading}
           refresh={() => fetchInventory(true)}
           onExportExcel={() => exportCSV(filteredInventory.map((i) => ({
-            Proveedor: i.product.supplier?.name || "N/A",
+            Proveedor: "N/A",
             Fabricante: i.product.manufacturer || "N/A",
             Producto: i.product.name,
             Marca: i.product.brand,
@@ -762,13 +755,12 @@ export default function ReportsPage() {
             "Precio 1": i.product.price1 || "0",
             "Precio 2": i.product.price2 || "0",
             "Precio Mayor": i.product.wholesalePrice || "0",
-            Imagen: i.product.image || "N/A",
             Stock: i.stock,
           })), "reporte_cercanos_0")}
           onExportPDF={() => exportPDF(
-            ["Proveedor", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles", "Cód. OEM", "Cód. Fábrica", "Costo $", "Costo Bs", "Costo Tiendas", "Precio 1", "Precio 2", "Precio Mayor", "Imagen", "Stock"],
+            ["Proveedor", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles", "Cód. OEM", "Cód. Fábrica", "Costo $", "Costo Bs", "Costo Tiendas", "Precio 1", "Precio 2", "Precio Mayor", "Stock"],
             filteredInventory.map((i) => [
-              i.product.supplier?.name || "N/A",
+              "N/A",
               (i.product.manufacturer || "N/A").substring(0, 18),
               (i.product.name || "N/A").substring(0, 28),
               i.product.brand || "N/A",
@@ -783,7 +775,6 @@ export default function ReportsPage() {
               String(i.product.price1 || "0"),
               String(i.product.price2 || "0"),
               String(i.product.wholesalePrice || "0"),
-              i.product.image ? "SI" : "NO",
               String(i.stock),
             ]),
             "Productos Cercanos a 0", "reporte_cercanos_0"
@@ -810,14 +801,13 @@ export default function ReportsPage() {
                     <RightTh>Precio 1</RightTh>
                     <RightTh>Precio 2</RightTh>
                     <RightTh>Precio Mayor</RightTh>
-                    <SortableTh>Imagen</SortableTh>
                     <RightTh>Stock</RightTh>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredInventory.map((i) => (
                     <tr key={i.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                      <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate" title={i.product.supplier?.name || ""}>{i.product.supplier?.name || "N/A"}</td>
+                      <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate">N/A</td>
                       <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate" title={i.product.manufacturer || ""}>{i.product.manufacturer || "N/A"}</td>
                       <td className="px-3 py-2 text-foreground font-medium max-w-[180px] truncate" title={i.product.name}>{i.product.name}</td>
                       <td className="px-3 py-2 text-gray-300">{i.product.brand}</td>
@@ -832,7 +822,6 @@ export default function ReportsPage() {
                       <td className="px-3 py-2 text-right text-emerald-400/80">{i.product.price1 || "0"}</td>
                       <td className="px-3 py-2 text-right text-emerald-400/80">{i.product.price2 || "0"}</td>
                       <td className="px-3 py-2 text-right text-emerald-400 font-medium">{i.product.wholesalePrice || "0"}</td>
-                      <td className="px-3 py-2 text-gray-400 text-center text-[10px]">{i.product.image ? "SI" : "NO"}</td>
                       <td className="px-3 py-2 text-right">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${i.stock === 0 ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400"}`}>{i.stock}</span>
                       </td>

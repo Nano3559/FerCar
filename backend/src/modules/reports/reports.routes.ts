@@ -161,15 +161,20 @@ router.get("/inventory", async (req: AuthRequest, res: Response) => {
 
     const inventories = await prisma.inventory.findMany({
       where,
-      include: {
-        product: { 
-          select: { 
-            id: true, 
-            name: true, 
-            itemCode: true, 
+      select: {
+        id: true,
+        stock: true,
+        minStock: true,
+        productId: true,
+        locationId: true,
+        product: {
+          select: {
+            id: true,
+            name: true,
+            itemCode: true,
             factoryCode: true,
             oemCode: true,
-            brand: true, 
+            brand: true,
             model: true,
             year: true,
             detail: true,
@@ -181,19 +186,28 @@ router.get("/inventory", async (req: AuthRequest, res: Response) => {
             price1: true,
             price2: true,
             wholesalePrice: true,
-            image: true,
-            supplier: { select: { name: true } }
-          } 
+          },
         },
-        location: { select: { id: true, name: true, type: true } },
+        location: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
       },
-      orderBy: [{ location: { name: "asc" } }, { product: { name: "asc" } }],
     });
 
-    let filtered = inventories;
+    const sortedInventories = inventories.sort((a, b) => {
+      const nameA = a.product?.name || "";
+      const nameB = b.product?.name || "";
+      return nameA.localeCompare(nameB);
+    });
+
+    let filtered = sortedInventories;
     if (lowStock === "true") {
       // Cercanos a 0: agotados o en/bajo el mínimo, ordenados por stock ascendente
-      filtered = inventories
+      filtered = sortedInventories
         .filter((i) => i.stock === 0 || (i.minStock > 0 && i.stock <= i.minStock))
         .sort((a, b) => a.stock - b.stock);
     }
@@ -202,10 +216,11 @@ router.get("/inventory", async (req: AuthRequest, res: Response) => {
       const locName = inv.location.name;
       if (!acc[locName]) acc[locName] = { location: inv.location, items: [], totalStock: 0 };
       acc[locName].items.push({
-        ...inv,
-        product: inv.product,
+        id: inv.id,
         stock: inv.stock,
         minStock: inv.minStock,
+        product: inv.product,
+        location: inv.location,
         status: inv.stock === 0 ? "AGOTADO" : inv.stock <= inv.minStock ? "BAJO" : "OK",
       });
       acc[locName].totalStock += inv.stock;
