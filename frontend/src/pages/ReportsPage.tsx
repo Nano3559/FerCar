@@ -40,17 +40,36 @@ interface StoreGroup {
   location: { id: number; name: string } | null;
   seller: string | null;
   saleCount: number; totalSales: number; returns: number; netSales: number;
-  productsCost: number; storeCost: number; utility: number; averagePerSale: number; items: number;
+  storeCost: number; utility: number; averagePerSale: number; itemsQty?: number; items?: number;
+}
+
+interface StoreDetail {
+  saleId: number;
+  saleDate: string;
+  location: string;
+  seller: string;
+  factoryCode: string | null;
+  productId: number;
+  productName: string;
+  brand: string;
+  model: string;
+  quantity: number;
+  storeCostUnit: number;
+  storeCostLine: number;
+  unitPrice: number;
+  lineTotal: number;
 }
 
 interface StoresReport {
   period: string;
+  groupBy?: string;
   groups: StoreGroup[];
   summary: {
     totalSales: number; totalReturns: number; netSales: number;
-    totalProductsCost: number; totalStoreCost: number; utility: number;
-    saleCount: number; items: number; period: string; range?: { start: string; end: string };
+    storeCost: number; utility: number;
+    saleCount: number; itemsQty?: number; items?: number; period: string; range?: { start: string; end: string };
   };
+  details?: StoreDetail[];
 }
 
 interface SupplierReport {
@@ -126,6 +145,7 @@ export default function ReportsPage() {
   const [filterSeller, setFilterSeller] = useState("");
   const [filterType, setFilterType] = useState("");
   const [filterPeriod, setFilterPeriod] = useState("day");
+  const [filterGroupBy, setFilterGroupBy] = useState<"both" | "location" | "seller">("both");
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([]);
 
   useEffect(() => {
@@ -175,6 +195,7 @@ export default function ReportsPage() {
       if (filterTo) params.set("endDate", filterTo);
       if (filterSeller) params.set("seller", filterSeller);
       if (filterType) params.set("type", filterType);
+      params.set("groupBy", filterGroupBy);
       const res = await api.get(`/reports/stores?${params.toString()}`);
       setStoresData(res.data);
     } catch {
@@ -182,7 +203,7 @@ export default function ReportsPage() {
     } finally {
       setStoresLoading(false);
     }
-  }, [filterPeriod, filterLocation, filterFrom, filterTo, filterSeller, filterType]);
+  }, [filterPeriod, filterLocation, filterFrom, filterTo, filterSeller, filterType, filterGroupBy]);
 
   const fetchInventory = useCallback(async (lowStock: boolean) => {
     try {
@@ -283,8 +304,9 @@ export default function ReportsPage() {
     || (g.seller || "").toLowerCase().includes(filterSearch.toLowerCase())
   );
   const storesSummary = storesData?.summary || {
-    totalSales: 0, totalReturns: 0, netSales: 0, totalProductsCost: 0, totalStoreCost: 0, utility: 0, saleCount: 0, items: 0, period: "day",
+    totalSales: 0, totalReturns: 0, netSales: 0, storeCost: 0, utility: 0, saleCount: 0, itemsQty: 0, items: 0, period: "day",
   };
+  const storesDetails: StoreDetail[] = storesData?.details || [];
 
   const inventoryItems: InventoryItem[] = inventoryData?.locations?.flatMap((loc: any) => loc.items) || [];
   const filteredInventory = inventoryItems.filter((i) =>
@@ -338,15 +360,15 @@ export default function ReportsPage() {
         )}
         {activeTab === "periodo" && (
           <>
-            <SummaryCard label="Total Ventas" value={formatBs(storesSummary.totalSales)} tone="emerald" sub={`${storesSummary.saleCount} ventas · ${storesSummary.items} ítems`} />
+            <SummaryCard label="Total Ventas" value={formatBs(storesSummary.totalSales)} tone="emerald" sub={`${storesSummary.saleCount} ventas · ${storesSummary.itemsQty || storesSummary.items || 0} ítems`} />
             <SummaryCard label="Ventas Netas" value={formatBs(storesSummary.netSales)} tone="blue" sub={`${formatBs(storesSummary.totalReturns)} en devoluciones`} />
-            <SummaryCard label="Costo Tienda (+10%)" value={formatBs(storesSummary.totalStoreCost)} tone="red" sub={`${formatBs(storesSummary.totalProductsCost)} mercadería`} />
+            <SummaryCard label="Costo Tienda" value={formatBs(storesSummary.storeCost || 0)} tone="red" sub="Suma de priceHermana por producto" />
           </>
         )}
         {activeTab === "costo" && (
           <>
             <SummaryCard label="Total Ventas" value={formatBs(storesSummary.totalSales)} tone="emerald" sub="" />
-            <SummaryCard label="Costo Mercadería" value={formatBs(storesSummary.totalProductsCost)} tone="blue" sub="costo de cada producto vendido" />
+            <SummaryCard label="Costo Tienda" value={formatBs(storesSummary.storeCost || 0)} tone="blue" sub="priceHermana × cantidad" />
             <SummaryCard label="Utilidad" value={formatBs(storesSummary.utility)} tone="green" sub="Neto − Costo Tienda" />
           </>
         )}
@@ -415,6 +437,15 @@ export default function ReportsPage() {
             <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)}
               className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500" />
           </>
+        )}
+
+        {(activeTab === "periodo" || activeTab === "costo") && (
+          <select value={filterGroupBy} onChange={(e) => setFilterGroupBy(e.target.value as any)}
+            className="px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500">
+            <option value="both">Agrupar: Tienda + Vendedor</option>
+            <option value="location">Agrupar: Solo por Tienda</option>
+            <option value="seller">Agrupar: Solo por Vendedor</option>
+          </select>
         )}
 
         {activeTab === "ventas" && (
@@ -518,7 +549,7 @@ export default function ReportsPage() {
           refresh={fetchStores}
           onExportExcel={() => exportCSV(filteredStores.map((g) => ({
             Periodo: g.periodLabel, Tienda: g.location?.name || "N/A", Vendedor: g.seller || "Sin vendedor",
-            "N° Ventas": g.saleCount, "Items": g.items, Total: g.totalSales, Devoluciones: g.returns, Neto: g.netSales,
+            "N° Ventas": g.saleCount, "Items": (g.itemsQty || g.items || 0) as any, Total: g.totalSales, Devoluciones: g.returns, Neto: g.netSales,
             "Costo Tienda": g.storeCost, Utilidad: g.utility,
           })), "reporte_periodo")}
           onExportPDF={() => exportPDF(
@@ -529,7 +560,7 @@ export default function ReportsPage() {
           <p className="px-4 pt-3 text-xs text-gray-500">
             {filterPeriod === "all" ? "Rango personalizado" : PERIODS.find((p) => p.key === filterPeriod)?.label}
             {filterSeller && <> · vendedor: <span className="text-primary-400">"{filterSeller}"</span></>}
-            {filterLocation && <> · solo la ubicación seleccionada</>} · el costo y utilidad se calculan por cada venta
+            {filterLocation && <> · solo la ubicación seleccionada</>} · Costo Tienda tomado directamente de <span className="text-primary-400">priceHermana</span> de cada producto
           </p>
           {filteredStores.length === 0 ? (
             <EmptyRowWithPad msg="No hay ventas en el período y filtros seleccionados" />
@@ -573,20 +604,20 @@ export default function ReportsPage() {
       {/* ===== Costo Tiendas ===== */}
       {activeTab === "costo" && (
         <ReportCard
-          title="Costo Tiendas · por cada venta se cobra el costo del producto (+10%)"
+          title="Costo Tiendas · Suma por Costo Tienda (priceHermana) de cada producto vendido"
           loading={storesLoading}
           refresh={fetchStores}
           onExportExcel={() => exportCSV(filteredStores.map((g) => ({
             Periodo: g.periodLabel, Tienda: g.location?.name || "N/A", Vendedor: g.seller || "Sin vendedor",
-            Ventas: g.totalSales, Neto: g.netSales, "Costo Mercadería": g.productsCost, "Costo Tienda": g.storeCost, Utilidad: g.utility,
+            Ventas: g.totalSales, Neto: g.netSales, "Costo Tienda": g.storeCost, Utilidad: g.utility,
           })), "reporte_costo_tiendas")}
           onExportPDF={() => exportPDF(
-            ["Periodo", "Tienda", "Vendedor", "Ventas", "Neto", "Costo Mercadería", "Costo Tienda", "Utilidad"],
-            filteredStores.map((g) => [g.periodLabel, g.location?.name || "N/A", g.seller || "Sin vendedor", String(g.totalSales), String(g.netSales), String(g.productsCost), String(g.storeCost), String(g.utility)]),
+            ["Periodo", "Tienda", "Vendedor", "Ventas", "Neto", "Costo Tienda", "Utilidad"],
+            filteredStores.map((g) => [g.periodLabel, g.location?.name || "N/A", g.seller || "Sin vendedor", String(g.totalSales), String(g.netSales), String(g.storeCost), String(g.utility)]),
             "Costo Tiendas", "reporte_costo_tiendas"
           )}>
           <p className="px-4 pt-3 text-xs text-gray-500">
-            Costo cobrado por venta = (último costo del producto en su fecha de venta × cantidad) + 10%.
+            El "Costo Tienda" se toma directamente de <span className="text-primary-400">priceHermana</span> de cada producto vendido × cantidad. Sin recargo.
             {filterPeriod === "all" ? " Rango personalizado." : ` Agrupado ${PERIODS.find((p) => p.key === filterPeriod)?.label.toLowerCase()}.`}
           </p>
           {filteredStores.length === 0 ? (
@@ -602,8 +633,7 @@ export default function ReportsPage() {
                     <RightTh>Total Ventas</RightTh>
                     <RightTh>Devoluciones</RightTh>
                     <RightTh>Neto</RightTh>
-                    <RightTh textColor="text-emerald-400">Costo Mercadería</RightTh>
-                    <RightTh textColor="text-red-400">Costo Tienda (+10%)</RightTh>
+                    <RightTh textColor="text-red-400">Costo Tienda</RightTh>
                     <RightTh textColor="text-green-400">Utilidad</RightTh>
                   </tr>
                 </thead>
@@ -616,7 +646,6 @@ export default function ReportsPage() {
                       <td className="px-4 py-3 text-emerald-400 font-medium text-right">{formatBs(g.totalSales)}</td>
                       <td className="px-4 py-3 text-red-400 text-right">{formatBs(g.returns)}</td>
                       <td className="px-4 py-3 text-green-400 font-medium text-right">{formatBs(g.netSales)}</td>
-                      <td className="px-4 py-3 text-emerald-400/70 text-right">{formatBs(g.productsCost)}</td>
                       <td className="px-4 py-3 text-red-400/80 text-right">{formatBs(g.storeCost)}</td>
                       <td className="px-4 py-3 text-green-400 font-medium text-right">{formatBs(g.utility)}</td>
                     </tr>
@@ -624,6 +653,86 @@ export default function ReportsPage() {
                 </tbody>
               </table>
             </div>
+          )}
+          {activeTab === "costo" && storesDetails.length > 0 && (
+            <div className="mt-4 border-t border-dark-700/50">
+              <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+                <h4 className="text-foreground font-medium text-sm">Detalle de productos vendidos</h4>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => exportCSV(storesDetails.map((d) => ({
+                    Fecha: formatDate(d.saleDate),
+                    "Venta N°": saleCode(d.saleId, d.saleDate),
+                    Tienda: d.location,
+                    Vendedor: d.seller,
+                    "Cód. Fábrica": d.factoryCode || "N/A",
+                    Producto: d.productName,
+                    Marca: d.brand,
+                    Modelo: d.model,
+                    Cantidad: d.quantity,
+                    "Precio Venta": d.unitPrice,
+                    "Costo Tienda (unit.)": d.storeCostUnit,
+                    "Total Venta": d.lineTotal,
+                    "Total Costo Tienda": d.storeCostLine,
+                  })), "reporte_costo_tiendas_detalle")} className="px-2 py-1 text-xs bg-dark-800 border border-dark-700 rounded-lg text-gray-300 hover:text-foreground">Exportar detalle Excel</button>
+                  <button onClick={() => exportPDF(
+                    ["Fecha", "Venta N°", "Tienda", "Vendedor", "Cód. Fábrica", "Producto", "Cantidad", "Precio Venta", "Costo Tienda", "Total Venta", "Total Costo Tienda"],
+                    storesDetails.map((d) => [formatDate(d.saleDate), saleCode(d.saleId, d.saleDate), d.location, d.seller, d.factoryCode || "N/A", (d.productName || "N/A").substring(0, 20), String(d.quantity), String(d.unitPrice), String(d.storeCostUnit), String(d.lineTotal), String(d.storeCostLine)]),
+                    "Costo Tiendas - Detalle de productos", "reporte_costo_tiendas_detalle"
+                  )} className="px-2 py-1 text-xs bg-dark-800 border border-dark-700 rounded-lg text-gray-300 hover:text-foreground">Exportar detalle PDF</button>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-dark-700/50">
+                      <th className="px-3 py-2 text-left text-gray-400 font-medium">Fecha</th>
+                      <th className="px-3 py-2 text-left text-gray-400 font-medium">Venta N°</th>
+                      <th className="px-3 py-2 text-left text-gray-400 font-medium">Tienda</th>
+                      <th className="px-3 py-2 text-left text-gray-400 font-medium">Vendedor</th>
+                      <th className="px-3 py-2 text-left text-gray-400 font-medium">Cód. Fábrica</th>
+                      <th className="px-3 py-2 text-left text-gray-400 font-medium">Producto</th>
+                      <th className="px-3 py-2 text-left text-gray-400 font-medium">Marca</th>
+                      <th className="px-3 py-2 text-left text-gray-400 font-medium">Modelo</th>
+                      <th className="px-3 py-2 text-right text-gray-400 font-medium">Cantidad</th>
+                      <th className="px-3 py-2 text-right text-gray-400 font-medium">Precio Venta</th>
+                      <th className="px-3 py-2 text-right text-gray-400 font-medium">Costo Tienda (unit.)</th>
+                      <th className="px-3 py-2 text-right text-gray-400 font-medium">Total Venta</th>
+                      <th className="px-3 py-2 text-right text-gray-400 font-medium">Total Costo Tienda</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {storesDetails.map((d, idx) => (
+                      <tr key={`${d.saleId}-${idx}`} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
+                        <td className="px-3 py-2 text-gray-300 whitespace-nowrap">{formatDate(d.saleDate)}</td>
+                        <td className="px-3 py-2 text-amber-400/90 font-mono text-[10px]">{saleCode(d.saleId, d.saleDate)}</td>
+                        <td className="px-3 py-2 text-gray-300">{d.location}</td>
+                        <td className="px-3 py-2 text-gray-300 text-[11px]">{d.seller}</td>
+                        <td className="px-3 py-2 text-gray-300 font-mono text-[10px]">{d.factoryCode || "N/A"}</td>
+                        <td className="px-3 py-2 text-foreground max-w-[160px] truncate" title={d.productName}>{d.productName}</td>
+                        <td className="px-3 py-2 text-gray-300">{d.brand}</td>
+                        <td className="px-3 py-2 text-gray-300">{d.model}</td>
+                        <td className="px-3 py-2 text-gray-300 text-right">{d.quantity}</td>
+                        <td className="px-3 py-2 text-emerald-400 text-right">{formatBs(d.unitPrice)}</td>
+                        <td className="px-3 py-2 text-red-400/80 text-right">{formatBs(d.storeCostUnit)}</td>
+                        <td className="px-3 py-2 text-emerald-400 text-right">{formatBs(d.lineTotal)}</td>
+                        <td className="px-3 py-2 text-red-400 text-right">{formatBs(d.storeCostLine)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-dark-900/60 border-t-2 border-dark-600">
+                      <td colSpan={8} className="px-3 py-2 text-foreground font-bold">TOTALES</td>
+                      <td className="px-3 py-2 text-foreground font-bold text-right">{storesDetails.reduce((s, r) => s + (r.quantity || 0), 0)}</td>
+                      <td className="px-3 py-2 text-right">-</td>
+                      <td className="px-3 py-2 text-right">-</td>
+                      <td className="px-3 py-2 text-emerald-400 font-bold text-right">{formatBs(storesDetails.reduce((s, r) => s + (r.lineTotal || 0), 0))}</td>
+                      <td className="px-3 py-2 text-red-400 font-bold text-right">{formatBs(storesDetails.reduce((s, r) => s + (r.storeCostLine || 0), 0))}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
           )}
         </ReportCard>
       )}

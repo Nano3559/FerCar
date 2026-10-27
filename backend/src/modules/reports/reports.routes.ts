@@ -421,10 +421,10 @@ router.get("/monthly", async (req: AuthRequest, res: Response) => {
 });
 
 // GET /stores — Ventas y costo de tienda por período (día/semana/mes/personalizado), tienda y vendedor.
-// El costo de tienda se calcula POR CADA VENTA: costo del producto (último costo <= fecha de venta) × cantidad × 1.10.
+// El costo de tienda se toma directamente del campo priceHermana de cada producto (Costo Tienda).
 router.get("/stores", async (req: AuthRequest, res: Response) => {
   try {
-    const { period = "day", startDate, endDate, locationId, seller, type } = req.query;
+    const { period = "day", startDate, endDate, locationId, seller, type, groupBy = "both" } = req.query;
 
     const user = req.user!;
     const DAY_MS = 24 * 60 * 60 * 1000;
@@ -457,38 +457,29 @@ router.get("/stores", async (req: AuthRequest, res: Response) => {
     if (seller && typeof seller === "string" && seller.trim()) saleWhere.seller = { contains: seller.trim(), mode: "insensitive" };
     if (type && typeof type === "string" && ["NORMAL", "MAYOR", "DEPARTAMENTAL"].includes(type)) saleWhere.type = type as any;
 
-    const [sales, costs] = await Promise.all([
-      prisma.sale.findMany({
-        where: saleWhere,
-        include: {
-          location: { select: { id: true, name: true } },
-          returns: { select: { amount: true } },
-          items: { include: { product: { select: { id: true, cost: true } } } },
+    const sales = await prisma.sale.findMany({
+      where: saleWhere,
+      include: {
+        location: { select: { id: true, name: true } },
+        returns: { select: { amount: true } },
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                brand: true,
+                model: true,
+                factoryCode: true,
+                itemCode: true,
+                priceHermana: true,
+              },
+            },
+          },
         },
-      }),
-      prisma.cost.findMany({
-        select: { productId: true, costPrice: true, date: true },
-        orderBy: { date: "desc" },
-      }),
-    ]);
-
-    // Último costo por producto según fecha
-    const costsByProduct = new Map<number, { date: Date; cost: number }[]>();
-    for (const c of costs) {
-      if (!costsByProduct.has(c.productId)) costsByProduct.set(c.productId, []);
-      costsByProduct.get(c.productId)!.push({ date: c.date, cost: Number(c.costPrice) });
-    }
-    for (const arr of costsByProduct.values()) arr.sort((a, b) => b.date.getTime() - a.date.getTime());
-
-    const unitCostAt = (productId: number, saleDate: Date): number => {
-      const arr = costsByProduct.get(productId);
-      if (arr) {
-        for (const c of arr) {
-          if (c.date.getTime() <= saleDate.getTime()) return c.cost;
-        }
-      }
-      return 0;
-    };
+      },
+      orderBy: [{ saleDate: "asc" }, { id: "asc" }],
+    });
 
     const mondayOf = (d: Date) => {
       const x = new Date(d);
@@ -524,26 +515,33 @@ router.get("/stores", async (req: AuthRequest, res: Response) => {
 
     const GROUPS = new Map<string, any>();
 
-    const STORE_COST_RATE = 1.10;
-
     for (const sale of sales) {
       const sd = new Date(sale.saleDate);
       const pKey = periodKeyOf(sd);
       const sellerName = sale.seller || "Sin vendedor";
-      const gkey = `${pKey}|${sale.locationId}|${sellerName}`;
+      const locId = sale.locationId;
+
+      let gkey = "";
+      if (groupBy === "location") {
+        gkey = `${pKey}|LOC:${locId}`;
+      } else if (groupBy === "seller") {
+        gkey = `${pKey}|SELL:${sellerName.toLowerCase()}`;
+      } else {
+        gkey = `${pKey}|${locId}|${sellerName.toLowerCase()}`;
+      }
 
       if (!GROUPS.has(gkey)) {
         GROUPS.set(gkey, {
           periodKey: pKey,
           periodLabel: periodLabelOf(pKey),
-          location: sale.location,
-          seller: sale.seller,
+          location: groupBy === "seller" ? null : sale.location,
+          seller: groupBy === "location" ? null : sellerName,
           saleCount: 0,
           totalSales: 0,
           returns: 0,
-          productsCost: 0,
           storeCost: 0,
-          items: 0,
+          itemsQty: 0,
+          details: [],
         });
       }
       const g = GROUPS.get(gkey);
@@ -551,24 +549,44 @@ router.get("/stores", async (req: AuthRequest, res: Response) => {
       g.totalSales += Number(sale.total) || 0;
       g.returns += (sale.returns || []).reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
 
-      let saleProductsCost = 0;
       for (const item of sale.items) {
-        const unitCost = unitCostAt(item.productId, sd) || Number(item.product?.cost || 0);
-        saleProductsCost += unitCost * item.quantity;
-        g.items += item.quantity;
+        const qty = Number(item.quantity) || 0;
+        const storeCostUnit = Number(item.product?.priceHermana || 0);
+        const storeCostLine = qty * storeCostUnit;
+        g.storeCost += storeCostLine;
+        g.itemsQty += qty;
+        g.details.push({
+          saleId: sale.id,
+          saleDate: sale.saleDate,
+          location: sale.location?.name || "Sin tienda",
+          seller: sale.seller || "Sin vendedor",
+          factoryCode: item.product?.factoryCode || item.product?.itemCode || null,
+          productId: item.product?.id,
+          productName: item.product?.name,
+          brand: item.product?.brand,
+          model: item.product?.model,
+          quantity: qty,
+          storeCostUnit,
+          storeCostLine,
+          unitPrice: Number(item.unitPrice) || 0,
+          lineTotal: Number(item.subtotal) || qty * Number(item.unitPrice) || 0,
+        });
       }
-      g.productsCost += saleProductsCost;
-      g.storeCost += Number((saleProductsCost * STORE_COST_RATE).toFixed(2));
     }
 
     const groups = Array.from(GROUPS.values())
-      .sort((a, b) => (a.periodKey < b.periodKey ? -1 : a.periodKey > b.periodKey ? 1 : a.location.name.localeCompare(b.location.name)))
+      .sort((a, b) => {
+        if (a.periodKey !== b.periodKey) return a.periodKey < b.periodKey ? -1 : 1;
+        const al = a.location?.name || "";
+        const bl = b.location?.name || "";
+        if (al !== bl) return al.localeCompare(bl);
+        return (a.seller || "").localeCompare(b.seller || "");
+      })
       .map((g) => ({
         ...g,
         totalSales: Number(g.totalSales.toFixed(2)),
         returns: Number(g.returns.toFixed(2)),
         netSales: Number((g.totalSales - g.returns).toFixed(2)),
-        productsCost: Number(g.productsCost.toFixed(2)),
         storeCost: Number(g.storeCost.toFixed(2)),
         utility: Number((g.totalSales - g.returns - g.storeCost).toFixed(2)),
         averagePerSale: g.saleCount > 0 ? Number((g.totalSales / g.saleCount).toFixed(2)) : 0,
@@ -578,18 +596,25 @@ router.get("/stores", async (req: AuthRequest, res: Response) => {
       totalSales: Number(groups.reduce((s, g) => s + g.totalSales, 0).toFixed(2)),
       totalReturns: Number(groups.reduce((s, g) => s + g.returns, 0).toFixed(2)),
       netSales: Number(groups.reduce((s, g) => s + g.netSales, 0).toFixed(2)),
-      totalProductsCost: Number(groups.reduce((s, g) => s + g.productsCost, 0).toFixed(2)),
-      totalStoreCost: Number(groups.reduce((s, g) => s + g.storeCost, 0).toFixed(2)),
+      storeCost: Number(groups.reduce((s, g) => s + g.storeCost, 0).toFixed(2)),
       utility: Number(groups.reduce((s, g) => s + g.utility, 0).toFixed(2)),
       saleCount: groups.reduce((s, g) => s + g.saleCount, 0),
-      items: groups.reduce((s, g) => s + g.items, 0),
+      itemsQty: groups.reduce((s, g) => s + g.itemsQty, 0),
       period,
+      groupBy,
       range: { start, end },
     };
 
-    res.json({ period, groups, summary });
+    const allDetails = groups.flatMap((g) => g.details).sort((a, b) => {
+      const da = new Date(a.saleDate).getTime();
+      const db = new Date(b.saleDate).getTime();
+      if (da !== db) return da - db;
+      return (a.saleId || 0) - (b.saleId || 0);
+    });
+
+    res.json({ period, groupBy, groups, summary, details: allDetails });
   } catch (error) {
-    console.error("Error en reporte por período:", error);
+    console.error("Error en reporte por período/costo tiendas:", error);
     res.status(500).json({ message: "Error interno del servidor" });
   }
 });
