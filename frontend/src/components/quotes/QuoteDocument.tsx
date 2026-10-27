@@ -137,7 +137,7 @@ export default function QuoteDocument({
           <p style={{ margin: 0, fontSize: "10px", color: "#9ca3af" }}>
             {items.length} producto(s) · {unitCount} unidad(es)
           </p>
-          <p style={{ margin: 0, fontSize: "11px", color: "#374151", fontWeight: 600 }}>¡Gracias por su compra!</p>
+
         </div>
         <p style={{ margin: "6px 0 0", fontSize: "9px", color: "#9ca3af", textAlign: "center", letterSpacing: "0.5px" }}>
           {copyOf ? `Copia de la cotización ${copyOf}` : "Cotización sin valor fiscal"}
