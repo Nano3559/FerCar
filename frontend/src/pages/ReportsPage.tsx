@@ -10,19 +10,29 @@ import * as XLSX from "xlsx";
 import { useAuthStore } from "../stores/authStore";
 import { saleCode } from "../utils/documentCodes";
 
-interface SalesReport {
-  id: number; date: string; type: string; total: number;
-  location: { name: string } | null;
-  customer: { name: string } | null;
-  user: { name: string } | null;
-  seller: string | null;
-  itemCount: number;
-  payments: { method: string; amount: number }[];
-}
-
 interface InventoryItem {
   id: number; stock: number; minStock: number;
-  product: { id: number; name: string; itemCode: string; brand: string; model: string; manufacturer: string };
+  product: { 
+    id: number; 
+    name: string; 
+    itemCode: string; 
+    factoryCode?: string | null;
+    oemCode?: string | null;
+    brand: string; 
+    model: string; 
+    year?: string | null;
+    detail?: string | null;
+    detalles?: string | null;
+    manufacturer?: string | null;
+    cost?: string | number | null;
+    unitPrice?: string | number | null;
+    priceHermana?: string | number | null;
+    price1?: string | number | null;
+    price2?: string | number | null;
+    wholesalePrice?: string | number | null;
+    image?: string | null;
+    supplier?: { name: string } | null;
+  };
   location: { id: number; name: string; type: string };
   status: string;
 }
@@ -88,9 +98,9 @@ export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState("ventas");
   const [locations, setLocations] = useState<Location[]>([]);
 
-  // Sales (list)
-  const [salesData, setSalesData] = useState<SalesReport[]>([]);
-  const [salesSummary, setSalesSummary] = useState({ totalSales: 0, count: 0, average: 0 });
+  // Sales (detail)
+  const [salesDetails, setSalesDetails] = useState<any[]>([]);
+  const [salesSummary, setSalesSummary] = useState({ totalSales: 0, count: 0, average: 0, totalQuantity: 0, totalStoreCost: 0 });
   const [salesLoading, setSalesLoading] = useState(false);
 
   // Stores (period/cost)
@@ -140,8 +150,16 @@ export default function ReportsPage() {
       if (filterSeller) params.set("seller", filterSeller);
       if (filterType) params.set("type", filterType);
       const res = await api.get(`/reports/sales?${params.toString()}`);
-      setSalesData(res.data.sales);
-      setSalesSummary(res.data.summary);
+      setSalesDetails(res.data.details || []);
+      setSalesSummary({
+        totalSales: res.data.summary?.totalSales || 0,
+        count: res.data.summary?.count || (res.data.details?.length || 0),
+        average: (res.data.summary?.count || (res.data.details?.length || 0)) > 0
+          ? Number(((res.data.summary?.totalSales || 0) / (res.data.summary?.count || res.data.details?.length || 1)).toFixed(2))
+          : 0,
+        totalQuantity: res.data.summary?.totalQuantity || 0,
+        totalStoreCost: res.data.summary?.totalStoreCost || 0,
+      });
     } catch {
       toast.error("Error al cargar reporte de ventas");
     } finally {
@@ -250,11 +268,13 @@ export default function ReportsPage() {
   const formatDate = (d: string) => new Date(d).toLocaleDateString("es-BO", { day: "2-digit", month: "short", year: "numeric" });
 
   // ---- Derived ----
-  const filteredSales = salesData.filter((s) =>
+  const filteredSalesDetails = salesDetails.filter((s: any) =>
     !filterSearch
-    || (s.customer?.name || "").toLowerCase().includes(filterSearch.toLowerCase())
+    || (s.productName || "").toLowerCase().includes(filterSearch.toLowerCase())
+    || (s.factoryCode || "").toLowerCase().includes(filterSearch.toLowerCase())
+    || (s.brand || "").toLowerCase().includes(filterSearch.toLowerCase())
     || (s.seller || "").toLowerCase().includes(filterSearch.toLowerCase())
-    || String(s.id).includes(filterSearch)
+    || String(s.saleId).includes(filterSearch)
   );
 
   const storesGroups = storesData?.groups || [];
@@ -270,7 +290,13 @@ export default function ReportsPage() {
 
   const inventoryItems: InventoryItem[] = inventoryData?.locations?.flatMap((loc: any) => loc.items) || [];
   const filteredInventory = inventoryItems.filter((i) =>
-    !filterSearch || i.product.name.toLowerCase().includes(filterSearch.toLowerCase()) || i.product.brand.toLowerCase().includes(filterSearch.toLowerCase()) || i.product.itemCode.toLowerCase().includes(filterSearch.toLowerCase())
+    !filterSearch 
+    || i.product.name.toLowerCase().includes(filterSearch.toLowerCase()) 
+    || i.product.brand.toLowerCase().includes(filterSearch.toLowerCase()) 
+    || i.product.itemCode.toLowerCase().includes(filterSearch.toLowerCase())
+    || (i.product.factoryCode || "").toLowerCase().includes(filterSearch.toLowerCase())
+    || (i.product.oemCode || "").toLowerCase().includes(filterSearch.toLowerCase())
+    || (i.product.supplier?.name || "").toLowerCase().includes(filterSearch.toLowerCase())
   );
 
   const suppliersShow = (suppliersData?.suppliers || []).filter((sup) =>
@@ -308,9 +334,9 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {activeTab === "ventas" && (
           <>
-            <SummaryCard label="Total Ventas" value={formatBs(salesSummary.totalSales)} tone="emerald" sub={`${salesSummary.count} registros`} />
-            <SummaryCard label="Promedio / Venta" value={formatBs(salesSummary.average)} tone="blue" sub="" />
-            <SummaryCard label="Registros" value={String(salesSummary.count)} tone="green" sub="ventas con los filtros" />
+            <SummaryCard label="Total Ventas" value={formatBs(salesSummary.totalSales)} tone="emerald" sub={`${salesSummary.totalQuantity || 0} unidades`} />
+            <SummaryCard label="Total Costo Tienda" value={formatBs(salesSummary.totalStoreCost || 0)} tone="red" sub="Suma de Costo Tienda" />
+            <SummaryCard label="Registros" value={String(filteredSalesDetails.length)} tone="green" sub="líneas de producto" />
           </>
         )}
         {activeTab === "periodo" && (
@@ -414,54 +440,73 @@ export default function ReportsPage() {
         )}
       </div>
 
-      {/* ===== Ventas (listado) ===== */}
+      {/* ===== Ventas (detalle por producto) ===== */}
       {activeTab === "ventas" && (
         <ReportCard
-          title="Reporte de Ventas"
+          title="Reporte de Ventas - Detalle por producto"
           loading={salesLoading}
           refresh={fetchSales}
-          onExportExcel={() => exportCSV(filteredSales.map((s) => ({
-            ID: s.id, Fecha: formatDate(s.date), Tipo: s.type, Total: s.total,
-            Ubicacion: s.location?.name || "N/A", Cliente: s.customer?.name || "N/A", Vendedor: s.seller || s.user?.name || "N/A",
-          })), "reporte_ventas")}
+          onExportExcel={() => exportCSV(filteredSalesDetails.map((s: any) => ({
+            Fecha: formatDate(s.date), "Venta N°": saleCode(s.saleId, s.date), "Cód. Fábrica": s.factoryCode || "N/A",
+            Producto: s.productName || "N/A", Marca: s.brand || "N/A", Modelo: s.model || "N/A",
+            Cantidad: s.quantity, "Precio de Venta": s.unitPrice, "Costo Tienda (unit.)": s.storeCostUnit,
+            "Total Venta": s.lineTotal, "Total Costo Tienda": s.lineStoreCost, Ubicación: s.location || "N/A", Vendedor: s.seller || "N/A",
+          })), "reporte_ventas_detalle")}
           onExportPDF={() => exportPDF(
-            ["ID", "Fecha", "Tipo", "Total", "Ubicacion", "Cliente", "Vendedor"],
-            filteredSales.map((s) => [String(s.id), formatDate(s.date), s.type, String(s.total), s.location?.name || "N/A", s.customer?.name || "N/A", s.seller || s.user?.name || "N/A"]),
-            "Reporte de Ventas", "reporte_ventas"
+            ["Fecha", "Venta N°", "Cód. Fábrica", "Producto", "Cantidad", "Precio Venta", "Costo Tienda", "Total Venta", "Total Costo Tienda"],
+            filteredSalesDetails.map((s: any) => [formatDate(s.date), saleCode(s.saleId, s.date), s.factoryCode || "N/A", (s.productName || "N/A").substring(0, 25), String(s.quantity), String(s.unitPrice), String(s.storeCostUnit), String(s.lineTotal), String(s.lineStoreCost)]),
+            "Reporte de Ventas - Detalle", "reporte_ventas_detalle"
           )}>
-          {filteredSales.length === 0 ? (
-            <EmptyRow cols={7} msg="No hay ventas para los filtros seleccionados" />
+          {filteredSalesDetails.length === 0 ? (
+            <EmptyRow cols={12} msg="No hay ventas para los filtros seleccionados" />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-dark-700/50">
-                    <SortableTh>Código</SortableTh>
                     <SortableTh>Fecha</SortableTh>
-                    <SortableTh>Tipo</SortableTh>
-                    <RightTh>Total</RightTh>
-                    <SortableTh>Ubicación</SortableTh>
-                    <SortableTh>Cliente</SortableTh>
+                    <SortableTh>Venta N°</SortableTh>
+                    <SortableTh>Cód. Fábrica</SortableTh>
+                    <SortableTh>Producto</SortableTh>
+                    <SortableTh>Marca</SortableTh>
+                    <SortableTh>Modelo</SortableTh>
+                    <RightTh>Cantidad</RightTh>
+                    <RightTh>Precio de Venta</RightTh>
+                    <RightTh>Costo Tienda (unit.)</RightTh>
+                    <RightTh>Total Venta</RightTh>
+                    <RightTh>Total Costo Tienda</RightTh>
                     <SortableTh>Vendedor</SortableTh>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSales.map((s) => (
-                    <tr key={s.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                      <td className="px-4 py-3 text-amber-400/90 font-mono text-xs whitespace-nowrap">{saleCode(s.id, s.date)}</td>
-                      <td className="px-4 py-3 text-gray-300">{formatDate(s.date)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.type === "MAYOR" ? "bg-amber-500/10 text-amber-400" : s.type === "DEPARTAMENTAL" ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"}`}>
-                          {s.type === "MAYOR" ? "Mayor" : s.type === "DEPARTAMENTAL" ? "Departamental" : "Normal"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-emerald-400 font-medium text-right">{formatBs(s.total)}</td>
-                      <td className="px-4 py-3 text-gray-300">{s.location?.name || "N/A"}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{s.customer?.name || "N/A"}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{s.seller || s.user?.name || "N/A"}</td>
+                  {filteredSalesDetails.map((s: any, idx: number) => (
+                    <tr key={`${s.saleId}-${idx}`} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
+                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{formatDate(s.date)}</td>
+                      <td className="px-4 py-3 text-amber-400/90 font-mono text-xs whitespace-nowrap">{saleCode(s.saleId, s.date)}</td>
+                      <td className="px-4 py-3 text-gray-300 font-mono text-xs">{s.factoryCode || "N/A"}</td>
+                      <td className="px-4 py-3 text-foreground font-medium max-w-[200px] truncate" title={s.productName || ""}>{s.productName || "N/A"}</td>
+                      <td className="px-4 py-3 text-gray-300">{s.brand || "N/A"}</td>
+                      <td className="px-4 py-3 text-gray-300">{s.model || "N/A"}</td>
+                      <td className="px-4 py-3 text-gray-300 text-right">{s.quantity}</td>
+                      <td className="px-4 py-3 text-emerald-400 text-right">{formatBs(s.unitPrice)}</td>
+                      <td className="px-4 py-3 text-red-400/80 text-right">{formatBs(s.storeCostUnit)}</td>
+                      <td className="px-4 py-3 text-emerald-400 font-medium text-right">{formatBs(s.lineTotal)}</td>
+                      <td className="px-4 py-3 text-red-400 font-medium text-right">{formatBs(s.lineStoreCost)}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs">{s.seller || "N/A"}</td>
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="bg-dark-900/60 border-t-2 border-dark-600">
+                    <td colSpan={6} className="px-4 py-3 text-foreground font-bold">TOTALES</td>
+                    <td className="px-4 py-3 text-foreground font-bold text-right">{filteredSalesDetails.reduce((sum: number, r: any) => sum + (r.quantity || 0), 0)}</td>
+                    <td className="px-4 py-3 text-right">-</td>
+                    <td className="px-4 py-3 text-right">-</td>
+                    <td className="px-4 py-3 text-emerald-400 font-bold text-right">{formatBs(filteredSalesDetails.reduce((sum: number, r: any) => sum + (r.lineTotal || 0), 0))}</td>
+                    <td className="px-4 py-3 text-red-400 font-bold text-right">{formatBs(filteredSalesDetails.reduce((sum: number, r: any) => sum + (r.lineStoreCost || 0), 0))}</td>
+                    <td className="px-4 py-3"></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )}
@@ -593,53 +638,98 @@ export default function ReportsPage() {
           loading={inventoryLoading}
           refresh={() => fetchInventory(false)}
           onExportExcel={() => exportCSV(filteredInventory.map((i) => ({
-            Codigo: i.product.itemCode, Producto: i.product.name, Marca: i.product.brand, Modelo: i.product.model,
-            Ubicacion: i.location.name, Stock: i.stock, Minimo: i.minStock, Estado: i.status,
+            Proveedor: i.product.supplier?.name || "N/A",
+            Fabricante: i.product.manufacturer || "N/A",
+            Producto: i.product.name,
+            Marca: i.product.brand,
+            Modelo: i.product.model,
+            Año: i.product.year || "N/A",
+            Detalles: i.product.detalles || i.product.detail || "N/A",
+            "Cód. OEM": i.product.oemCode || "N/A",
+            "Cód. Fábrica": i.product.factoryCode || i.product.itemCode || "N/A",
+            "Costo $": i.product.unitPrice || "0",
+            "Costo Bs": i.product.cost || "0",
+            "Costo Tiendas": i.product.priceHermana || "0",
+            "Precio 1": i.product.price1 || "0",
+            "Precio 2": i.product.price2 || "0",
+            "Precio Mayor": i.product.wholesalePrice || "0",
+            Imagen: i.product.image || "N/A",
+            Stock: i.stock,
           })), "reporte_inventario")}
           onExportPDF={() => exportPDF(
-            ["Codigo", "Producto", "Marca", "Modelo", "Ubicacion", "Stock", "Minimo", "Estado"],
-            filteredInventory.map((i) => [i.product.itemCode, i.product.name, i.product.brand, i.product.model, i.location.name, String(i.stock), String(i.minStock), i.status]),
+            ["Proveedor", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles", "Cód. OEM", "Cód. Fábrica", "Costo $", "Costo Bs", "Costo Tiendas", "Precio 1", "Precio 2", "Precio Mayor", "Imagen", "Stock"],
+            filteredInventory.map((i) => [
+              i.product.supplier?.name || "N/A",
+              (i.product.manufacturer || "N/A").substring(0, 18),
+              (i.product.name || "N/A").substring(0, 28),
+              i.product.brand || "N/A",
+              (i.product.model || "N/A").substring(0, 18),
+              i.product.year || "N/A",
+              (i.product.detalles || i.product.detail || "N/A").substring(0, 25),
+              i.product.oemCode || "N/A",
+              i.product.factoryCode || i.product.itemCode || "N/A",
+              String(i.product.unitPrice || "0"),
+              String(i.product.cost || "0"),
+              String(i.product.priceHermana || "0"),
+              String(i.product.price1 || "0"),
+              String(i.product.price2 || "0"),
+              String(i.product.wholesalePrice || "0"),
+              i.product.image ? "SI" : "NO",
+              String(i.stock),
+            ]),
             "Reporte de Inventario", "reporte_inventario"
           )}>
           {filteredInventory.length === 0 ? (
             <EmptyRowWithPad msg="No hay datos para los filtros seleccionados" />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-dark-700/50">
-                    <SortableTh>Código</SortableTh>
+                    <SortableTh>Proveedor</SortableTh>
+                    <SortableTh>Fabricante</SortableTh>
                     <SortableTh>Producto</SortableTh>
                     <SortableTh>Marca</SortableTh>
-                    <SortableTh>Ubicación</SortableTh>
+                    <SortableTh>Modelo</SortableTh>
+                    <SortableTh>Año</SortableTh>
+                    <SortableTh>Detalles</SortableTh>
+                    <SortableTh>Cód. OEM</SortableTh>
+                    <SortableTh>Cód. Fábrica</SortableTh>
+                    <RightTh>Costo $</RightTh>
+                    <RightTh>Costo Bs</RightTh>
+                    <RightTh>Costo Tiendas</RightTh>
+                    <RightTh>Precio 1</RightTh>
+                    <RightTh>Precio 2</RightTh>
+                    <RightTh>Precio Mayor</RightTh>
+                    <SortableTh>Imagen</SortableTh>
                     <CenterTh>Stock</CenterTh>
-                    <CenterTh>Mínimo</CenterTh>
-                    <CenterTh>Estado</CenterTh>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredInventory.map((i) => (
                     <tr key={i.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                      <td className="px-4 py-3 text-gray-300 font-mono text-xs">{i.product.itemCode}</td>
-                      <td className="px-4 py-3 text-foreground font-medium">{i.product.name}</td>
-                      <td className="px-4 py-3 text-gray-300">{i.product.brand}</td>
-                      <td className="px-4 py-3 text-gray-300">{i.location.name}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate" title={i.product.supplier?.name || ""}>{i.product.supplier?.name || "N/A"}</td>
+                      <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate" title={i.product.manufacturer || ""}>{i.product.manufacturer || "N/A"}</td>
+                      <td className="px-3 py-2 text-foreground font-medium max-w-[180px] truncate" title={i.product.name}>{i.product.name}</td>
+                      <td className="px-3 py-2 text-gray-300">{i.product.brand}</td>
+                      <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate" title={i.product.model}>{i.product.model}</td>
+                      <td className="px-3 py-2 text-gray-300">{i.product.year || "N/A"}</td>
+                      <td className="px-3 py-2 text-gray-400 max-w-[150px] truncate" title={i.product.detalles || i.product.detail || ""}>{i.product.detalles || i.product.detail || "N/A"}</td>
+                      <td className="px-3 py-2 text-gray-300 font-mono text-[10px]">{i.product.oemCode || "N/A"}</td>
+                      <td className="px-3 py-2 text-gray-300 font-mono text-[10px]">{i.product.factoryCode || i.product.itemCode}</td>
+                      <td className="px-3 py-2 text-right text-gray-300">{i.product.unitPrice || "0"}</td>
+                      <td className="px-3 py-2 text-right text-gray-300">{i.product.cost || "0"}</td>
+                      <td className="px-3 py-2 text-right text-red-400/80">{i.product.priceHermana || "0"}</td>
+                      <td className="px-3 py-2 text-right text-emerald-400/80">{i.product.price1 || "0"}</td>
+                      <td className="px-3 py-2 text-right text-emerald-400/80">{i.product.price2 || "0"}</td>
+                      <td className="px-3 py-2 text-right text-emerald-400 font-medium">{i.product.wholesalePrice || "0"}</td>
+                      <td className="px-3 py-2 text-gray-400 text-center text-[10px]">{i.product.image ? "SI" : "NO"}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
                           i.stock === 0 ? "bg-red-500/20 text-red-400" :
                           i.stock <= i.minStock ? "bg-yellow-500/20 text-yellow-400" :
                           "bg-green-500/20 text-green-400"
                         }`}>{i.stock}</span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-400 text-center text-xs">{i.minStock}</td>
-                      <td className="px-4 py-3 text-center">
-                        {i.status === "AGOTADO" ? (
-                          <span className="text-red-400 text-xs font-medium">SIN STOCK</span>
-                        ) : i.status === "BAJO" ? (
-                          <span className="text-yellow-400 text-xs font-medium">CRÍTICO</span>
-                        ) : (
-                          <span className="text-green-400 text-xs font-medium">OK</span>
-                        )}
                       </td>
                     </tr>
                   ))}
@@ -657,43 +747,94 @@ export default function ReportsPage() {
           loading={inventoryLoading}
           refresh={() => fetchInventory(true)}
           onExportExcel={() => exportCSV(filteredInventory.map((i) => ({
-            Codigo: i.product.itemCode, Producto: i.product.name, Marca: i.product.brand, Modelo: i.product.model,
-            Ubicacion: i.location.name, Stock: i.stock, Minimo: i.minStock, Estado: i.status,
+            Proveedor: i.product.supplier?.name || "N/A",
+            Fabricante: i.product.manufacturer || "N/A",
+            Producto: i.product.name,
+            Marca: i.product.brand,
+            Modelo: i.product.model,
+            Año: i.product.year || "N/A",
+            Detalles: i.product.detalles || i.product.detail || "N/A",
+            "Cód. OEM": i.product.oemCode || "N/A",
+            "Cód. Fábrica": i.product.factoryCode || i.product.itemCode || "N/A",
+            "Costo $": i.product.unitPrice || "0",
+            "Costo Bs": i.product.cost || "0",
+            "Costo Tiendas": i.product.priceHermana || "0",
+            "Precio 1": i.product.price1 || "0",
+            "Precio 2": i.product.price2 || "0",
+            "Precio Mayor": i.product.wholesalePrice || "0",
+            Imagen: i.product.image || "N/A",
+            Stock: i.stock,
           })), "reporte_cercanos_0")}
           onExportPDF={() => exportPDF(
-            ["Codigo", "Producto", "Marca", "Modelo", "Ubicacion", "Stock", "Minimo", "Estado"],
-            filteredInventory.map((i) => [i.product.itemCode, i.product.name, i.product.brand, i.product.model, i.location.name, String(i.stock), String(i.minStock), i.status]),
+            ["Proveedor", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles", "Cód. OEM", "Cód. Fábrica", "Costo $", "Costo Bs", "Costo Tiendas", "Precio 1", "Precio 2", "Precio Mayor", "Imagen", "Stock"],
+            filteredInventory.map((i) => [
+              i.product.supplier?.name || "N/A",
+              (i.product.manufacturer || "N/A").substring(0, 18),
+              (i.product.name || "N/A").substring(0, 28),
+              i.product.brand || "N/A",
+              (i.product.model || "N/A").substring(0, 18),
+              i.product.year || "N/A",
+              (i.product.detalles || i.product.detail || "N/A").substring(0, 25),
+              i.product.oemCode || "N/A",
+              i.product.factoryCode || i.product.itemCode || "N/A",
+              String(i.product.unitPrice || "0"),
+              String(i.product.cost || "0"),
+              String(i.product.priceHermana || "0"),
+              String(i.product.price1 || "0"),
+              String(i.product.price2 || "0"),
+              String(i.product.wholesalePrice || "0"),
+              i.product.image ? "SI" : "NO",
+              String(i.stock),
+            ]),
             "Productos Cercanos a 0", "reporte_cercanos_0"
           )}>
           {filteredInventory.length === 0 ? (
             <EmptyRowWithPad msg="Sin productos en riesgo · todo el stock está por encima del mínimo" />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-dark-700/50">
-                    <SortableTh>Código</SortableTh>
+                    <SortableTh>Proveedor</SortableTh>
+                    <SortableTh>Fabricante</SortableTh>
                     <SortableTh>Producto</SortableTh>
                     <SortableTh>Marca</SortableTh>
-                    <SortableTh>Ubicación</SortableTh>
+                    <SortableTh>Modelo</SortableTh>
+                    <SortableTh>Año</SortableTh>
+                    <SortableTh>Detalles</SortableTh>
+                    <SortableTh>Cód. OEM</SortableTh>
+                    <SortableTh>Cód. Fábrica</SortableTh>
+                    <RightTh>Costo $</RightTh>
+                    <RightTh>Costo Bs</RightTh>
+                    <RightTh>Costo Tiendas</RightTh>
+                    <RightTh>Precio 1</RightTh>
+                    <RightTh>Precio 2</RightTh>
+                    <RightTh>Precio Mayor</RightTh>
+                    <SortableTh>Imagen</SortableTh>
                     <RightTh>Stock</RightTh>
-                    <CenterTh>Mínimo</CenterTh>
-                    <CenterTh>Estado</CenterTh>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredInventory.map((i) => (
                     <tr key={i.id} className="border-b border-dark-700/30 hover:bg-dark-700/30 transition-colors">
-                      <td className="px-4 py-3 text-gray-300 font-mono text-xs">{i.product.itemCode}</td>
-                      <td className="px-4 py-3 text-foreground font-medium">{i.product.name}</td>
-                      <td className="px-4 py-3 text-gray-300">{i.product.brand}</td>
-                      <td className="px-4 py-3 text-gray-300">{i.location.name}</td>
-                      <td className="px-4 py-3 text-right">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${i.stock === 0 ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400"}`}>{i.stock}</span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-400 text-center text-xs">{i.minStock}</td>
-                      <td className="px-4 py-3 text-center">
-                        {i.stock === 0 ? <span className="text-red-400 text-xs font-medium">SIN STOCK</span> : <span className="text-yellow-400 text-xs font-medium">CRÍTICO</span>}
+                      <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate" title={i.product.supplier?.name || ""}>{i.product.supplier?.name || "N/A"}</td>
+                      <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate" title={i.product.manufacturer || ""}>{i.product.manufacturer || "N/A"}</td>
+                      <td className="px-3 py-2 text-foreground font-medium max-w-[180px] truncate" title={i.product.name}>{i.product.name}</td>
+                      <td className="px-3 py-2 text-gray-300">{i.product.brand}</td>
+                      <td className="px-3 py-2 text-gray-300 max-w-[120px] truncate" title={i.product.model}>{i.product.model}</td>
+                      <td className="px-3 py-2 text-gray-300">{i.product.year || "N/A"}</td>
+                      <td className="px-3 py-2 text-gray-400 max-w-[150px] truncate" title={i.product.detalles || i.product.detail || ""}>{i.product.detalles || i.product.detail || "N/A"}</td>
+                      <td className="px-3 py-2 text-gray-300 font-mono text-[10px]">{i.product.oemCode || "N/A"}</td>
+                      <td className="px-3 py-2 text-gray-300 font-mono text-[10px]">{i.product.factoryCode || i.product.itemCode}</td>
+                      <td className="px-3 py-2 text-right text-gray-300">{i.product.unitPrice || "0"}</td>
+                      <td className="px-3 py-2 text-right text-gray-300">{i.product.cost || "0"}</td>
+                      <td className="px-3 py-2 text-right text-red-400/80">{i.product.priceHermana || "0"}</td>
+                      <td className="px-3 py-2 text-right text-emerald-400/80">{i.product.price1 || "0"}</td>
+                      <td className="px-3 py-2 text-right text-emerald-400/80">{i.product.price2 || "0"}</td>
+                      <td className="px-3 py-2 text-right text-emerald-400 font-medium">{i.product.wholesalePrice || "0"}</td>
+                      <td className="px-3 py-2 text-gray-400 text-center text-[10px]">{i.product.image ? "SI" : "NO"}</td>
+                      <td className="px-3 py-2 text-right">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${i.stock === 0 ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400"}`}>{i.stock}</span>
                       </td>
                     </tr>
                   ))}

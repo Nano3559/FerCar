@@ -8,10 +8,10 @@ const prisma = new PrismaClient();
 
 router.use(authenticate);
 
-// GET /sales — Ventas filtradas
+// GET /sales — Ventas filtradas (detalle por producto)
 router.get("/sales", async (req: AuthRequest, res: Response) => {
   try {
-    const { brand, model, month, locationId, supplierId, seller, type, startDate, endDate, noInvoice, product, page = "1", limit = "50" } = req.query;
+    const { brand, model, month, locationId, supplierId, seller, type, startDate, endDate, noInvoice, product } = req.query;
 
     const where: any = {};
 
@@ -62,47 +62,74 @@ router.get("/sales", async (req: AuthRequest, res: Response) => {
       where.items = { some: { product: productFilter } };
     }
 
-    const pg = Math.max(1, Number(page) || 1);
-    const take = Math.min(500, Math.max(1, Number(limit) || 50));
-    const skip = (pg - 1) * take;
-
-    const [sales, total, summary] = await Promise.all([
-      prisma.sale.findMany({
-        where,
-        include: {
-          user: { select: { id: true, name: true } },
-          location: { select: { id: true, name: true } },
-          customer: { select: { id: true, name: true } },
-          items: { include: { product: { select: { id: true, name: true, brand: true, model: true, itemCode: true } } } },
-          payments: true,
+    const sales = await prisma.sale.findMany({
+      where,
+      include: {
+        user: { select: { id: true, name: true } },
+        location: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true } },
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                brand: true,
+                model: true,
+                itemCode: true,
+                factoryCode: true,
+                priceHermana: true,
+              },
+            },
+          },
         },
-        orderBy: { saleDate: "desc" },
-        skip,
-        take,
-      }),
-      prisma.sale.count({ where }),
-      prisma.sale.aggregate({ where, _sum: { total: true }, _count: true }),
-    ]);
+        payments: true,
+      },
+      orderBy: [{ saleDate: "desc" }, { id: "desc" }],
+    });
+
+    const details: any[] = [];
+    let totalSales = 0;
+    let totalQuantity = 0;
+    let totalStoreCost = 0;
+
+    for (const s of sales) {
+      for (const item of s.items) {
+        const qty = Number(item.quantity) || 0;
+        const unitPrice = Number(item.unitPrice) || 0;
+        const storeCostUnit = Number(item.product?.priceHermana || 0);
+        const lineTotal = qty * unitPrice;
+        const lineStoreCost = qty * storeCostUnit;
+        totalSales += lineTotal;
+        totalQuantity += qty;
+        totalStoreCost += lineStoreCost;
+        details.push({
+          saleId: s.id,
+          date: s.saleDate,
+          type: s.type,
+          location: s.location?.name || null,
+          seller: s.seller || s.user?.name || null,
+          factoryCode: item.product?.factoryCode || item.product?.itemCode || null,
+          productName: item.product?.name || null,
+          brand: item.product?.brand || null,
+          model: item.product?.model || null,
+          quantity: qty,
+          unitPrice,
+          storeCostUnit,
+          lineTotal,
+          lineStoreCost,
+        });
+      }
+    }
 
     res.json({
-      sales: sales.map((s) => ({
-        id: s.id,
-        date: s.saleDate,
-        type: s.type,
-        total: Number(s.total),
-        location: s.location,
-        customer: s.customer,
-        user: s.user,
-        seller: s.seller,
-        itemCount: s.items.length,
-        payments: s.payments.map((p) => ({ method: p.method, amount: Number(p.amount) })),
-      })),
+      details,
       summary: {
-        totalSales: Number(summary._sum.total) || 0,
-        count: summary._count,
-        average: summary._count > 0 ? Number((Number(summary._sum.total) / summary._count).toFixed(2)) : 0,
+        totalSales: Number(totalSales.toFixed(2)),
+        totalQuantity,
+        totalStoreCost: Number(totalStoreCost.toFixed(2)),
+        count: details.length,
       },
-      pagination: { total, page: pg, limit: take, pages: Math.ceil(total / take) },
     });
   } catch (error) {
     console.error("Error en reporte de ventas:", error);
@@ -135,10 +162,32 @@ router.get("/inventory", async (req: AuthRequest, res: Response) => {
     const inventories = await prisma.inventory.findMany({
       where,
       include: {
-        product: { select: { id: true, name: true, itemCode: true, brand: true, model: true, manufacturer: true } },
+        product: { 
+          select: { 
+            id: true, 
+            name: true, 
+            itemCode: true, 
+            factoryCode: true,
+            oemCode: true,
+            brand: true, 
+            model: true,
+            year: true,
+            detail: true,
+            detalles: true,
+            manufacturer: true,
+            cost: true,
+            unitPrice: true,
+            priceHermana: true,
+            price1: true,
+            price2: true,
+            wholesalePrice: true,
+            image: true,
+            supplier: { select: { name: true } }
+          } 
+        },
         location: { select: { id: true, name: true, type: true } },
       },
-      orderBy: { product: { name: "asc" } },
+      orderBy: [{ location: { name: "asc" } }, { product: { name: "asc" } }],
     });
 
     let filtered = inventories;

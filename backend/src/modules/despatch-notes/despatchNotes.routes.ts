@@ -14,7 +14,7 @@ const router = Router();
 const prisma = new PrismaClient();
 
 router.use(authenticate);
-router.use(authorize("ADMIN"));
+router.use(authorize("ADMIN", "INVENTARIO"));
 
 type DespatchItemInput = {
   productId?: any;

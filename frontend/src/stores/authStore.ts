@@ -31,7 +31,7 @@ const getAllowedCategories = (role: string, config: Record<string, unknown>): st
 const fallbackPermissions = (role: string): string[] => {
   if (role === "ADMIN") return ["inventario", "ventas", "ventas-mayor", "devoluciones", "solicitudes", "movimientos", "costos", "precios", "reportes", "configuracion"];
   if (role === "TIENDA") return ["inventario", "ventas", "ventas-mayor", "devoluciones", "solicitudes", "reportes"];
-  if (role === "INVENTARIO") return ["inventario", "solicitudes", "movimientos", "costos", "precios"];
+  if (role === "INVENTARIO") return ["inventario", "solicitudes", "movimientos", "costos", "precios", "despachos"];
   return [];
 };
 
@@ -50,11 +50,18 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     try {
       const res = await api.get("/permissions/permissions/me");
-      const perms = res.data.permissions || [];
+      let perms = normalizePermissions(res.data.permissions || []);
+      if (user.role === "INVENTARIO" && !perms.includes("despachos")) {
+        perms = [...perms, "despachos"];
+      }
       const cc = res.data.columnConfig || {};
-      set({ permissions: normalizePermissions(perms), columnConfig: cc, allowedCategories: getAllowedCategories(user.role, cc) });
+      set({ permissions: perms, columnConfig: cc, allowedCategories: getAllowedCategories(user.role, cc) });
     } catch {
-      set({ permissions: fallbackPermissions(user.role), allowedCategories: getAllowedCategories(user.role, {}) });
+      let perms = fallbackPermissions(user.role);
+      if (user.role === "INVENTARIO" && !perms.includes("despachos")) {
+        perms = [...perms, "despachos"];
+      }
+      set({ permissions: perms, allowedCategories: getAllowedCategories(user.role, {}) });
     }
   },
   logout: () => {

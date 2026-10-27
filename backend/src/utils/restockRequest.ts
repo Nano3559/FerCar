@@ -166,21 +166,36 @@ export async function ensureRestockRequest(db: Db, args: RestockArgs): Promise<n
     return open.id;
   }
 
-  // Origen: de donde sale la mercaderia. Si la venta eligio una ubicacion se
-  // respeta esa eleccion; si no, se cae al primer almacen.
-  let originId = args.fromLocationId ?? null;
-  if (originId !== null) {
-    const elegido = await db.location.findUnique({ where: { id: originId }, select: { id: true } });
-    if (!elegido) throw new Error(`La ubicación de origen ${originId} no existe`);
-    if (originId === destinationId) {
-      throw new Error("El origen y el destino de la solicitud no pueden ser la misma ubicación");
+  // Origen: SOLO desde ALMACÉN. No se crean solicitudes si solo hay stock en otras tiendas.
+  let originId: number | null = null;
+
+  const almacenes = await db.location.findMany({
+    where: { type: "ALMACEN" },
+    orderBy: { id: "asc" },
+    select: { id: true },
+  });
+
+  if (almacenes.length === 0) {
+    return null;
+  }
+
+  for (const alm of almacenes) {
+    const disp = await disponibleEnOrigen(db, productId, alm.id, null);
+    if (disp > 0) {
+      originId = alm.id;
+      break;
     }
-  } else {
-    const origin = await db.location.findFirst({
-      where: { type: "ALMACEN" },
-      orderBy: { id: "asc" },
-    });
-    originId = origin?.id ?? null;
+  }
+
+  if (originId === null) {
+    console.warn(
+      `[replenish] ${productId}: no hay stock disponible en ningún ALMACÉN. No se crea solicitud para destino ${destinationId}`,
+    );
+    return null;
+  }
+
+  if (originId === destinationId) {
+    return null;
   }
 
   const [product, destination] = await Promise.all([
