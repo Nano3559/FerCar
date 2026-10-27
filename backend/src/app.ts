@@ -29,6 +29,7 @@ import purchaseNotesRoutes from "./modules/purchase-notes/purchaseNotes.routes";
 import despatchNotesRoutes from "./modules/despatch-notes/despatchNotes.routes";
 import quotesRoutes from "./modules/quotes/quotes.routes";
 import invoicesRoutes from "./modules/invoices/invoices.routes";
+import deliveryBoardRoutes from "./modules/delivery-board/deliveryBoard.routes";
 import backupRoutes from "./modules/backup/backup.routes";
 
 const app = express();
@@ -90,6 +91,7 @@ app.use("/api/suppliers", suppliersRoutes);
 app.use("/api/manufacturers", manufacturersRoutes);
 app.use("/api/prices", pricesRoutes);
 app.use("/api/reports", reportsRoutes);
+app.use("/api/delivery-board", deliveryBoardRoutes);
 app.use("/api/customers", customersRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/permissions", permissionsRoutes);

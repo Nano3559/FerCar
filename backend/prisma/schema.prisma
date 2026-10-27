@@ -39,6 +39,7 @@ model User {
   sales             Sale[]
   location          Location?        @relation(fields: [locationId], references: [id])
   role              RoleModel        @relation(fields: [roleId], references: [id])
+  salesDelivered   Sale[]           @relation("SaleDeliveredBy")
 }
 
 model Location {
@@ -147,6 +148,10 @@ model Sale {
   telefono        String?
   note            String?
   status          SaleStatus       @default(PENDIENTE)
+  deliveryStatus  DeliveryStatus   @default(PENDIENTE)
+  deliveredAt     DateTime?
+  deliveredById   Int?
+  deliveredBy     User?            @relation("SaleDeliveredBy", fields: [deliveredById], references: [id])
   nitName         String?
   telefonoFactura String?
   payments        Payment[]
@@ -584,6 +589,11 @@ enum LocationType {
 enum SaleStatus {
   PENDIENTE
   PAGADO
+}
+
+enum DeliveryStatus {
+  PENDIENTE
+  ENTREGADO
 }
 
 enum SaleType {

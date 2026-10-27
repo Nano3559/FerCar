@@ -16,6 +16,8 @@ import {
   Store,
   ChevronDown,
   User,
+  Truck,
+  LayoutDashboard,
 } from "lucide-react";
 import {
   BarChart,
@@ -27,6 +29,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import SalesAnalyticsBoard, { AnalyticsData } from "../components/dashboard/SalesAnalyticsBoard";
+import DeliveryBoardTab from "../components/dashboard/DeliveryBoardTab";
 
 interface DashboardData {
   summary: {
@@ -142,6 +145,7 @@ function formatDate(dateStr: string) {
 export default function DashboardPage() {
   const { user } = useAuthStore();
   const isTienda = user?.role === "TIENDA";
+  const canSeeDeliveryBoard = user?.role === "ADMIN" || user?.role === "INVENTARIO";
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -152,6 +156,7 @@ export default function DashboardPage() {
   const [period, setPeriod] = useState("12m");
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "entregas">(canSeeDeliveryBoard ? "entregas" : "overview");
 
   const selectedLocation = locations.find((l) => l.id === Number(locationFilter));
   const selectedStoreName = selectedLocation?.name;
@@ -345,100 +350,122 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
           <p className="text-gray-400 text-sm mt-1">
-            {isAlmacenMode
-              ? selectedStoreName
-                ? `Analíticas de ventas · vista global (${selectedStoreName})`
-                : "Analíticas de ventas · vista global"
-              : selectedStoreName
-                ? `Resumen de ${selectedStoreName}`
-                : isTienda
-                  ? "Resumen de tu tienda"
-                  : "Resumen general del sistema"}
+            {activeTab === "entregas"
+              ? "Pizarra de entregas para Ventas por Mayor y Departamentales"
+              : isAlmacenMode
+                ? selectedStoreName
+                  ? `Analíticas de ventas · vista global (${selectedStoreName})`
+                  : "Analíticas de ventas · vista global"
+                : selectedStoreName
+                  ? `Resumen de ${selectedStoreName}`
+                  : isTienda
+                    ? "Resumen de tu tienda"
+                    : "Resumen general del sistema"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {!isTienda && locations.length > 0 && (
-            <div className="relative">
-              <Store size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-              <select
-                value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
-                aria-label="Filtrar por ubicación"
-                className="pl-9 pr-8 py-2 bg-dark-800 border border-dark-700/50 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 appearance-none max-w-[220px]"
+          {canSeeDeliveryBoard && (
+            <div className="flex gap-1 p-1 bg-dark-800 border border-dark-700/50 rounded-xl">
+              <button
+                onClick={() => setActiveTab("entregas")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${activeTab === "entregas" ? "bg-primary-600/20 text-primary-400" : "text-gray-400 hover:text-gray-200"}`}
               >
-                <option value="">Todas las tiendas</option>
-                <optgroup label="Tiendas">
-                  {locations
-                    .filter((l) => l.type === "TIENDA")
-                    .map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
-                </optgroup>
-                <optgroup label="Almacenes">
-                  {locations
-                    .filter((l) => l.type === "ALMACEN")
-                    .map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
-                </optgroup>
-              </select>
-              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                <Truck size={16} /> Pizarra de Entregas
+              </button>
+              <button
+                onClick={() => setActiveTab("overview")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${activeTab === "overview" ? "bg-primary-600/20 text-primary-400" : "text-gray-400 hover:text-gray-200"}`}
+              >
+                <LayoutDashboard size={16} /> Resumen
+              </button>
             </div>
           )}
-          {!isTienda && sellers.length > 0 && (
-            <div className="relative">
-              <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-              <select
-                value={sellerFilter}
-                onChange={(e) => setSellerFilter(e.target.value)}
-                aria-label="Filtrar por vendedor"
-                className="pl-9 pr-8 py-2 bg-dark-800 border border-dark-700/50 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 appearance-none max-w-[200px]"
+          {activeTab === "overview" && (
+            <>
+              {!isTienda && locations.length > 0 && (
+                <div className="relative">
+                  <Store size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  <select
+                    value={locationFilter}
+                    onChange={(e) => setLocationFilter(e.target.value)}
+                    aria-label="Filtrar por ubicación"
+                    className="pl-9 pr-8 py-2 bg-dark-800 border border-dark-700/50 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 appearance-none max-w-[220px]"
+                  >
+                    <option value="">Todas las tiendas</option>
+                    <optgroup label="Tiendas">
+                      {locations
+                        .filter((l) => l.type === "TIENDA")
+                        .map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.name}
+                          </option>
+                        ))}
+                    </optgroup>
+                    <optgroup label="Almacenes">
+                      {locations
+                        .filter((l) => l.type === "ALMACEN")
+                        .map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.name}
+                          </option>
+                        ))}
+                    </optgroup>
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                </div>
+              )}
+              {!isTienda && sellers.length > 0 && (
+                <div className="relative">
+                  <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  <select
+                    value={sellerFilter}
+                    onChange={(e) => setSellerFilter(e.target.value)}
+                    aria-label="Filtrar por vendedor"
+                    className="pl-9 pr-8 py-2 bg-dark-800 border border-dark-700/50 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 appearance-none max-w-[200px]"
+                  >
+                    <option value="">Todos los vendedores</option>
+                    {sellers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                </div>
+              )}
+              <div className="relative">
+                <Clock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                <select
+                  value={period}
+                  onChange={(e) => setPeriod(e.target.value)}
+                  aria-label="Período de análisis"
+                  className="pl-9 pr-8 py-2 bg-dark-800 border border-dark-700/50 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 appearance-none"
+                >
+                  {PERIODS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+              </div>
+              <button
+                onClick={() => {
+                  fetchAnalytics();
+                  if (!isAlmacenMode) fetchDashboard();
+                }}
+                className="p-2 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all"
+                title="Actualizar"
+                aria-label="Actualizar dashboard"
               >
-                <option value="">Todos los vendedores</option>
-                {sellers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-            </div>
+                <RefreshCw size={18} />
+              </button>
+            </>
           )}
-          <div className="relative">
-            <Clock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-            <select
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              aria-label="Período de análisis"
-              className="pl-9 pr-8 py-2 bg-dark-800 border border-dark-700/50 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 appearance-none"
-            >
-              {PERIODS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-          </div>
-          <button
-            onClick={() => {
-              fetchAnalytics();
-              if (!isAlmacenMode) fetchDashboard();
-            }}
-            className="p-2 bg-dark-800 border border-dark-700/50 rounded-xl text-gray-400 hover:text-foreground hover:border-primary-600/50 transition-all"
-            title="Actualizar"
-            aria-label="Actualizar dashboard"
-          >
-            <RefreshCw size={18} />
-          </button>
         </div>
       </div>
 
-      {!isAlmacenMode && error && data && (
+      {activeTab === "overview" && !isAlmacenMode && error && data && (
         <div
           role="alert"
           className="flex flex-wrap items-center gap-3 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-2xl text-sm text-red-300"
@@ -454,7 +481,9 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {isAlmacenMode ? (
+      {activeTab === "entregas" && canSeeDeliveryBoard ? (
+        <DeliveryBoardTab />
+      ) : isAlmacenMode ? (
         <SalesAnalyticsBoard data={analytics} loading={analyticsLoading && !analytics} showLocationChart />
       ) : (
         <>
