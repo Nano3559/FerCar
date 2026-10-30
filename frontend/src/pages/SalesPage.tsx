@@ -161,25 +161,21 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const histStores = locations.filter((l) => l.type === "TIENDA");
 
   // --- Seller ---
-  // El vendedor de la venta es siempre la cuenta con la que se entro, asi que
-  // aqui solo se carga el listado para el filtro del historial.
+  // Listado para el filtro de vendedor en el historial
   const [vendedores, setVendedores] = useState<{ id: number; name: string; locationId: number | null }[]>([]);
 
   useEffect(() => {
-    if (!isTienda && isAdmin) {
+    if (!isTienda) {
       api.get("/users").then((r) => {
         const users = Array.isArray(r.data) ? r.data : r.data.users || [];
-        // ADMIN tambien vende: como el vendedor es la cuenta con la que se
-        // entra, dejar fuera a los admin escondia sus propias ventas del
-        // filtro. Se listan inactivos a proposito: sus ventas son historico.
         setVendedores(
           users
-            .filter((u: any) => u.role === "TIENDA" || u.role === "ADMIN")
+            .filter((u: any) => u.active !== false)
             .map((u: any) => ({ id: u.id, name: u.name, locationId: u.locationId }))
         );
       }).catch(() => {});
     }
-  }, [isAdmin, isTienda]);
+  }, [isTienda]);
 
   // --- Views (pestañas) ---
   const [activeTab, setActiveTab] = useState<"venta" | "carrito" | "historial">("venta");
