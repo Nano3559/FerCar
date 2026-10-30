@@ -529,7 +529,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
           className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "nueva" ? "bg-dark-700/70 text-foreground" : "text-gray-400 hover:text-foreground"}`}>
           <ListChecks size={15} /> Nueva lista
         </button>
-        {isAdmin && (
+        {(isAdmin || user?.role === "INVENTARIO") && (
           <button
             onClick={() => setTab("historial")}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "historial" ? "bg-dark-700/70 text-foreground" : "text-gray-400 hover:text-foreground"}`}>
@@ -600,7 +600,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                 </button>
               </div>
             </div>
-            {isAdmin && (
+            {(isAdmin || user?.role === "INVENTARIO") && (
               <div className="px-4 py-2.5 border-b border-dark-700/50 flex items-center gap-2 flex-wrap bg-dark-900/30">
                 <div className="min-w-[190px]">
                   <select
