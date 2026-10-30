@@ -108,44 +108,38 @@ export default function DeliveryBoardTab({ compact = false }: Props) {
   const markDelivered = async (id: number) => {
     try {
       try {
-        const res = await api.post(`/delivery-board/${id}/deliver`);
+        await api.post(`/delivery-board/${id}/deliver`);
         toast.success("Venta marcada como entregada");
-        setPending((prev) => prev.filter((s) => s.id !== id));
-        if (res.data.sale) setDelivered((prev) => [{ ...res.data.sale, seller: res.data.sale.seller || res.data.sale.user?.name }, ...prev]);
-        return;
       } catch {
-        // Fallback visual
+        try {
+          await api.post(`/delivery-board/${id}/entregar`);
+        } catch {
+          // ignorar
+        }
       }
-      const sale = pending.find((s) => s.id === id);
-      if (sale) {
-        setPending((prev) => prev.filter((s) => s.id !== id));
-        setDelivered((prev) => [{ ...sale, deliveryStatus: "ENTREGADO", deliveredAt: new Date().toISOString() }, ...prev]);
-        toast.success("Venta marcada como entregada");
-      }
+      await fetchBoard();
     } catch (e: any) {
       toast.error(e.response?.data?.message || "Error al marcar entrega");
+      await fetchBoard();
     }
   };
 
   const markPending = async (id: number) => {
     try {
       try {
-        const res = await api.post(`/delivery-board/${id}/pendiente`);
+        await api.post(`/delivery-board/${id}/pendiente`);
         toast.success("Venta vuelta a pendiente");
-        setDelivered((prev) => prev.filter((s) => s.id !== id));
-        if (res.data.sale) setPending((prev) => [{ ...res.data.sale, seller: res.data.sale.seller || res.data.sale.user?.name }, ...prev]);
-        return;
       } catch {
-        // Fallback visual
+        try {
+          await api.post(`/delivery-board/${id}/revert`);
+        } catch {
+          // ignorar
+        }
       }
-      const sale = delivered.find((s) => s.id === id);
-      if (sale) {
-        setDelivered((prev) => prev.filter((s) => s.id !== id));
-        setPending((prev) => [{ ...sale, deliveryStatus: "PENDIENTE", deliveredAt: null }, ...prev]);
-        toast.success("Venta vuelta a pendiente");
-      }
+      await fetchBoard();
     } catch (e: any) {
       toast.error(e.response?.data?.message || "Error al volver a pendiente");
+      await fetchBoard();
     }
   };
 
