@@ -598,7 +598,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                 </button>
               </div>
             </div>
-            {(isAdmin || user?.role === "INVENTARIO") && (
+            {(isAdmin || user?.role === "INVENTARIO" || user?.role === "VENDEDOR" || user?.role === "TIENDA") && (
               <div className="px-4 py-2.5 border-b border-dark-700/50 flex items-center gap-2 flex-wrap bg-dark-900/30">
                 <div className="min-w-[190px]">
                   <select

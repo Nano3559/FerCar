@@ -145,7 +145,7 @@ function formatDate(dateStr: string) {
 export default function DashboardPage() {
   const { user } = useAuthStore();
   const isTienda = user?.role === "TIENDA";
-  const canSeeDeliveryBoard = user?.role === "ADMIN" || user?.role === "INVENTARIO" || user?.role === "TIENDA";
+  const canSeeDeliveryBoard = user?.role === "ADMIN" || user?.role === "INVENTARIO" || user?.role === "TIENDA" || user?.role === "VENDEDOR";
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

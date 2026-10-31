@@ -62,9 +62,9 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
   const { user } = useAuthStore();
   const role = user?.role || "";
   const isInventario = role === "INVENTARIO" || role === "ADMIN";
-  const isTienda = role === "TIENDA" || role === "ADMIN";
+  const isTienda = role === "TIENDA" || role === "ADMIN" || role === "VENDEDOR";
   // Las solicitudes las crean vendedores (tienda) o administradores.
-  const canCreate = role === "TIENDA" || role === "ADMIN";
+  const canCreate = role === "TIENDA" || role === "ADMIN" || role === "VENDEDOR";
 
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,7 +271,7 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
           reason: "Primero se entrega la nota de despacho; recién ahí se puede confirmar la llegada a la tienda.",
         };
       }
-      if (role !== "ADMIN" && (!user || record.requestedBy.id !== user.id)) {
+      if (role !== "ADMIN" && role !== "INVENTARIO" && (!user || record.requestedBy.id !== user.id)) {
         return {
           show: isTienda,
           enabled: false,
