@@ -165,17 +165,15 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [vendedores, setVendedores] = useState<{ id: number; name: string; locationId: number | null }[]>([]);
 
   useEffect(() => {
-    if (!isTienda) {
-      api.get("/users").then((r) => {
-        const users = Array.isArray(r.data) ? r.data : r.data.users || [];
-        setVendedores(
-          users
-            .filter((u: any) => u.active !== false)
-            .map((u: any) => ({ id: u.id, name: u.name, locationId: u.locationId }))
-        );
-      }).catch(() => {});
-    }
-  }, [isTienda]);
+    api.get("/users").then((r) => {
+      const users = Array.isArray(r.data) ? r.data : r.data.users || [];
+      setVendedores(
+        users
+          .filter((u: any) => u.active !== false)
+          .map((u: any) => ({ id: u.id, name: u.name, locationId: u.locationId }))
+      );
+    }).catch(() => {});
+  }, []);
 
   // --- Views (pestañas) ---
   const [activeTab, setActiveTab] = useState<"venta" | "carrito" | "historial">("venta");
