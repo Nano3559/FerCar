@@ -23,15 +23,24 @@ const getCategoriesFromConfig = (cc: Record<string, string[]> | Record<string, u
 const normalizePermissions = (permissions: string[]): string[] =>
   permissions.map((permission) => permission === "productos" ? "inventario" : permission);
 
+const normalizeRole = (role?: string): string => {
+  if (!role) return "";
+  const r = role.toUpperCase();
+  if (r === "VENDEDOR") return "TIENDA";
+  return r;
+};
+
 const getAllowedCategories = (role: string, config: Record<string, unknown>): string[] => {
+  const r = normalizeRole(role);
   const configured = getCategoriesFromConfig(config);
-  return configured.length || role !== "TIENDA" ? configured : ["Frenos", "Motor", "Eléctrico"];
+  return configured.length || r !== "TIENDA" ? configured : ["Frenos", "Motor", "Eléctrico"];
 };
 
 const fallbackPermissions = (role: string): string[] => {
-  if (role === "ADMIN") return ["inventario", "ventas", "ventas-mayor", "devoluciones", "solicitudes", "movimientos", "costos", "precios", "reportes", "configuracion"];
-  if (role === "TIENDA") return ["inventario", "ventas", "ventas-mayor", "devoluciones", "solicitudes", "reportes"];
-  if (role === "INVENTARIO") return ["inventario", "solicitudes", "movimientos", "costos", "precios", "despachos"];
+  const r = normalizeRole(role);
+  if (r === "ADMIN") return ["inventario", "ventas", "ventas-mayor", "devoluciones", "solicitudes", "movimientos", "costos", "precios", "reportes", "configuracion"];
+  if (r === "TIENDA") return ["inventario", "ventas", "ventas-mayor", "devoluciones", "solicitudes", "reportes"];
+  if (r === "INVENTARIO") return ["inventario", "solicitudes", "movimientos", "costos", "precios", "despachos"];
   return [];
 };
 
@@ -44,24 +53,25 @@ export const useAuthStore = create<AuthState>((set) => ({
   allowedCategories: [],
   hydrated: false,
   login: async (user, token) => {
+    const normalizedUser = user ? { ...user, role: normalizeRole(user.role) } : user;
     localStorage.setItem("token", token);
-    localStorage.setItem("user", JSON.stringify(user));
-    set({ user, token, isAuthenticated: true, hydrated: true });
+    localStorage.setItem("user", JSON.stringify(normalizedUser));
+    set({ user: normalizedUser, token, isAuthenticated: true, hydrated: true });
 
     try {
       const res = await api.get("/permissions/permissions/me");
       let perms = normalizePermissions(res.data.permissions || []);
-      if (user.role === "INVENTARIO" && !perms.includes("despachos")) {
+      if (normalizedUser?.role === "INVENTARIO" && !perms.includes("despachos")) {
         perms = [...perms, "despachos"];
       }
       const cc = res.data.columnConfig || {};
-      set({ permissions: perms, columnConfig: cc, allowedCategories: getAllowedCategories(user.role, cc) });
+      set({ permissions: perms, columnConfig: cc, allowedCategories: getAllowedCategories(normalizedUser?.role || "", cc) });
     } catch {
-      let perms = fallbackPermissions(user.role);
-      if (user.role === "INVENTARIO" && !perms.includes("despachos")) {
+      let perms = fallbackPermissions(normalizedUser?.role || "");
+      if (normalizedUser?.role === "INVENTARIO" && !perms.includes("despachos")) {
         perms = [...perms, "despachos"];
       }
-      set({ permissions: perms, allowedCategories: getAllowedCategories(user.role, {}) });
+      set({ permissions: perms, allowedCategories: getAllowedCategories(normalizedUser?.role || "", {}) });
     }
   },
   logout: () => {
@@ -75,17 +85,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (token && userStr) {
       try {
         const user = JSON.parse(userStr);
-        set({ user, token, isAuthenticated: true });
+        const normalizedUser = { ...user, role: normalizeRole(user.role) };
+        localStorage.setItem("user", JSON.stringify(normalizedUser));
+        set({ user: normalizedUser, token, isAuthenticated: true });
 
         // Reload permissions from backend
         api
           .get("/permissions/permissions/me")
           .then((res) => {
             const cc = res.data.columnConfig || {};
-            set({ permissions: normalizePermissions(res.data.permissions || []), columnConfig: cc, allowedCategories: getAllowedCategories(user.role, cc), hydrated: true });
+            set({ permissions: normalizePermissions(res.data.permissions || []), columnConfig: cc, allowedCategories: getAllowedCategories(normalizedUser.role, cc), hydrated: true });
           })
           .catch(() => {
-            set({ permissions: fallbackPermissions(user.role), allowedCategories: getAllowedCategories(user.role, {}), hydrated: true });
+            set({ permissions: fallbackPermissions(normalizedUser.role), allowedCategories: getAllowedCategories(normalizedUser.role, {}), hydrated: true });
           });
       } catch {
         localStorage.removeItem("token");
