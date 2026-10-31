@@ -200,10 +200,8 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
   }, [historyStatus]);
 
   useEffect(() => {
-    if (isAdmin || user?.role === "INVENTARIO" || user?.role === "TIENDA") {
-      loadNotes();
-    }
-  }, [loadNotes, isAdmin, user?.role]);
+    loadNotes();
+  }, [loadNotes]);
 
   const suggestions = useMemo(
     () => products.map((p) => `${p.name} — ${p.itemCode}`),
@@ -531,13 +529,11 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
           className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "nueva" ? "bg-dark-700/70 text-foreground" : "text-gray-400 hover:text-foreground"}`}>
           <ListChecks size={15} /> Nueva lista
         </button>
-        {(isAdmin || user?.role === "INVENTARIO" || user?.role === "TIENDA") && (
-          <button
-            onClick={() => { setTab("historial"); loadNotes(); }}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "historial" ? "bg-dark-700/70 text-foreground" : "text-gray-400 hover:text-foreground"}`}>
-            <History size={15} /> Historial
-          </button>
-        )}
+        <button
+          onClick={() => { setTab("historial"); loadNotes(); }}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "historial" ? "bg-dark-700/70 text-foreground" : "text-gray-400 hover:text-foreground"}`}>
+          <History size={15} /> Historial
+        </button>
       </div>
 
       {tab === "nueva" ? (
