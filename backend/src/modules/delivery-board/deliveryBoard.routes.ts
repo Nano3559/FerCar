@@ -132,7 +132,7 @@ router.post("/:id/deliver", async (req: AuthRequest, res: Response) => {
         data: {
           deliveryStatus: "ENTREGADO",
           deliveredAt: new Date(),
-          deliveredById: req.user?.id || null,
+          deliveredById: req.user?.userId || null,
         },
         include: {
           user: { select: { id: true, name: true } },
@@ -161,7 +161,7 @@ router.post("/:id/deliver", async (req: AuthRequest, res: Response) => {
       console.error("Fallback deliver con SQL:", prismaErr);
       await prisma.$executeRawUnsafe(
         `UPDATE "Sale" SET "deliveryStatus" = 'ENTREGADO', "deliveredAt" = NOW(), "deliveredById" = $1 WHERE "id" = $2`,
-        req.user?.id || null,
+        req.user?.userId || null,
         saleId
       );
       const rows = await prisma.$queryRawUnsafe<any[]>(
