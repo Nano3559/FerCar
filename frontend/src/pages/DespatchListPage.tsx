@@ -90,6 +90,9 @@ const StatusBadge = ({ status }: { status: DespatchNoteRow["status"] }) => {
 export default function DespatchListPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuthStore();
   const isAdmin = user?.role === "ADMIN";
+  // Crear, entregar y anular notas es solo para ADMIN e INVENTARIO.
+  // La tienda/vendedor entra en modo lectura para consultar el historial.
+  const canManage = isAdmin || user?.role === "INVENTARIO";
 
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [locations, setLocations] = useState<LocationLite[]>([]);
@@ -202,6 +205,11 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
   useEffect(() => {
     loadNotes();
   }, [loadNotes]);
+
+  // Quien no administra despachos solo puede ver el historial.
+  useEffect(() => {
+    if (!canManage) setTab("historial");
+  }, [canManage]);
 
   const suggestions = useMemo(
     () => products.map((p) => `${p.name} — ${p.itemCode}`),
@@ -360,7 +368,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
       setObservacion("");
       setDestinationId("");
       setRequestIds([]);
-      if (isAdmin || user?.role === "INVENTARIO" || user?.role === "TIENDA") loadNotes();
+      loadNotes();
     } catch (e: any) {
       toast.error(e?.response?.data?.message || "Error al guardar la nota");
     } finally {
@@ -524,11 +532,13 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
 
       {/* Pestañas */}
       <div className="flex gap-1 border border-dark-700/50 rounded-xl p-1 w-fit">
-        <button
-          onClick={() => setTab("nueva")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "nueva" ? "bg-dark-700/70 text-foreground" : "text-gray-400 hover:text-foreground"}`}>
-          <ListChecks size={15} /> Nueva lista
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setTab("nueva")}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "nueva" ? "bg-dark-700/70 text-foreground" : "text-gray-400 hover:text-foreground"}`}>
+            <ListChecks size={15} /> Nueva lista
+          </button>
+        )}
         <button
           onClick={() => { setTab("historial"); loadNotes(); }}
           className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "historial" ? "bg-dark-700/70 text-foreground" : "text-gray-400 hover:text-foreground"}`}>
@@ -598,7 +608,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                 </button>
               </div>
             </div>
-            {(isAdmin || user?.role === "INVENTARIO" || user?.role === "VENDEDOR" || user?.role === "TIENDA") && (
+            {canManage && (
               <div className="px-4 py-2.5 border-b border-dark-700/50 flex items-center gap-2 flex-wrap bg-dark-900/30">
                 <div className="min-w-[190px]">
                   <select
@@ -757,7 +767,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                             className="p-1.5 text-gray-400 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-all">
                             <Eye size={15} />
                           </button>
-                          {n.status === "EMITIDA" && (
+                          {canManage && n.status === "EMITIDA" && (
                             <button
                               onClick={() => {
                                 setDeliverNote(n);
@@ -768,7 +778,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                               <CheckCircle2 size={15} />
                             </button>
                           )}
-                          {n.status === "EMITIDA" && (
+                          {canManage && n.status === "EMITIDA" && (
                             <button onClick={() => setCancelNote(n)} title="Anular" aria-label="Anular nota"
                               className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
                               <Ban size={15} />
