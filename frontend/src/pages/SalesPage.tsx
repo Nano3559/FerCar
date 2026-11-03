@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, X, CreditCard,
   FileText, RefreshCw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  Check, Clock, MapPin, User, Filter, Printer, Send, Lock,
+  Check, Clock, MapPin, User, Filter, Printer, Send, Lock, Pencil,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import axios from "axios";
@@ -467,6 +467,11 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   // --- Payment modal ---
   const [showPayment, setShowPayment] = useState(false);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
+  // Precio editable solo en el paso final: el vendedor puede subir o bajar el
+  // precio de cada linea antes de cobrar. El borrador guarda lo que se esta
+  // escribiendo para no pelear con el input mientras se teclea.
+  const [editPrices, setEditPrices] = useState(false);
+  const [priceDrafts, setPriceDrafts] = useState<Record<number, string>>({});
   const [requiereFactura, setRequiereFactura] = useState(false);
   // El boton de factura solo habilita los datos de la factura. Los del cliente
   // son opcionales y se piden aparte con esta marca.
@@ -1065,6 +1070,10 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
     }
 
     setPayments([{ method: "EFECTIVO", amount: String(cartTotal.toFixed(2)) }]);
+    setPriceDrafts(
+      Object.fromEntries(cartCobrando.map((item) => [item.productId, String(item.unitPrice)]))
+    );
+    setEditPrices(false);
     setRequiereFactura(false);
     setIncluirDatosCliente(false);
     setCustomerData({ name: "", nit: "", phone: "" });
@@ -1109,6 +1118,32 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
 
   const totalPaid = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const pending = cartTotal - totalPaid;
+
+  /**
+   * Cambia el precio unitario de una linea en el paso final. El total del
+   * carrito se recalcula solo; si hay un unico metodo de pago, su monto se
+   * ajusta al nuevo total para que el cobro siga cuadrando.
+   */
+  const setItemUnitPrice = (productId: number, raw: string) => {
+    setPriceDrafts((prev) => ({ ...prev, [productId]: raw }));
+
+    const value = Number(raw);
+    if (raw.trim() === "" || !Number.isFinite(value) || value < 0) return;
+    const price = Math.round(value * 100) / 100;
+
+    const nuevoTotal = cart.reduce(
+      (sum, c) => sum + (c.productId === productId ? price : c.unitPrice) * c.quantity,
+      0
+    );
+
+    updateActiveCart((prev) =>
+      prev.map((c) => (c.productId === productId ? { ...c, unitPrice: price } : c))
+    );
+
+    setPayments((prev) =>
+      prev.length === 1 ? prev.map((p) => ({ ...p, amount: nuevoTotal.toFixed(2) })) : prev
+    );
+  };
 
   // ==================== CONFIRM SALE ====================
   const confirmSale = async () => {
@@ -2367,6 +2402,67 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                   <div className="flex items-center justify-between">
                     <span className="text-gray-400 text-xs">Pendiente</span>
                     <span className="text-sm font-medium text-red-400">{formatBs(pending)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Cambio de precio en el paso final: se puede subir o bajar
+                  cada linea antes de cobrar. El total y el monto del pago se
+                  recalculan al instante. */}
+              <div className="bg-dark-900/50 border border-dark-700/30 rounded-xl overflow-hidden">
+                <button
+                  onClick={() => setEditPrices((v) => !v)}
+                  aria-expanded={editPrices}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-dark-700/20 transition-all">
+                  <div className="flex items-center gap-2">
+                    <Pencil size={15} className="text-primary-400" />
+                    <span className="text-sm font-medium text-foreground">Cambiar precios</span>
+                  </div>
+                  <ChevronDown size={16} className={`text-gray-500 transition-transform ${editPrices ? "rotate-180" : ""}`} />
+                </button>
+
+                {editPrices && (
+                  <div className="px-4 pb-4 space-y-2.5">
+                    {cart.map((c) => (
+                      <div key={c.productId} className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs text-foreground truncate">{c.name}</p>
+                          <p className="text-[11px] text-gray-500">
+                            {c.quantity} × {formatBs(c.unitPrice)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => setItemUnitPrice(c.productId, Math.max(0, c.unitPrice - 1).toFixed(2))}
+                            aria-label={`Bajar precio de ${c.name}`}
+                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-dark-700 rounded-lg transition-all">
+                            <Minus size={12} />
+                          </button>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={priceDrafts[c.productId] ?? String(c.unitPrice)}
+                            onChange={(e) => setItemUnitPrice(c.productId, e.target.value)}
+                            onBlur={() =>
+                              setPriceDrafts((prev) => ({ ...prev, [c.productId]: String(c.unitPrice) }))
+                            }
+                            aria-label={`Precio unitario de ${c.name}`}
+                            className="w-24 px-2 py-1.5 bg-dark-900/70 border border-dark-600/50 rounded-lg text-foreground text-sm text-right focus:ring-2 focus:ring-primary-500 outline-none"
+                          />
+                          <button
+                            onClick={() => setItemUnitPrice(c.productId, (c.unitPrice + 1).toFixed(2))}
+                            aria-label={`Subir precio de ${c.name}`}
+                            className="p-1.5 text-gray-400 hover:text-green-400 hover:bg-dark-700 rounded-lg transition-all">
+                            <Plus size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <p className="text-[11px] text-gray-500">
+                      El total y el monto del pago se actualizan con el nuevo precio.
+                    </p>
                   </div>
                 )}
               </div>
