@@ -90,9 +90,12 @@ const StatusBadge = ({ status }: { status: DespatchNoteRow["status"] }) => {
 export default function DespatchListPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuthStore();
   const isAdmin = user?.role === "ADMIN";
-  // Crear, entregar y anular notas es solo para ADMIN e INVENTARIO.
-  // La tienda/vendedor entra en modo lectura para consultar el historial.
-  const canManage = isAdmin || user?.role === "INVENTARIO";
+  // La tienda/vendedor también opera la lista: crear, entregar y anular.
+  const canManage =
+    isAdmin ||
+    user?.role === "INVENTARIO" ||
+    user?.role === "TIENDA" ||
+    user?.role === "VENDEDOR";
 
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [locations, setLocations] = useState<LocationLite[]>([]);

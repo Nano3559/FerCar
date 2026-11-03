@@ -15,9 +15,9 @@ const prisma = new PrismaClient();
 
 router.use(authenticate);
 
-// Lectura (historial y detalle): cualquier usuario autenticado. La tienda o
-// vendedor necesita consultar las notas que le despacharon.
-// Escritura (crear, entregar, anular): solo ADMIN e INVENTARIO.
+// Roles que operan la lista de despacho. La tienda/vendedor también puede
+// crear, entregar y anular notas, además de consultar el historial.
+const ROLES_DESPACHO = ["ADMIN", "INVENTARIO", "TIENDA", "VENDEDOR"];
 
 type DespatchItemInput = {
   productId?: any;
@@ -30,7 +30,7 @@ type DespatchItemInput = {
 // producto+ubicación y guarda una foto de producto/origen.
 // Opcionalmente recibe destinationId (tienda que recibe) y requestIds
 // (solicitudes que cumple esta nota).
-router.post("/", authorize("ADMIN", "INVENTARIO"), async (req: AuthRequest, res: Response) => {
+router.post("/", authorize(...ROLES_DESPACHO), async (req: AuthRequest, res: Response) => {
   try {
     const entregadoA = parseString(req.body.entregadoA, "Entregado a", { max: 120 });
     const observacion = parseString(req.body.observacion, "Observación", { max: 300 });
@@ -279,7 +279,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 
 // GET /pending-requests — Solicitudes listas para despachar, agrupadas por
 // tienda de destino. Alimenta la carga de la nota de despacho desde Solicitudes.
-router.get("/pending-requests", authorize("ADMIN", "INVENTARIO"), async (req: AuthRequest, res: Response) => {
+router.get("/pending-requests", authorize(...ROLES_DESPACHO), async (req: AuthRequest, res: Response) => {
   try {
     const { destinationId } = req.query;
     const where: any = {
@@ -399,7 +399,7 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
 //  2) registra un movimiento por ítem,
 //  3) pasa las solicitudes vinculadas a ENTREGADO para que las confirme
 //     quien las pidió.
-router.patch("/:id", authorize("ADMIN", "INVENTARIO"), async (req: AuthRequest, res: Response) => {
+router.patch("/:id", authorize(...ROLES_DESPACHO), async (req: AuthRequest, res: Response) => {
   try {
     const id = parseId(req.params.id);
     const note = await prisma.despatchNote.findUnique({
@@ -605,7 +605,7 @@ router.patch("/:id", authorize("ADMIN", "INVENTARIO"), async (req: AuthRequest, 
 });
 
 // POST /:id/cancel — Anular una nota (no anulada ni anulada; requiere motivo)
-router.post("/:id/cancel", authorize("ADMIN", "INVENTARIO"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/cancel", authorize(...ROLES_DESPACHO), async (req: AuthRequest, res: Response) => {
   try {
     const id = parseId(req.params.id);
     const note = await prisma.despatchNote.findUnique({ where: { id } });
