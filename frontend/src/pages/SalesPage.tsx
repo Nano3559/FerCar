@@ -926,18 +926,16 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
     }
   };
 
-  // Los textos largos se cortan para que la tabla entre sin barra horizontal.
-  // Con 12 columnas, un detalle o un nombre sin limite ensanchan la tabla
-  // entera y obligan a scrollear de lado. El texto completo queda en el title.
+  // Se permite ver el contenido completo (sin truncar) para no ocultar datos.
   const renderSearchCell = (p: Product, column: string) => {
-    if (column === "Fabricante") return <td key={column} className="px-3 py-2 text-gray-300 max-w-[110px] truncate" title={p.manufacturer}>{p.manufacturer}</td>;
-    if (column === "Producto") return <td key={column} className="px-3 py-2 text-foreground font-medium max-w-[190px] truncate" title={p.name}>{p.name}</td>;
-    if (column === "Marca") return <td key={column} className="px-3 py-2 text-gray-300 max-w-[100px] truncate" title={p.brand}>{p.brand}</td>;
-    if (column === "Modelo") return <td key={column} className="px-3 py-2 text-gray-300 max-w-[110px] truncate" title={p.model}>{p.model}</td>;
+    if (column === "Fabricante") return <td key={column} className="px-3 py-2 text-gray-300 whitespace-normal break-words" title={p.manufacturer}>{p.manufacturer}</td>;
+    if (column === "Producto") return <td key={column} className="px-3 py-2 text-foreground font-medium whitespace-normal break-words" title={p.name}>{p.name}</td>;
+    if (column === "Marca") return <td key={column} className="px-3 py-2 text-gray-300 whitespace-normal break-words" title={p.brand}>{p.brand}</td>;
+    if (column === "Modelo") return <td key={column} className="px-3 py-2 text-gray-300 whitespace-normal break-words" title={p.model}>{p.model}</td>;
     if (column === "Año") return <td key={column} className="px-3 py-2 text-gray-400 whitespace-nowrap">{p.year}</td>;
-    if (column === "Detalles") return <td key={column} className="px-3 py-2 text-gray-400 text-xs max-w-[130px] truncate" title={p.detalles || p.detail || ""}>{p.detalles || p.detail || "—"}</td>;
-    if (column === "Cód. OEM") return <td key={column} className="px-3 py-2 text-gray-400 text-xs max-w-[110px] truncate" title={p.oemCode || ""}>{p.oemCode || "—"}</td>;
-    if (column === "Cód. Fábrica") return <td key={column} className="px-3 py-2 text-gray-400 text-xs max-w-[110px] truncate" title={p.factoryCode || ""}>{p.factoryCode || "—"}</td>;
+    if (column === "Detalles") return <td key={column} className="px-3 py-2 text-gray-400 text-xs whitespace-normal break-words" title={p.detalles || p.detail || ""}>{p.detalles || p.detail || "-"}</td>;
+    if (column === "Cód. OEM") return <td key={column} className="px-3 py-2 text-gray-400 text-xs whitespace-normal break-words" title={p.oemCode || ""}>{p.oemCode || "-"}</td>;
+    if (column === "Cód. Fábrica") return <td key={column} className="px-3 py-2 text-gray-400 text-xs whitespace-normal break-words" title={p.factoryCode || ""}>{p.factoryCode || "-"}</td>;
     if (column === "Precio 1") return <td key={column} className="px-3 py-2 text-right text-green-400 font-medium whitespace-nowrap">{formatBs(Number(p.price1))}</td>;
     if (column === "Precio 2") return <td key={column} className="px-3 py-2 text-right text-blue-400 whitespace-nowrap">{Number(p.price2) > 0 ? formatBs(Number(p.price2)) : "—"}</td>;
     if (column === "Stock") return (

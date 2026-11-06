@@ -1017,7 +1017,7 @@ export default function WholesalePage() {
                         {searchResults.map((p) => (
                           <tr key={p.id} className="border-b border-dark-700/30 last:border-0 hover:bg-dark-900/30">
                             <td className="px-3 py-2 text-gray-300">{p.manufacturer}</td>
-                            <td className="px-3 py-2 text-foreground font-medium max-w-[200px] truncate">{p.name}</td>
+                            <td className="px-3 py-2 text-foreground font-medium whitespace-normal break-words">{p.name}</td>
                             <td className="px-3 py-2 text-gray-300">{p.brand}</td>
                             <td className="px-3 py-2 text-gray-300">{p.model}</td>
                             <td className="px-3 py-2 text-gray-400">{p.year}</td>
