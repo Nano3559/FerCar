@@ -944,14 +944,8 @@ export default function WholesalePage() {
 
               {showFilters && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-4 pt-4 border-t border-dark-700/50">
-                  <Autocomplete value={itemCodeFilter} onChange={setItemCodeFilter} suggestions={filters.itemCodes || []}
-                    placeholder="Escribe el código..." label="Código (Item)" />
-                  <Autocomplete value={nameFilter} onChange={setNameFilter} suggestions={filters.names || []}
-                    placeholder="Escribe el nombre..." label="Producto (nombre)" />
                   <Autocomplete value={manufacturer} onChange={setManufacturer} suggestions={filters.manufacturers}
                     placeholder="Todos los fabricantes" label="Fabricante" />
-                  <Autocomplete value={categoryName} onChange={(v) => { setCategoryName(v); const found = filters.categories.find((c) => c.name === v); setCategoryId(found ? String(found.id) : ""); }}
-                    suggestions={filters.categories.map((c) => c.name)} placeholder="Todas las categorías" label="Categoría" />
                   <Autocomplete value={brand} onChange={setBrand} suggestions={filters.brands}
                     placeholder="Todas las marcas" label="Marca" />
                   <Autocomplete value={model} onChange={setModel} suggestions={filters.models || []}
@@ -964,6 +958,8 @@ export default function WholesalePage() {
                     placeholder="Todos los OEM" label="Cód. OEM" />
                   <Autocomplete value={factoryCode} onChange={setFactoryCode} suggestions={filters.factoryCodes || []}
                     placeholder="Todos los códigos de fábrica" label="Cód. Fábrica" />
+                  <Autocomplete value={categoryName} onChange={(v) => { setCategoryName(v); const found = filters.categories.find((c) => c.name === v); setCategoryId(found ? String(found.id) : ""); }}
+                    suggestions={filters.categories.map((c) => c.name)} placeholder="Todas las categorías" label="Categoría" />
                 </div>
               )}
 
