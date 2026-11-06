@@ -784,7 +784,26 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
 
     const suppliers = await prisma.supplier.findMany();
     const supplierByName: Record<string, number> = {};
-    suppliers.forEach((s) => { supplierByName[normalize(s.name)] = s.id; });
+    const normSupplier = (s: string) => normalize(s).replace(/\s+/g, " ").trim();
+    suppliers.forEach((s) => {
+      const n = normSupplier(s.name);
+      supplierByName[n] = s.id;
+      // También indexar sin caracteres especiales comunes para tolerar variaciones
+      supplierByName[n.replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim()] = s.id;
+    });
+    const findSupplierId = (name: string): number | null => {
+      if (!name) return null;
+      const n = normSupplier(name);
+      if (supplierByName[n]) return supplierByName[n];
+      const simple = n.replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+      if (supplierByName[simple]) return supplierByName[simple];
+      // Búsqueda flexible: si el nombre del Excel contiene o está contenido en algún proveedor
+      for (const s of suppliers) {
+        const sn = normSupplier(s.name);
+        if (sn && (n.includes(sn) || sn.includes(n))) return s.id;
+      }
+      return null;
+    };
 
     const getPerLocationStock = (row: any): { locationId: number; stock: number }[] => {
       const result: { locationId: number; stock: number }[] = [];
@@ -870,7 +889,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       oemCode = cellA(["COD OEM", "Código OEM", "Codigo OEM", "CÓD OEM", "Cód. OEM", "Cod. OEM", "OEM"]);
       factoryCode = cellA(["COD FABRICA", "Código Fábrica", "Codigo Fabrica", "CÓD FÁBRICA", "Cód. Fábrica", "Cod. Fabrica", "CODIGO FABRICA", "Item Number", "Item #", "N° Parte", "No. Parte"]);
       manufacturer = cellA(["FABRICANTE", "Fabricante"]) || "Sin especificar";
-      proveedor = cellA(["PROVEEDOR", "Proveedor"]);
+      proveedor = cellA(["PROVEEDOR", "Proveedor", "PROVEEDORES", "Proveedores", "NOMBRE PROVEEDOR", "Nombre Proveedor", "SUPPLIER", "Supplier"]);
       unitPrice = numA(cellA(["COSTO $", "Costo $", "COSTO USD", "Unit Price", "Precio USD", "COSTO UNITARIO", "COSTO UNIT.", "Precio Unitario"]));
       cost = numA(cellA(["COSTO BS", "Costo Bs", "COSTO Bs", "Costo BS"]));
       priceHermana = numA(cellA(["COSTO TIENDAS", "Costo Tiendas", "Costo Tienda", "HERMANAS", "Hermanas"]));
@@ -979,7 +998,7 @@ if (!name) {
           if (supplierId !== null && cost > 0) await recordSupplierCost(existing.id, supplierId, cost, null);
           if ((importType === "actualizar" || importType === "depo") && proveedor) {
             const costForSupplier = cost > 0 ? cost : unitPrice;
-            const supId = supplierByName[normalize(proveedor)];
+            const supId = findSupplierId(proveedor);
             if (supId) {
               if (costForSupplier > 0) await recordSupplierCost(existing.id, supId, costForSupplier, null);
               else warnings.push(`${label}: Proveedor "${proveedor}" sin COSTO BS ni COSTO $ — costo sin registrar`);
@@ -1038,7 +1057,7 @@ if (!name) {
           if (supplierId !== null && cost > 0) await recordSupplierCost(product.id, supplierId, cost, null);
           if ((importType === "actualizar" || importType === "depo") && proveedor) {
             const costForSupplier = cost > 0 ? cost : unitPrice;
-            const supId = supplierByName[normalize(proveedor)];
+            const supId = findSupplierId(proveedor);
             if (supId) {
               if (costForSupplier > 0) await recordSupplierCost(product.id, supId, costForSupplier, null);
               else warnings.push(`${label}: Proveedor "${proveedor}" sin COSTO BS ni COSTO $ — costo sin registrar`);
