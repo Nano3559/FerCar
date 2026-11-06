@@ -180,6 +180,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
 
   // --- Search (igual que inventario) ---
   const [search, setSearch] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
   const [manufacturer, setManufacturer] = useState("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
@@ -240,6 +241,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
       }
       const params = new URLSearchParams();
       if (search) params.set("search", search);
+      if (nameFilter) params.set("name", nameFilter);
       if (brand) params.set("brand", brand);
       if (manufacturer) params.set("manufacturer", manufacturer);
       if (model) params.set("model", model);
@@ -275,11 +277,12 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     }, 300);
     setSearching(true);
     return () => { controller.abort(); clearTimeout(t); };
-  }, [search, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId, searchPage, activeTab]);
+  }, [search, nameFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId, searchPage, activeTab]);
 
-  useEffect(() => { setSearchPage(1); }, [search, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId]);
+  useEffect(() => { setSearchPage(1); }, [search, nameFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedLocationId]);
 
   const clearSearchFilters = () => {
+    setNameFilter("");
     setManufacturer(""); setBrand(""); setModel(""); setYear("");
     setCategoryName(""); setCategoryId(""); setOemCode(""); setFactoryCode(""); setDetailFilter("");
     setSupplierName(""); setSupplierId("");
@@ -287,7 +290,7 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
     setShowFilters(false);
   };
 
-  const hasActiveSearchFilters = !!(manufacturer || brand || model || year || categoryId || oemCode || factoryCode || detailFilter || supplierId);
+  const hasActiveSearchFilters = !!(nameFilter || manufacturer || brand || model || year || categoryId || oemCode || factoryCode || detailFilter || supplierId);
 
   // --- Carts (uno por cliente) ---
   // Cada tipo de venta guarda sus carritos aparte y con un color propio. Antes
@@ -1827,6 +1830,8 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
 
             {showFilters && (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-4 pt-4 border-t border-dark-700/50">
+                <Autocomplete value={nameFilter} onChange={setNameFilter} suggestions={filters.names || []}
+                  placeholder="Escribe el nombre..." label="Producto" />
                 <Autocomplete value={manufacturer} onChange={setManufacturer} suggestions={filters.manufacturers}
                   placeholder="Todos los fabricantes" label="Fabricante" />
                 <Autocomplete value={supplierName} onChange={(v) => {
