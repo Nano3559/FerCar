@@ -100,11 +100,14 @@ export default function WholesalePage() {
   // desaparecian sin que hubiera forma de verlas ni de enterarse.
   const [histDateFrom, setHistDateFrom] = useState("");
   const [histDateTo, setHistDateTo] = useState("");
+  const [histSeller, setHistSeller] = useState("");
   const [histLocation, setHistLocation] = useState("");
+  const [histProduct, setHistProduct] = useState("");
   const [histPage, setHistPage] = useState(1);
   const [histPages, setHistPages] = useState(1);
   const [histTotal, setHistTotal] = useState(0);
   const [histLocations, setHistLocations] = useState<{ id: number; name: string }[]>([]);
+  const [vendedores, setVendedores] = useState<{ id: number; name: string }[]>([]);
   const WHOLESALE_PAGE_SIZE = 20;
   // Fila abierta del historial. Sin esto no habia forma de ver que productos
   // componian una venta mayorista: solo estaba el boton de imprimir la nota.
@@ -185,9 +188,11 @@ export default function WholesalePage() {
       const params = new URLSearchParams({ page: String(histPage), limit: String(WHOLESALE_PAGE_SIZE) });
       if (histDateFrom) params.set("startDate", histDateFrom);
       if (histDateTo) params.set("endDate", histDateTo);
+      if (histSeller) params.set("seller", histSeller);
       // El backend ya fuerza la tienda del usuario TIENDA; mandar la suya seria
       // redundante y para ADMIN es justamente el filtro que se busca.
       if (!isTienda && histLocation) params.set("locationId", histLocation);
+      if (histProduct.trim()) params.set("product", histProduct.trim());
       const res = await api.get(`/wholesale?${params.toString()}`);
       setSales(res.data.sales);
       setHistTotal(res.data.pagination?.total ?? 0);
@@ -199,13 +204,13 @@ export default function WholesalePage() {
     } finally {
       setLoading(false);
     }
-  }, [histPage, histDateFrom, histDateTo, histLocation, isTienda]);
+  }, [histPage, histDateFrom, histDateTo, histSeller, histLocation, histProduct, isTienda]);
 
   useEffect(() => { fetchSales(); }, [fetchSales]);
 
   // Cualquier cambio de filtro vuelve a la primera pagina: si no, se cambia el
   // rango estando en la pagina 5 de un listado viejo y sale vacio.
-  useEffect(() => { setHistPage(1); }, [histDateFrom, histDateTo, histLocation]);
+  useEffect(() => { setHistPage(1); }, [histDateFrom, histDateTo, histSeller, histLocation, histProduct]);
 
   // Tiendas para el filtro. Solo si no es TIENDA: un vendedor ya esta atado a su
   // tienda y el filtro le seria ruido.
@@ -215,6 +220,13 @@ export default function WholesalePage() {
       .then((r) => setHistLocations(Array.isArray(r.data) ? r.data.map((l: any) => ({ id: l.id, name: l.name })) : []))
       .catch(() => {});
   }, [isTienda]);
+
+  useEffect(() => {
+    api.get("/users").then((r) => {
+      const users = Array.isArray(r.data) ? r.data : r.data.users || [];
+      setVendedores(users.filter((u: any) => u.active !== false).map((u: any) => ({ id: u.id, name: u.name })));
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     api.get("/products/filters").then((r) => setFilters(r.data)).catch(() => {});
@@ -662,9 +674,7 @@ export default function WholesalePage() {
             </button>
           </div>
 
-          {/* Filtros. Antes el historial no tenia ninguno y el backend cortaba a
-              15 dias: las ventas anteriores no aparecian y no habia forma de
-              pedirlas. */}
+          {/* Filtros unificados con ventas locales/departamentales */}
           <div className="flex flex-wrap items-end gap-3 px-4 py-3 border-b border-dark-700/50">
             <div className="flex-1 min-w-[140px]">
               <label htmlFor="wh-hist-from" className="block text-xs text-gray-500 mb-1">Desde</label>
@@ -676,6 +686,19 @@ export default function WholesalePage() {
               <input id="wh-hist-to" type="date" value={histDateTo} onChange={(e) => setHistDateTo(e.target.value)}
                 className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
             </div>
+            <div className="flex-1 min-w-[160px]">
+              <label htmlFor="wh-hist-seller" className="block text-xs text-gray-500 mb-1">Vendedor</label>
+              <div className="relative">
+                <select id="wh-hist-seller" value={histSeller} onChange={(e) => setHistSeller(e.target.value)}
+                  className="w-full appearance-none px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none pr-8">
+                  <option value="">Todos</option>
+                  {isTienda
+                    ? (user?.name ? <option value={user.name}>{user.name}</option> : null)
+                    : [...new Map(vendedores.map((v) => [v.name, v])).values()].map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+                </select>
+                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+              </div>
+            </div>
             {!isTienda && (
               <div className="flex-1 min-w-[160px]">
                 <label htmlFor="wh-hist-loc" className="block text-xs text-gray-500 mb-1">Tienda</label>
@@ -686,8 +709,19 @@ export default function WholesalePage() {
                 </select>
               </div>
             )}
-            {(histDateFrom || histDateTo || histLocation) && (
-              <button onClick={() => { setHistDateFrom(""); setHistDateTo(""); setHistLocation(""); }}
+            <div className="flex-1 min-w-[180px]">
+              <label htmlFor="wh-hist-product" className="block text-xs text-gray-500 mb-1">Producto</label>
+              <input
+                id="wh-hist-product"
+                type="text"
+                value={histProduct}
+                onChange={(e) => setHistProduct(e.target.value)}
+                placeholder="Nombre, código, marca..."
+                className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600"
+              />
+            </div>
+            {(histDateFrom || histDateTo || histSeller || histLocation || histProduct) && (
+              <button onClick={() => { setHistDateFrom(""); setHistDateTo(""); setHistSeller(""); setHistLocation(""); setHistProduct(""); }}
                 className="px-3 py-2 text-xs text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
                 Limpiar
               </button>
@@ -718,7 +752,7 @@ export default function WholesalePage() {
                 <tbody>
                   {sales.length === 0 ? (
                     <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">
-                      {histDateFrom || histDateTo || histLocation
+                      {histDateFrom || histDateTo || histSeller || histLocation || histProduct
                         ? "No hay ventas mayoristas que coincidan con el filtro"
                         : "No hay ventas mayoristas registradas"}
                     </td></tr>

@@ -497,7 +497,7 @@ router.post("/export-excel", authorize("ADMIN", "TIENDA"), async (req: AuthReque
 // GET / — Listar ventas mayoristas
 router.get("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { startDate, endDate, locationId, page = "1", limit = "20" } = req.query;
+    const { startDate, endDate, locationId, seller, product, page = "1", limit = "20" } = req.query;
 
     const where: any = { type: "MAYOR" };
     if (req.user?.role === "TIENDA") {
@@ -507,12 +507,25 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       const loc = Number(locationId);
       if (Number.isInteger(loc) && loc > 0) where.locationId = loc;
     }
+    if (seller && typeof seller === "string") where.seller = seller;
     const dateRange = saleDateRange(startDate, endDate);
-    if (dateRange) {
-      where.saleDate = dateRange;
-    } else {
-      // Registro de ventas por mayor: se conservan 15 días por defecto
-      where.saleDate = { gte: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) };
+    if (dateRange) where.saleDate = dateRange;
+    if (product && typeof product === "string" && product.trim()) {
+      const term = product.trim();
+      where.items = {
+        some: {
+          product: {
+            OR: [
+              { name: { contains: term, mode: "insensitive" } },
+              { itemCode: { contains: term, mode: "insensitive" } },
+              { brand: { contains: term, mode: "insensitive" } },
+              { manufacturer: { contains: term, mode: "insensitive" } },
+              { factoryCode: { contains: term, mode: "insensitive" } },
+              { oemCode: { contains: term, mode: "insensitive" } },
+            ],
+          },
+        },
+      };
     }
 
     const pg = Math.max(1, Number(page) || 1);
