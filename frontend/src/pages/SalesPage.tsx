@@ -932,6 +932,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
     setBrand(p.brand || "");
     setModel(p.model || "");
     setOemCode("");
+    setFactoryCode("");
     setSearch("");
     setSearchPage(1);
   };
@@ -963,7 +964,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
         <div className="flex items-center justify-center gap-1.5">
           <button
             onClick={() => applySpecialSearch(p)}
-            title="Buscar por producto, marca y modelo de este registro (limpia Cód. OEM)"
+            title="Buscar por producto, marca y modelo de este registro (limpia Cód. OEM y Cód. Fábrica)"
             className="flex items-center justify-center p-1.5 rounded-lg bg-cyan-600/10 border border-cyan-600/25 text-cyan-400 hover:bg-cyan-600 hover:text-white transition-all"
           >
             <Search size={14} />
