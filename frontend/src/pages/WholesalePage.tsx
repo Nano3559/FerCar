@@ -139,6 +139,9 @@ export default function WholesalePage() {
   const [oemCode, setOemCode] = useState("");
   const [factoryCode, setFactoryCode] = useState("");
   const [detailFilter, setDetailFilter] = useState("");
+  const [supplierName, setSupplierName] = useState("");
+  const [supplierId, setSupplierId] = useState("");
+  const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([]);
   const [showFilters, setShowFilters] = useState(true);
   const [filters, setFilters] = useState<ProductFilters>({
     brands: [], manufacturers: [], models: [], years: [], categories: [],
@@ -232,6 +235,12 @@ export default function WholesalePage() {
     api.get("/products/filters").then((r) => setFilters(r.data)).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    api.get("/suppliers?limit=100")
+      .then((r) => setSuppliers(r.data.suppliers || []))
+      .catch(() => setSuppliers([]));
+  }, []);
+
   // Búsqueda con debounce (mismo patrón que Ventas Locales): filtros por código,
   // nombre, fabricante, categoría, marca, modelo, año, detalles, OEM y código de
   // fábrica. Muestra todos los productos, tengan o no stock (includeZeroStock).
@@ -250,6 +259,7 @@ export default function WholesalePage() {
       if (oemCode) params.set("oemCode", oemCode);
       if (factoryCode) params.set("factoryCode", factoryCode);
       if (detailFilter) params.set("detail", detailFilter);
+      if (supplierId) params.set("supplierId", supplierId);
       if (selectedStoreId) params.set("locationId", String(selectedStoreId));
       params.set("includeZeroStock", "true");
       params.set("page", String(searchPage));
@@ -273,17 +283,18 @@ export default function WholesalePage() {
     }, 300);
     setSearching(true);
     return () => { controller.abort(); clearTimeout(t); };
-  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, selectedStoreId, searchPage]);
+  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedStoreId, searchPage]);
 
-  useEffect(() => { setSearchPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, selectedStoreId]);
+  useEffect(() => { setSearchPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedStoreId]);
 
   const clearSearchFilters = () => {
     setNameFilter(""); setItemCodeFilter(""); setManufacturer(""); setBrand(""); setModel(""); setYear("");
     setCategoryName(""); setCategoryId(""); setOemCode(""); setFactoryCode(""); setDetailFilter("");
+    setSupplierName(""); setSupplierId("");
     setShowFilters(false);
   };
 
-  const hasActiveSearchFilters = !!(nameFilter || itemCodeFilter || manufacturer || brand || model || year || categoryId || oemCode || factoryCode || detailFilter);
+  const hasActiveSearchFilters = !!(nameFilter || itemCodeFilter || manufacturer || brand || model || year || categoryId || oemCode || factoryCode || detailFilter || supplierId);
 
   const addItem = (p: ProductResult) => {
     if (items.find((i) => i.productId === p.id)) { toast.error("Producto ya agregado"); return; }
@@ -948,6 +959,12 @@ export default function WholesalePage() {
                     placeholder="Escribe el nombre..." label="Producto" />
                   <Autocomplete value={manufacturer} onChange={setManufacturer} suggestions={filters.manufacturers}
                     placeholder="Todos los fabricantes" label="Fabricante" />
+                  <Autocomplete value={supplierName} onChange={(v) => {
+                    setSupplierName(v);
+                    const found = suppliers.find((s) => s.name === v);
+                    setSupplierId(found ? String(found.id) : "");
+                  }}
+                    suggestions={suppliers.map((s) => s.name)} placeholder="Todos los proveedores" label="Proveedor" />
                   <Autocomplete value={brand} onChange={setBrand} suggestions={filters.brands}
                     placeholder="Todas las marcas" label="Marca" />
                   <Autocomplete value={model} onChange={setModel} suggestions={filters.models || []}
