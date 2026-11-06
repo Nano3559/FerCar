@@ -277,7 +277,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
   }
 });
 
-// GET /pending-requests — Solicitudes listas para despachar, agrupadas por
+// GET /pending-requests - Solicitudes listas para despachar, agrupadas por
 // tienda de destino. Alimenta la carga de la nota de despacho desde Solicitudes.
 router.get("/pending-requests", authorize(...ROLES_DESPACHO), async (req: AuthRequest, res: Response) => {
   try {
@@ -286,8 +286,9 @@ router.get("/pending-requests", authorize(...ROLES_DESPACHO), async (req: AuthRe
       status: { in: ["PENDIENTE", "RECIBIDO_POR_INVENTARIO", "PREPARANDO"] },
       despatchNoteId: null,
     };
-    if (destinationId && typeof destinationId === "string") {
-      where.locationId = Number(destinationId);
+    if (destinationId && typeof destinationId === "string" && destinationId.trim()) {
+      const parsed = Number(destinationId);
+      if (Number.isFinite(parsed)) where.locationId = parsed;
     }
 
     const requests = await prisma.productRequest.findMany({
@@ -302,46 +303,58 @@ router.get("/pending-requests", authorize(...ROLES_DESPACHO), async (req: AuthRe
     });
 
     // Stock disponible en el origen de cada solicitud, para avisar antes de
-    // armar la nota.
-    const result = await Promise.all(
+    // armar la nota. Se procesa por solicitud para que un registro inconsistente
+    // no tumbe toda la lista.
+    const settled = await Promise.allSettled(
       requests.map(async (r) => {
-        const originId = origenDeSolicitud(r);
-        const inv = originId
-          ? await prisma.inventory.findUnique({
-              where: { productId_locationId: { productId: r.productId, locationId: originId } },
-              select: { stock: true },
-            })
-          : null;
-        const origen = r.fromLocationId
-          ? r.fromLocation
-          : await prisma.location.findUnique({ where: { id: r.locationId }, select: { id: true, name: true, type: true } });
+        try {
+          const originId = origenDeSolicitud(r);
+          const inv = originId != null
+            ? await prisma.inventory.findUnique({
+                where: { productId_locationId: { productId: r.productId, locationId: originId } },
+                select: { stock: true },
+              })
+            : null;
+          let origen = r.fromLocationId ? r.fromLocation : null;
+          if (!origen && r.locationId != null) {
+            origen = await prisma.location.findUnique({ where: { id: r.locationId }, select: { id: true, name: true, type: true } });
+          }
 
-        const disponible = inv?.stock ?? 0;
-        const yaDescontado = origenYaDescontado(r);
+          const disponible = inv?.stock ?? 0;
+          const yaDescontado = origenYaDescontado(r);
 
-        return {
-          id: r.id,
-          quantity: r.quantity,
-          status: r.status,
-          date: r.date,
-          note: r.note,
-          source: r.source,
-          product: r.product,
-          destino: r.location,
-          origen: origen ?? null,
-          originId,
-          disponible,
-          suficiente: alcanzaParaDespachar(r, r.quantity, disponible),
-          yaDescontado,
-          solicitadoPor: r.requestedBy,
-        };
+          return {
+            id: r.id,
+            quantity: r.quantity,
+            status: r.status,
+            date: r.date,
+            note: r.note,
+            source: r.source,
+            product: r.product,
+            destino: r.location,
+            origen: origen ?? null,
+            originId: originId ?? null,
+            disponible,
+            suficiente: alcanzaParaDespachar(r, r.quantity, disponible),
+            yaDescontado,
+            solicitadoPor: r.requestedBy,
+          };
+        } catch (innerErr) {
+          console.error(`Error procesando solicitud ${r.id} para despacho:`, innerErr);
+          return null;
+        }
       })
     );
 
+    const result = settled
+      .map((s) => (s.status === "fulfilled" ? s.value : null))
+      .filter((v): v is NonNullable<typeof v> => v != null);
+
     res.json({ requests: result });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error al listar solicitudes para despacho:", error);
-    res.status(500).json({ message: "Error interno del servidor" });
+    const detail = process.env.NODE_ENV !== "production" && error?.message ? `: ${error.message}` : "";
+    res.status(500).json({ message: `Error al cargar solicitudes para despacho${detail}` });
   }
 });
 

@@ -391,7 +391,8 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
       });
       setPendingRequests(res.data.requests || []);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || "Error al cargar las solicitudes");
+      console.error("Error cargando solicitudes para despacho:", e?.response?.status, e?.response?.data || e?.message);
+      toast.error(e?.response?.data?.message || `Error al cargar las solicitudes${e?.response?.status ? ` (${e.response.status})` : ""}`);
     } finally {
       setLoadingRequests(false);
     }
