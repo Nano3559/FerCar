@@ -1845,8 +1845,6 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
 
             {showFilters && (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-4 pt-4 border-t border-dark-700/50">
-                <Autocomplete value={nameFilter} onChange={setNameFilter} suggestions={filters.names || []}
-                  placeholder="Escribe el nombre..." label="Producto" />
                 <Autocomplete value={manufacturer} onChange={setManufacturer} suggestions={filters.manufacturers}
                   placeholder="Todos los fabricantes" label="Fabricante" />
                 <Autocomplete value={supplierName} onChange={(v) => {
@@ -1855,6 +1853,8 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                   setSupplierId(found ? String(found.id) : "");
                 }}
                   suggestions={suppliers.map((s) => s.name)} placeholder="Todos los proveedores" label="Proveedor" />
+                <Autocomplete value={nameFilter} onChange={setNameFilter} suggestions={filters.names || []}
+                  placeholder="Escribe el nombre..." label="Producto" />
                 <Autocomplete value={brand} onChange={setBrand} suggestions={filters.brands}
                   placeholder="Todas las marcas" label="Marca" />
                 <Autocomplete value={model} onChange={setModel} suggestions={filters.models || []}
