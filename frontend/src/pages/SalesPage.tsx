@@ -926,6 +926,16 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
     }
   };
 
+  // Copia producto/marca/modelo del registro a los filtros y limpia códigos de búsqueda puntual.
+  const applySpecialSearch = (p: Product) => {
+    setNameFilter(p.name || "");
+    setBrand(p.brand || "");
+    setModel(p.model || "");
+    setOemCode("");
+    setSearch("");
+    setSearchPage(1);
+  };
+
   // Se permite ver el contenido completo (sin truncar) para no ocultar datos.
   const renderSearchCell = (p: Product, column: string) => {
     if (column === "Fabricante") return <td key={column} className="px-3 py-2 text-gray-300 whitespace-normal break-words" title={p.manufacturer}>{p.manufacturer}</td>;
@@ -951,6 +961,13 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
     if (column === "Acciones") return (
       <td key={column} className="px-3 py-2">
         <div className="flex items-center justify-center gap-1.5">
+          <button
+            onClick={() => applySpecialSearch(p)}
+            title="Buscar por producto, marca y modelo de este registro (limpia Cód. OEM)"
+            className="flex items-center justify-center p-1.5 rounded-lg bg-cyan-600/10 border border-cyan-600/25 text-cyan-400 hover:bg-cyan-600 hover:text-white transition-all"
+          >
+            <Search size={14} />
+          </button>
           {p.stock <= 0 ? (
             // Con stock 0 se pide a otra ubicacion: puede ser el almacen o
             // una tienda que lo tenga. El modal deja elegir de donde sale.

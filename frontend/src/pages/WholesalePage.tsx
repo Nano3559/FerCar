@@ -287,6 +287,16 @@ export default function WholesalePage() {
 
   useEffect(() => { setSearchPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedStoreId]);
 
+  // Copia producto/marca/modelo del registro a los filtros y limpia códigos de búsqueda puntual.
+  const applySpecialSearch = (p: ProductResult) => {
+    setNameFilter(p.name || "");
+    setBrand(p.brand || "");
+    setModel(p.model || "");
+    setOemCode("");
+    setSearch("");
+    setSearchPage(1);
+  };
+
   const clearSearchFilters = () => {
     setNameFilter(""); setItemCodeFilter(""); setManufacturer(""); setBrand(""); setModel(""); setYear("");
     setCategoryName(""); setCategoryId(""); setOemCode(""); setFactoryCode(""); setDetailFilter("");
@@ -1034,11 +1044,19 @@ export default function WholesalePage() {
                               )}
                             </td>
                             <td className="px-3 py-2 text-center">
-                              <button onClick={() => addItem(p)}
-                                title="Agregar al pedido"
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary-600/10 border border-primary-600/25 text-primary-400 hover:bg-primary-600 hover:text-white transition-all text-xs font-medium">
-                                <ShoppingCart size={14} /> Agregar
-                              </button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => applySpecialSearch(p)}
+                                  title="Buscar por producto, marca y modelo de este registro (limpia Cód. OEM)"
+                                  className="flex items-center justify-center p-1.5 rounded-lg bg-cyan-600/10 border border-cyan-600/25 text-cyan-400 hover:bg-cyan-600 hover:text-white transition-all">
+                                  <Search size={14} />
+                                </button>
+                                <button onClick={() => addItem(p)}
+                                  title="Agregar al pedido"
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary-600/10 border border-primary-600/25 text-primary-400 hover:bg-primary-600 hover:text-white transition-all text-xs font-medium">
+                                  <ShoppingCart size={14} /> Agregar
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
