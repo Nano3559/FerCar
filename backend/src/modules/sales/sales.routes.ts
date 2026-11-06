@@ -18,7 +18,7 @@ router.use(authorize("ADMIN", "TIENDA"));
 // GET / — Listar ventas con filtros
 router.get("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { type, locationId, seller, startDate, endDate, page = "1", limit = "20" } = req.query;
+    const { type, locationId, seller, startDate, endDate, product, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
     // El enum no acepta cualquier cadena: sin esto, un type inventado en la
@@ -27,6 +27,23 @@ router.get("/", async (req: AuthRequest, res: Response) => {
     if (seller && typeof seller === "string") where.seller = seller;
     const dateRange = saleDateRange(startDate, endDate);
     if (dateRange) where.saleDate = dateRange;
+    if (product && typeof product === "string" && product.trim()) {
+      const term = product.trim();
+      where.items = {
+        some: {
+          product: {
+            OR: [
+              { name: { contains: term, mode: "insensitive" } },
+              { itemCode: { contains: term, mode: "insensitive" } },
+              { brand: { contains: term, mode: "insensitive" } },
+              { manufacturer: { contains: term, mode: "insensitive" } },
+              { factoryCode: { contains: term, mode: "insensitive" } },
+              { oemCode: { contains: term, mode: "insensitive" } },
+            ],
+          },
+        },
+      };
+    }
 
     const user = req.user!;
     if (user.role === "TIENDA") {

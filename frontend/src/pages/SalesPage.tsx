@@ -1481,6 +1481,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
   // Filtro de tienda del historial. Es aparte del selector de tienda de la
   // venta: ese elige donde se cobra, este solo acota que ventas se miran.
   const [histLocation, setHistLocation] = useState("");
+  const [histProduct, setHistProduct] = useState("");
 
   // Al cambiar un filtro se disparan dos peticiones: una con la pagina vieja y
   // otra al volver a la pagina 1. Sin este numero, si la primera llega tarde
@@ -1503,6 +1504,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
       // seria redundante y para ADMIN es justamente el filtro que se pide.
       if (isTienda && user?.locationId) params.set("locationId", String(user.locationId));
       else if (histLocation) params.set("locationId", histLocation);
+      if (histProduct.trim()) params.set("product", histProduct.trim());
 
       const res = await api.get(`/sales?${params.toString()}`);
       if (reqId !== histReqRef.current) return;
@@ -1516,13 +1518,13 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
     } finally {
       if (reqId === histReqRef.current) setHistLoading(false);
     }
-  }, [histPage, histDateFrom, histDateTo, histSeller, histLocation, saleType, isTienda, user?.locationId]);
+  }, [histPage, histDateFrom, histDateTo, histSeller, histLocation, histProduct, saleType, isTienda, user?.locationId]);
 
   useEffect(() => {
     if (activeTab === "historial") fetchHistory();
   }, [activeTab, fetchHistory]);
 
-  useEffect(() => { if (activeTab === "historial") setHistPage(1); }, [histDateFrom, histDateTo, histSeller, histLocation, activeTab]);
+  useEffect(() => { if (activeTab === "historial") setHistPage(1); }, [histDateFrom, histDateTo, histSeller, histLocation, histProduct, activeTab]);
 
   // ==================== RENDER ====================
   const pmLabel: Record<string, string> = { EFECTIVO: "Efectivo", QR: "QR", TRANSFERENCIA: "Transferencia", CREDITO: "Crédito" };
@@ -2162,8 +2164,19 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                   </div>
                 </div>
               )}
-              {(histDateFrom || histDateTo || histSeller || histLocation) && (
-                <button onClick={() => { setHistDateFrom(""); setHistDateTo(""); setHistSeller(""); setHistLocation(""); }}
+              <div className="flex-1 min-w-[180px]">
+                <label className="block text-xs text-gray-500 mb-1" htmlFor="hist-product">Producto</label>
+                <input
+                  id="hist-product"
+                  type="text"
+                  value={histProduct}
+                  onChange={(e) => setHistProduct(e.target.value)}
+                  placeholder="Nombre, código, marca..."
+                  className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none placeholder-gray-600"
+                />
+              </div>
+              {(histDateFrom || histDateTo || histSeller || histLocation || histProduct) && (
+                <button onClick={() => { setHistDateFrom(""); setHistDateTo(""); setHistSeller(""); setHistLocation(""); setHistProduct(""); }}
                   className="px-4 py-2.5 text-sm text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-xl border border-dark-600/50 transition-all">
                   Limpiar
                 </button>
