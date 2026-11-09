@@ -90,7 +90,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
       prisma.productRequest.findMany({
         where,
         include: {
-          product: { select: { id: true, name: true, itemCode: true, brand: true, model: true } },
+          product: { select: { id: true, name: true, itemCode: true, factoryCode: true, brand: true, model: true } },
           location: { select: { id: true, name: true, type: true } },
           fromLocation: { select: { id: true, name: true, type: true } },
           requestedBy: { select: { id: true, name: true, email: true } },
@@ -243,7 +243,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
         },
       },
       include: {
-        product: { select: { name: true, itemCode: true } },
+        product: { select: { name: true, itemCode: true, factoryCode: true } },
         location: { select: { name: true } },
         fromLocation: { select: { name: true } },
         history: true,
@@ -357,7 +357,7 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
             : {}),
         },
         include: {
-          product: { select: { name: true, itemCode: true } },
+          product: { select: { name: true, itemCode: true, factoryCode: true } },
           location: { select: { name: true } },
           fromLocation: { select: { name: true } },
           requestedBy: { select: { name: true } },
@@ -474,7 +474,7 @@ router.delete("/:id", async (req: AuthRequest, res: Response) => {
     const existing = await prisma.productRequest.findUnique({
       where: { id },
       include: {
-        product: { select: { name: true } },
+        product: { select: { name: true, factoryCode: true, itemCode: true } },
         fromLocation: { select: { name: true } },
         location: { select: { name: true } },
         despatchNote: { select: { noteNumber: true } },

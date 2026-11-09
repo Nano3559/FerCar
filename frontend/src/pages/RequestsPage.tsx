@@ -11,7 +11,7 @@ import { useDialogBehavior } from "../components/ui/useDialog";
 import { STATUS_CONFIG, SOURCE_CONFIG } from "../constants/requests";
 
 interface Product {
-  id: number; itemCode: string; name: string; brand: string; model: string;
+  id: number; itemCode: string; factoryCode?: string | null; name: string; brand: string; model: string;
   stock: number; category: string | null; image: string | null;
   stockByLocation?: { locationId: number; stock: number }[];
 }
@@ -23,7 +23,7 @@ interface RequestRecord {
   despatchNoteId: number | null;
   despatchNote?: { id: number; noteNumber: string; status: string } | null;
   status: string; date: string; note: string | null;
-  product: { id: number; name: string; itemCode: string; brand: string; model: string };
+  product: { id: number; name: string; itemCode: string; factoryCode?: string | null; brand: string; model: string };
   location: { id: number; name: string; type: string };
   fromLocation?: { id: number; name: string; type: string } | null;
   requestedBy: { id: number; name: string; email: string };
@@ -442,7 +442,7 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
                       <td className="px-4 py-3 text-gray-300">{new Date(r.date).toLocaleDateString("es-BO")}</td>
                       <td className="px-4 py-3">
                         <p className="text-foreground font-medium">{r.product.name}</p>
-                        <p className="text-xs text-gray-500">{r.product.itemCode}</p>
+                        <p className="text-xs text-gray-500">{r.product.factoryCode || r.product.itemCode || "—"}</p>
                       </td>
                       <td className="px-4 py-3 text-gray-300">
                         <p>{r.fromLocation?.name || "—"}</p>
@@ -600,7 +600,7 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
                       <button key={p.id} onClick={() => selectProduct(p)}
                         className="w-full text-left px-3 py-3 hover:bg-primary-600/10 transition-colors border-b border-dark-700/30 last:border-0">
                         <p className="text-sm text-foreground font-medium truncate">{p.name}</p>
-                        <p className="text-xs text-gray-500">{p.itemCode} · {p.brand} · Stock: {p.stock}</p>
+                        <p className="text-xs text-gray-500">{p.factoryCode || p.itemCode} · {p.brand} · Stock: {p.stock}</p>
                       </button>
                     ))}
                   </div>
@@ -610,7 +610,7 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
                   <div className="mt-2 p-3 bg-primary-600/10 border border-primary-600/20 rounded-xl flex items-center justify-between">
                     <div className="min-w-0">
                       <p className="text-sm text-foreground font-medium truncate">{selectedProduct.name}</p>
-                      <p className="text-xs text-gray-400">{selectedProduct.itemCode} · Stock: {selectedProduct.stock}</p>
+                      <p className="text-xs text-gray-400">{selectedProduct.factoryCode || selectedProduct.itemCode} · Stock: {selectedProduct.stock}</p>
                     </div>
                     <button onClick={clearProduct} className="ml-3 p-1.5 text-gray-400 hover:text-foreground hover:bg-dark-700 rounded-lg transition-all">
                       <X size={14} />
@@ -707,7 +707,7 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
             <div className="p-5">
               <div className="mb-4 p-3 bg-dark-900/50 rounded-xl border border-dark-700/30">
                 <p className="text-foreground font-medium">{showHistory.product.name}</p>
-                <p className="text-xs text-gray-400">{showHistory.product.itemCode} · Cantidad: {showHistory.quantity}</p>
+                <p className="text-xs text-gray-400">{showHistory.product.factoryCode || showHistory.product.itemCode || "—"} · Cantidad: {showHistory.quantity}</p>
                 <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
                   <MapPin size={11} /> {showHistory.fromLocation?.name || "Sin origen"} → {showHistory.location.name}
                 </p>

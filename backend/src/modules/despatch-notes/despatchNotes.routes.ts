@@ -54,7 +54,7 @@ router.post("/", authorize(...ROLES_DESPACHO), async (req: AuthRequest, res: Res
     const linkedRequests = requestIds.length
       ? await prisma.productRequest.findMany({
           where: { id: { in: requestIds } },
-          include: { product: { select: { id: true, name: true, itemCode: true } }, location: true },
+          include: { product: { select: { id: true, name: true, itemCode: true, factoryCode: true } }, location: true },
         })
       : [];
 
@@ -227,7 +227,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
           requests: {
             select: {
               id: true, status: true, quantity: true,
-              product: { select: { name: true, itemCode: true } },
+              product: { select: { name: true, itemCode: true, factoryCode: true } },
             },
           },
           items: { select: { id: true, itemCode: true, name: true, manufacturer: true, brand: true, model: true, locationName: true, locationType: true, quantity: true } },
@@ -294,7 +294,7 @@ router.get("/pending-requests", authorize(...ROLES_DESPACHO), async (req: AuthRe
     const requests = await prisma.productRequest.findMany({
       where,
       include: {
-        product: { select: { id: true, name: true, itemCode: true, brand: true, model: true } },
+        product: { select: { id: true, name: true, itemCode: true, factoryCode: true, brand: true, model: true } },
         location: { select: { id: true, name: true, type: true } },
         fromLocation: { select: { id: true, name: true, type: true } },
         requestedBy: { select: { id: true, name: true } },

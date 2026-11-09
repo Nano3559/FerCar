@@ -11,7 +11,7 @@ import Autocomplete from "../components/ui/Autocomplete";
 import { useAuthStore } from "../stores/authStore";
 
 interface ProductLite {
-  id: number; itemCode: string; name: string; brand: string;
+  id: number; itemCode: string; factoryCode?: string | null; name: string; brand: string;
   model: string; manufacturer: string;
 }
 
@@ -20,7 +20,7 @@ interface LocationLite {
 }
 
 interface LineItem {
-  uid: string; productId: number; itemCode: string; name: string;
+  uid: string; productId: number; itemCode: string; factoryCode?: string | null; name: string;
   brand: string; model: string; manufacturer: string;
   locationId: number; locationName: string; quantity: number;
   /** true cuando la solicitud ya descontó su origen: no vuelve a restarse. */
@@ -28,7 +28,7 @@ interface LineItem {
 }
 
 interface NoteItemDto {
-  id: number; itemCode: string; name: string;
+  id: number; itemCode: string; factoryCode?: string | null; name: string;
   manufacturer: string; brand: string; model: string;
   locationName: string; locationType: string; quantity: number;
 }
@@ -37,7 +37,7 @@ interface DespatchNoteRow {
   id: number; noteNumber: string; date: string;
   userName: string; totalUnits: number; status: "EMITIDA" | "ENTREGADA" | "ANULADA";
   destinationId: number | null; destinationName: string | null;
-  requests: Array<{ id: number; status: string; quantity: number; product: { name: string; itemCode: string } }>;
+  requests: Array<{ id: number; status: string; quantity: number; product: { name: string; itemCode: string; factoryCode?: string | null } }>;
   entregadoA: string | null; entregadoAt: string | null;
   observacion: string | null; cancelledReason: string | null;
   createdAt: string; items: NoteItemDto[];
@@ -47,7 +47,7 @@ interface DespatchNoteRow {
 interface PendingRequest {
   id: number; quantity: number; status: string; date: string;
   note: string | null; source: string | null;
-  product: { id: number; name: string; itemCode: string; brand: string; model: string };
+  product: { id: number; name: string; itemCode: string; factoryCode?: string | null; brand: string; model: string };
   destino: { id: number; name: string; type: string };
   origen: { id: number; name: string; type: string } | null;
   originId: number | null;
@@ -161,7 +161,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
           api.get("/inventory"),
         ]);
         const list = (pRes.data.products || []).map((p: any) => ({
-          id: p.id, itemCode: p.itemCode, name: p.name,
+          id: p.id, itemCode: p.itemCode, factoryCode: p.factoryCode || null, name: p.name,
           brand: p.brand, model: p.model, manufacturer: p.manufacturer,
         }));
         setProducts(list);
@@ -254,7 +254,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
       avisa(q);
       setItems((prev) => [
         ...prev,
-        { uid: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, productId: selected.id, itemCode: selected.itemCode, name: selected.name, brand: selected.brand, model: selected.model, manufacturer: selected.manufacturer, locationId: loc.id, locationName: loc.name, quantity: q },
+        { uid: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, productId: selected.id, itemCode: selected.itemCode, factoryCode: selected.factoryCode || null, name: selected.name, brand: selected.brand, model: selected.model, manufacturer: selected.manufacturer, locationId: loc.id, locationName: loc.name, quantity: q },
       ]);
     }
 
@@ -427,6 +427,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
         uid: `req-${r.id}`,
         productId: r.product.id,
         itemCode: r.product.itemCode,
+        factoryCode: r.product.factoryCode || null,
         name: r.product.name,
         brand: r.product.brand,
         model: r.product.model,
@@ -674,7 +675,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                           <td className="px-4 py-2.5 text-gray-500">{idx + 1}</td>
                           <td className="px-4 py-2.5">
                             <p className="text-foreground font-medium">{it.name}</p>
-                            <p className="text-xs text-gray-500">{it.manufacturer} · {it.brand} {it.model} · {it.itemCode}</p>
+                            <p className="text-xs text-gray-500">{it.factoryCode || it.itemCode || "—"}</p>
                           </td>
                           <td className="px-4 py-2.5 text-gray-300 text-xs">{it.locationName}</td>
                           <td className="px-4 py-2.5">
@@ -881,7 +882,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                           <td className="py-2 text-gray-400">{r.id}</td>
                           <td className="py-2 text-foreground">
                             {r.product.name}
-                            <span className="block text-xs text-gray-500">{r.product.itemCode}</span>
+                            <span className="block text-xs text-gray-500">{r.product.factoryCode || r.product.itemCode || "—"}</span>
                           </td>
                           <td className="py-2 text-right text-foreground">{r.quantity}</td>
                           <td className="py-2 text-gray-400">{r.origen?.name ?? "—"}</td>

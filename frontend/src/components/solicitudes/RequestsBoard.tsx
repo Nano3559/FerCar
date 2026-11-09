@@ -24,7 +24,7 @@ interface BoardRequest {
   note: string | null;
   source: string;
   despatchNote?: { id: number; noteNumber: string; status: string } | null;
-  product: { id: number; name: string; itemCode: string };
+  product: { id: number; name: string; itemCode: string; factoryCode?: string | null };
   location: { id: number; name: string; type: string };
   fromLocation?: { id: number; name: string; type: string } | null;
   requestedBy: { id: number; name: string };
@@ -186,7 +186,7 @@ export default function RequestsBoard() {
                           x{r.quantity}
                         </span>
                       </div>
-                      <p className="text-[11px] text-gray-500">{r.product.itemCode}</p>
+                      <p className="text-[11px] text-gray-500">{r.product.factoryCode || r.product.itemCode || "—"}</p>
                       <div className="flex items-center gap-1.5 text-xs text-gray-400">
                         <MapPin size={12} className="shrink-0 text-gray-500" />
                         <span className="truncate" title={`${r.fromLocation?.name || "—"} → ${r.location.name}`}>
