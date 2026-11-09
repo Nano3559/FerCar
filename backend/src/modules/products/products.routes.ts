@@ -895,7 +895,7 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       priceHermana = numA(cellA(["COSTO TIENDAS", "Costo Tiendas", "Costo Tienda", "HERMANAS", "Hermanas"]));
       price1 = numA(cellA(["PRECIO 1", "Precio 1", "Precio Minorista"]));
       price2 = numA(cellA(["PRECIO 2", "Precio 2", "Precio Mayoreo"]));
-      wholesalePrice = numA(cellA(["PRECIO MAYOR", "Precio Mayor", "Precio mayor", "Precio Mayoreo", "XMAYOR"]));
+      wholesalePrice = numA(cellA(["PRECIO MAYOR", "Precio Mayor", "Precio mayor", "Precio Mayoreo", "PRECIO AMYOR", "Precio Amyor", "XMAYOR"]));
       imagenUrls = cellA(["IMAGEN", "Imagen", "Image", "URL Imagen"]).split(",").map((u) => u.trim()).filter(Boolean);
       rowStock = leerCantidad(columnaCantidad ? row[columnaCantidad] : "").valor;
       calidad = "";
@@ -1000,8 +1000,9 @@ if (!name) {
             const costForSupplier = cost > 0 ? cost : unitPrice;
             const supId = findSupplierId(proveedor);
             if (supId) {
-              if (costForSupplier > 0) await recordSupplierCost(existing.id, supId, costForSupplier, null);
-              else warnings.push(`${label}: Proveedor "${proveedor}" sin COSTO BS ni COSTO $ — costo sin registrar`);
+              // Registrar siempre la asociación proveedor-producto; si no hay costo, se guarda en 0.
+              await recordSupplierCost(existing.id, supId, costForSupplier > 0 ? costForSupplier : 0, null);
+              if (costForSupplier <= 0) warnings.push(`${label}: Proveedor "${proveedor}" asociado sin COSTO BS/$ (registrado en 0)`);
             } else warnings.push(`${label}: Proveedor "${proveedor}" no encontrado en el sistema — costo sin asociar`);
           }
           if (perLocationStock.length > 0) {
@@ -1059,8 +1060,9 @@ if (!name) {
             const costForSupplier = cost > 0 ? cost : unitPrice;
             const supId = findSupplierId(proveedor);
             if (supId) {
-              if (costForSupplier > 0) await recordSupplierCost(product.id, supId, costForSupplier, null);
-              else warnings.push(`${label}: Proveedor "${proveedor}" sin COSTO BS ni COSTO $ — costo sin registrar`);
+              // Registrar siempre la asociación proveedor-producto; si no hay costo, se guarda en 0.
+              await recordSupplierCost(product.id, supId, costForSupplier > 0 ? costForSupplier : 0, null);
+              if (costForSupplier <= 0) warnings.push(`${label}: Proveedor "${proveedor}" asociado sin COSTO BS/$ (registrado en 0)`);
             } else warnings.push(`${label}: Proveedor "${proveedor}" no encontrado en el sistema — costo sin asociar`);
           }
 
