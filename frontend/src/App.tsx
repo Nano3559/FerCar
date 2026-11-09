@@ -86,35 +86,35 @@ export default function App() {
 
           {/* Ventas — ADMIN + TIENDA */}
           <Route path="ventas" element={
-            <RoleRoute allowedRoles={["ADMIN", "TIENDA"]} module="ventas">
+            <RoleRoute allowedRoles={["ADMIN", "TIENDA", "VENDEDOR"]} module="ventas">
               <SalesPage />
             </RoleRoute>
           } />
 
           {/* Ventas Departamentales — ADMIN + TIENDA (misma lógica que ventas locales) */}
           <Route path="ventas-departamental" element={
-            <RoleRoute allowedRoles={["ADMIN", "TIENDA"]} module="ventas">
+            <RoleRoute allowedRoles={["ADMIN", "TIENDA", "VENDEDOR"]} module="ventas">
               <SalesPage saleType="DEPARTAMENTAL" title="Ventas Departamentales" />
             </RoleRoute>
           } />
 
           {/* Ventas por Mayor — ADMIN + TIENDA */}
           <Route path="ventas-mayor" element={
-            <RoleRoute allowedRoles={["ADMIN", "TIENDA"]} module="ventas-mayor">
+            <RoleRoute allowedRoles={["ADMIN", "TIENDA", "VENDEDOR"]} module="ventas-mayor">
               <WholesalePage />
             </RoleRoute>
           } />
 
           {/* Devoluciones — ADMIN + TIENDA */}
           <Route path="devoluciones" element={
-            <RoleRoute allowedRoles={["ADMIN", "TIENDA"]} module="devoluciones">
+            <RoleRoute allowedRoles={["ADMIN", "TIENDA", "VENDEDOR"]} module="devoluciones">
               <ReturnsPage />
             </RoleRoute>
           } />
 
           {/* Cotizaciones — ADMIN + TIENDA (mismo permiso que ventas) */}
           <Route path="cotizaciones" element={
-            <RoleRoute allowedRoles={["ADMIN", "TIENDA"]} module="ventas" anyModule={["ventas-mayor"]}>
+            <RoleRoute allowedRoles={["ADMIN", "TIENDA", "VENDEDOR"]} module="ventas" anyModule={["ventas-mayor"]}>
               <QuotesPage />
             </RoleRoute>
           } />
