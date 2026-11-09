@@ -318,23 +318,16 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
     }
 
     const role = req.user?.role || "";
+    const isStoreRole = role === "TIENDA" || role === "VENDEDOR";
+
     if (INVENTARIO_STATUSES.includes(status) && role !== "ADMIN" && role !== "INVENTARIO") {
       return res.status(403).json({ message: "Solo INVENTARIO o ADMIN pueden realizar esta acción" });
     }
-    if (status === "RECIBIDO_POR_TIENDA" && role !== "ADMIN" && role !== "TIENDA") {
-      return res.status(403).json({ message: "Solo TIENDA o ADMIN pueden confirmar recepción" });
+    if (status === "RECIBIDO_POR_TIENDA" && role !== "ADMIN" && !isStoreRole) {
+      return res.status(403).json({ message: "Solo la tienda o ADMIN pueden confirmar recepción" });
     }
-    // La llegada del producto la confirma quien pidió el producto.
-    if (
-      status === "RECIBIDO_POR_TIENDA" &&
-      role !== "ADMIN" &&
-      existing.requestedById !== req.user?.userId
-    ) {
-      return res.status(403).json({
-        message: "Solo quien creó la solicitud puede confirmar la recepción del producto",
-      });
-    }
-    if (role === "TIENDA" && existing.locationId !== req.user?.locationId) {
+    // Roles de tienda solo pueden actuar sobre solicitudes de su propia tienda.
+    if (isStoreRole && existing.locationId !== req.user?.locationId) {
       return res.status(403).json({ message: "No puede modificar solicitudes de otra tienda" });
     }
 

@@ -63,6 +63,7 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
   const role = user?.role || "";
   const isInventario = role === "INVENTARIO" || role === "ADMIN";
   const isTienda = role === "TIENDA" || role === "ADMIN" || role === "VENDEDOR";
+  const isStoreRole = role === "TIENDA" || role === "VENDEDOR";
   // Las solicitudes las crean vendedores (tienda) o administradores.
   const canCreate = role === "TIENDA" || role === "ADMIN" || role === "VENDEDOR";
 
@@ -271,28 +272,36 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
           reason: "Primero se entrega la nota de despacho; recién ahí se puede confirmar la llegada a la tienda.",
         };
       }
-      if (role !== "ADMIN" && role !== "INVENTARIO" && (!user || record.requestedBy.id !== user.id)) {
+      if (isStoreRole && user?.locationId != null && record.locationId !== user.locationId) {
         return {
-          show: isTienda,
+          show: true,
           enabled: false,
-          reason: `Solo ${record.requestedBy.name} (o un Admin) puede confirmar esta recepción.`,
+          reason: "Solo podés confirmar recepciones de tu tienda.",
         };
       }
-      return { show: true, enabled: true, reason: "" };
+      return { show: isTienda, enabled: isTienda, reason: isTienda ? "" : "Solo la tienda o Admin pueden confirmar recepción." };
     }
 
     if (actionTo === "CANCELADO") {
       if (tieneNota) {
         return {
-          show: true,
+          show: role === "ADMIN" || isStoreRole,
           enabled: false,
           reason: `Está dentro de la nota ${nota}: anulá la nota primero.`,
         };
       }
+      if (isStoreRole && user?.locationId != null && record.locationId !== user.locationId) {
+        return {
+          show: true,
+          enabled: false,
+          reason: "Solo podés cancelar solicitudes de tu tienda.",
+        };
+      }
+      const canCancel = role === "ADMIN" || isStoreRole;
       return {
-        show: role === "ADMIN",
-        enabled: role === "ADMIN",
-        reason: "Solo un Admin puede cancelar una solicitud.",
+        show: canCancel,
+        enabled: canCancel,
+        reason: canCancel ? "" : "No tenés permisos para cancelar esta solicitud.",
       };
     }
 
