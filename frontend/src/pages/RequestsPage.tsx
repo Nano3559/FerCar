@@ -61,7 +61,7 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const role = user?.role || "";
-  const isInventario = role === "INVENTARIO" || role === "ADMIN";
+  const isInventario = role === "INVENTARIO" || role === "ADMIN" || role === "VENDEDOR";
   const isTienda = role === "TIENDA" || role === "ADMIN" || role === "VENDEDOR";
   const isStoreRole = role === "TIENDA" || role === "VENDEDOR";
   // Las solicitudes las crean vendedores (tienda) o administradores.
@@ -309,7 +309,7 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
     return {
       show: isInventario,
       enabled: isInventario,
-      reason: "Solo Inventario o Admin pueden dar este paso.",
+      reason: "Solo Inventario, Vendedor o Admin pueden dar este paso.",
     };
   };
 

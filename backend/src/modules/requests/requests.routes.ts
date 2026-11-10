@@ -321,14 +321,21 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
     const role = req.user?.role || "";
     const isStoreRole = role === "TIENDA" || role === "VENDEDOR";
 
-    if (INVENTARIO_STATUSES.includes(status) && role !== "ADMIN" && role !== "INVENTARIO") {
+    // VENDEDOR también opera el flujo de inventario (recibir/preparar) sobre
+    // solicitudes de cualquier tienda, igual que INVENTARIO.
+    if (INVENTARIO_STATUSES.includes(status) && role !== "ADMIN" && role !== "INVENTARIO" && role !== "VENDEDOR") {
       return res.status(403).json({ message: "Solo INVENTARIO o ADMIN pueden realizar esta acción" });
     }
     if (status === "RECIBIDO_POR_TIENDA" && role !== "ADMIN" && !isStoreRole) {
       return res.status(403).json({ message: "Solo la tienda o ADMIN pueden confirmar recepción" });
     }
-    // Roles de tienda solo pueden actuar sobre solicitudes de su propia tienda.
-    if (isStoreRole && existing.locationId !== req.user?.locationId) {
+    // En acciones de tienda (confirmar recepción / cancelar) los roles de tienda
+    // solo pueden actuar sobre solicitudes de su propia tienda.
+    if (
+      isStoreRole &&
+      (status === "RECIBIDO_POR_TIENDA" || status === "CANCELADO") &&
+      existing.locationId !== req.user?.locationId
+    ) {
       return res.status(403).json({ message: "No puede modificar solicitudes de otra tienda" });
     }
 
