@@ -144,7 +144,7 @@ function formatDate(dateStr: string) {
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
-  const isTienda = user?.role === "TIENDA";
+  const isTienda = user?.role === "TIENDA" || user?.role === "VENDEDOR";
   const canSeeDeliveryBoard = user?.role === "ADMIN" || user?.role === "INVENTARIO" || user?.role === "TIENDA" || user?.role === "VENDEDOR";
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -201,7 +201,7 @@ export default function DashboardPage() {
         try {
           const usersRes = await api.get("/users");
           const vendedores = (usersRes.data.users || [])
-            .filter((u: any) => u.role === "TIENDA" && u.active !== false)
+            .filter((u: any) => (u.role === "TIENDA" || u.role === "VENDEDOR") && u.active !== false)
             .map((u: any) => ({ id: u.id, name: u.name }));
           setSellers(vendedores);
         } catch {

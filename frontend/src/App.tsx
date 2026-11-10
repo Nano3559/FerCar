@@ -28,7 +28,7 @@ import SettingsPage from "./pages/SettingsPage";
 import PurchaseNotesPage from "./pages/PurchaseNotesPage";
 import ErrorBoundary from "./components/ErrorBoundary";
 
-const ALL = ["ADMIN", "INVENTARIO", "TIENDA"];
+const ALL = ["ADMIN", "INVENTARIO", "TIENDA", "VENDEDOR"];
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);

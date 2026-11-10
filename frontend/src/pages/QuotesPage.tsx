@@ -57,7 +57,7 @@ const isSaleTypeLabel = (t: string) =>
 
 export default function QuotesPage() {
   const user = useAuthStore((s) => s.user);
-  const isTienda = user?.role === "TIENDA";
+  const isTienda = user?.role === "TIENDA" || user?.role === "VENDEDOR";
   const navigate = useNavigate();
   const [openingCart, setOpeningCart] = useState<number | null>(null);
 

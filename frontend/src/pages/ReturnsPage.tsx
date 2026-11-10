@@ -75,7 +75,7 @@ export default function ReturnsPage() {
       const users = Array.isArray(r.data) ? r.data : r.data.users || [];
       setVendedores(
         users
-          .filter((u: any) => u.role === "TIENDA" || u.role === "ADMIN")
+          .filter((u: any) => u.role === "TIENDA" || u.role === "VENDEDOR" || u.role === "ADMIN")
           .map((u: any) => ({ id: u.id, name: u.name, locationId: u.locationId }))
       );
     }).catch(() => {});

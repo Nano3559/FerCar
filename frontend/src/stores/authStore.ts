@@ -31,6 +31,7 @@ const getAllowedCategories = (role: string, config: Record<string, unknown>): st
 const fallbackPermissions = (role: string): string[] => {
   if (role === "ADMIN") return ["inventario", "ventas", "ventas-mayor", "devoluciones", "solicitudes", "movimientos", "costos", "precios", "reportes", "configuracion"];
   if (role === "TIENDA") return ["inventario", "ventas", "ventas-mayor", "devoluciones", "solicitudes", "reportes"];
+  if (role === "VENDEDOR") return ["inventario", "ventas", "ventas-mayor", "devoluciones", "solicitudes", "despachos", "reportes"];
   if (role === "INVENTARIO") return ["inventario", "solicitudes", "movimientos", "costos", "precios", "despachos"];
   return [];
 };

@@ -110,7 +110,7 @@ const formatBs = (v: number) =>
 
 export default function ReportsPage() {
   const role = useAuthStore((s) => s.user?.role);
-  const tabs = role === "TIENDA" ? BASE_TABS.filter((t) => t.key !== "proveedores") : BASE_TABS;
+  const tabs = role === "TIENDA" || role === "VENDEDOR" ? BASE_TABS.filter((t) => t.key !== "proveedores") : BASE_TABS;
 
   const [activeTab, setActiveTab] = useState("ventas");
   const [locations, setLocations] = useState<Location[]>([]);

@@ -76,7 +76,7 @@ const PAGE_SIZE = 10;
 export default function WholesalePage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === "ADMIN";
-  const isTienda = user?.role === "TIENDA";
+  const isTienda = user?.role === "TIENDA" || user?.role === "VENDEDOR";
 
   const [locations, setLocations] = useState<LocationLite[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<number | "">("");

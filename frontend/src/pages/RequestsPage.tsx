@@ -656,7 +656,7 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
                 </div>
               )}
 
-              {role === "TIENDA" && (
+              {(role === "TIENDA" || role === "VENDEDOR") && (
                 <div className="p-3 bg-dark-900/30 border border-dark-700/30 rounded-xl">
                   <p className="text-xs text-gray-500">La solicitud se enviará a tu tienda</p>
                   <p className="text-sm text-foreground">{locations.find((l) => l.id === user?.locationId)?.name || "Tu tienda"}</p>

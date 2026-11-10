@@ -46,37 +46,40 @@ const ROLE_COLORS: Record<string, string> = {
   ADMIN: "bg-red-500/10 text-red-400 border-red-500/20",
   INVENTARIO: "bg-blue-500/10 text-blue-400 border-blue-500/20",
   TIENDA: "bg-green-500/10 text-green-400 border-green-500/20",
+  VENDEDOR: "bg-amber-500/10 text-amber-400 border-amber-500/20",
 };
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Administrador",
   INVENTARIO: "Inventario",
   TIENDA: "Tienda",
+  VENDEDOR: "Vendedor",
 };
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   ADMIN: "Acceso total al sistema",
   INVENTARIO: "Gestión de productos, stock, movimientos, costos, precios",
   TIENDA: "Ventas, devoluciones, solicitudes, reportes (con categorías asignadas)",
+  VENDEDOR: "Como tienda: ventas, mayor, devoluciones, solicitudes de todas las tiendas, despachos y reportes",
 };
 
 // Lista vacía = cualquier rol (ruta con allowedRoles={ALL})
 const MODULE_ACCESS: Record<string, string[]> = {
-  inventario: ["ADMIN", "INVENTARIO", "TIENDA"],
-  ventas: ["ADMIN", "TIENDA"],
-  "ventas-mayor": ["ADMIN", "TIENDA"],
-  devoluciones: ["ADMIN", "TIENDA"],
+  inventario: ["ADMIN", "INVENTARIO", "TIENDA", "VENDEDOR"],
+  ventas: ["ADMIN", "TIENDA", "VENDEDOR"],
+  "ventas-mayor": ["ADMIN", "TIENDA", "VENDEDOR"],
+  devoluciones: ["ADMIN", "TIENDA", "VENDEDOR"],
   solicitudes: [],
   movimientos: ["ADMIN", "INVENTARIO"],
   despachos: [],
   costos: ["ADMIN"],
   precios: ["ADMIN"],
   "notas-compra": ["ADMIN"],
-  reportes: ["ADMIN", "TIENDA"],
+  reportes: ["ADMIN", "TIENDA", "VENDEDOR"],
   configuracion: ["ADMIN"],
 };
 
-const CANONICAL_ROLES = ["ADMIN", "INVENTARIO", "TIENDA"];
+const CANONICAL_ROLES = ["ADMIN", "INVENTARIO", "TIENDA", "VENDEDOR"];
 
 const ROLE_PALETTE = [
   "bg-violet-500/10 text-violet-400 border-violet-500/20",

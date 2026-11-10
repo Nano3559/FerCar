@@ -127,7 +127,7 @@ interface SalesPageProps {
 export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales" }: SalesPageProps = {}) {
   const { user } = useAuthStore();
   const isAdmin = user?.role === "ADMIN";
-  const isTienda = user?.role === "TIENDA";
+  const isTienda = user?.role === "TIENDA" || user?.role === "VENDEDOR";
 
   // --- Locations ---
   const [locations, setLocations] = useState<Location[]>([]);
