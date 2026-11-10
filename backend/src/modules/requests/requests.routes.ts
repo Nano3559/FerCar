@@ -152,7 +152,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
   try {
     const requesterRole = req.user!.role;
     // Las solicitudes las crean los vendedores (tienda) o los administradores.
-    if (requesterRole !== "ADMIN" && requesterRole !== "TIENDA") {
+    if (requesterRole !== "ADMIN" && requesterRole !== "TIENDA" && requesterRole !== "VENDEDOR") {
       return res.status(403).json({ message: "Solo vendedores o administradores pueden crear solicitudes" });
     }
 
@@ -166,10 +166,11 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     const requestedById = req.user!.userId;
 
     // Destino: la tienda del vendedor o la que elija el administrador.
+    const isStoreUser = requesterRole === "TIENDA" || requesterRole === "VENDEDOR";
     let locationId: number;
-    if (requesterRole === "TIENDA") {
+    if (isStoreUser) {
       if (!req.user!.locationId) {
-        return res.status(400).json({ message: "Usuario TIENDA sin ubicación asignada" });
+        return res.status(400).json({ message: "Usuario sin ubicación asignada" });
       }
       locationId = req.user!.locationId;
     } else {

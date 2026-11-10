@@ -99,8 +99,9 @@ export const authorizeModule = (module: string) => {
  * locationId (no puede operar sobre datos de ubicación sin estar asignado a una).
  */
 export const requireTiendaLocation = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.user?.role === "TIENDA" && !req.user.locationId) {
-    return res.status(403).json({ message: "Usuario TIENDA sin ubicación asignada" });
+  const storeRole = req.user?.role === "TIENDA" || req.user?.role === "VENDEDOR";
+  if (storeRole && !req.user!.locationId) {
+    return res.status(403).json({ message: "Usuario sin ubicación asignada" });
   }
   next();
 };
