@@ -74,12 +74,12 @@ export default function App() {
 
           {/* Inventario — ADMIN + INVENTARIO + TIENDA (solo lectura) */}
           <Route path="inventario" element={
-            <RoleRoute allowedRoles={["ADMIN", "INVENTARIO", "TIENDA"]} module="inventario">
+            <RoleRoute allowedRoles={["ADMIN", "INVENTARIO", "TIENDA", "VENDEDOR"]} module="inventario">
               <InventoryPage />
             </RoleRoute>
           } />
           <Route path="inventario/:id" element={
-            <RoleRoute allowedRoles={["ADMIN", "INVENTARIO", "TIENDA"]} module="inventario">
+            <RoleRoute allowedRoles={["ADMIN", "INVENTARIO", "TIENDA", "VENDEDOR"]} module="inventario">
               <ProductDetailPage />
             </RoleRoute>
           } />
@@ -175,7 +175,7 @@ export default function App() {
 
           {/* Reportes — ADMIN + TIENDA */}
           <Route path="reportes" element={
-            <RoleRoute allowedRoles={["ADMIN", "TIENDA"]} module="reportes">
+            <RoleRoute allowedRoles={["ADMIN", "TIENDA", "VENDEDOR"]} module="reportes">
               <ReportsPage />
             </RoleRoute>
           } />

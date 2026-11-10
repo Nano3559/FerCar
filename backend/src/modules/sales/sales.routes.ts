@@ -13,7 +13,7 @@ const prisma = new PrismaClient();
 
 router.use(authenticate);
 router.use(requireTiendaLocation);
-router.use(authorize("ADMIN", "TIENDA"));
+router.use(authorize("ADMIN", "TIENDA", "VENDEDOR"));
 
 // GET / — Listar ventas con filtros
 router.get("/", async (req: AuthRequest, res: Response) => {

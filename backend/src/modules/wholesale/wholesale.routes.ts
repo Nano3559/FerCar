@@ -15,7 +15,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.use(authenticate);
 router.use(requireTiendaLocation);
-router.use(authorize("ADMIN", "TIENDA"));
+router.use(authorize("ADMIN", "TIENDA", "VENDEDOR"));
 
 // POST — Crear venta mayorista
 router.post("/", async (req: AuthRequest, res: Response) => {

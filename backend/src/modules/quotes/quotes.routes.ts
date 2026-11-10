@@ -10,7 +10,7 @@ const prisma = new PrismaClient();
 
 router.use(authenticate);
 router.use(requireTiendaLocation);
-router.use(authorize("ADMIN", "TIENDA"));
+router.use(authorize("ADMIN", "TIENDA", "VENDEDOR"));
 
 const VALID_STATUS: QuoteStatus[] = ["PENDIENTE", "CONVERTIDA", "ANULADA"];
 
