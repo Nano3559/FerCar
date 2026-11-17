@@ -7,6 +7,7 @@ import { validateAndMergeItems, demandByProduct } from "../../utils/saleItems";
 import { planFulfillment, loadStockSnapshot, summarizeFulfillment, FulfillmentError, assertPendingCovered } from "../../utils/fulfillment";
 import { saleCode } from "../../shared/documentCodes";
 import { saleDateRange } from "../../utils/dateRange";
+import { summarizeReturns } from "../../utils/returns";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -67,6 +68,8 @@ router.get("/", async (req: AuthRequest, res: Response) => {
           customer: true,
           items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true, manufacturer: true } } } },
           payments: true,
+          // Sin esto el historial no sabía qué ventas tenían devoluciones.
+          returns: { select: { productId: true, quantity: true, amount: true } },
         },
         orderBy: { saleDate: "desc" },
         skip,
@@ -82,6 +85,7 @@ router.get("/", async (req: AuthRequest, res: Response) => {
         items: s.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
         payments: s.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
         entrega: summarizeFulfillment(s.items),
+        devolucion: summarizeReturns(s.items, s.returns),
       })),
       pagination: { total, page: Number(page), limit: take, pages: Math.ceil(total / take) },
     });
@@ -117,6 +121,9 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
 
     const totalReturned = sale.returns.reduce((sum, r) => sum + Number(r.amount), 0);
     const totalPaid = sale.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    // Mismo resumen que usa el historial: la nota también tiene que decir si la
+    // venta fue devuelta (total o parcialmente).
+    const devolucion = summarizeReturns(sale.items, sale.returns);
 
     const paymentMethods = sale.payments.map((p) => `${p.method}: Bs. ${Number(p.amount).toFixed(2)}`).join(" | ");
 
@@ -148,6 +155,7 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
     .payments { background: #f5f5f5; padding: 6px 8px; border-radius: 4px; margin-top: 8px; font-size: 10px; }
     .footer { margin-top: 12px; text-align: center; border-top: 2px dashed #333; padding-top: 8px; font-size: 9px; color: #666; }
     .stamp { display: inline-block; border: 1px solid #999; padding: 4px 15px; margin-top: 10px; color: #999; font-size: 9px; }
+    .return-stamp { text-align: center; border: 2px solid #dc2626; color: #dc2626; font-weight: bold; letter-spacing: 2px; padding: 6px; margin: 8px 0; border-radius: 4px; font-size: 13px; }
     @media print { body { padding: 0; } }
   </style>
 </head>
@@ -189,6 +197,12 @@ router.get("/:id/nota", async (req: AuthRequest, res: Response) => {
     ${sale.nitName ? `<span>Nombre / Razón social: ${sale.nitName}</span><br>` : ""}
     ${sale.datosFactura ? `<span>NIT / Carnet: ${sale.datosFactura}</span><br>` : ""}
     ${sale.telefonoFactura ? `<span>Celular: ${sale.telefonoFactura}</span><br>` : ""}
+  </div>
+  ` : ""}
+
+  ${devolucion.hayDevolucion ? `
+  <div class="return-stamp">
+    ${devolucion.completa ? "DEVUELTO" : "CON DEVOLUCIÓN PARCIAL"}
   </div>
   ` : ""}
 
@@ -288,6 +302,7 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
       items: sale.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
       payments: sale.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
       returns: sale.returns.map((r) => ({ ...r, amount: Number(r.amount) })),
+      devolucion: summarizeReturns(sale.items, sale.returns),
     });
   } catch (error) {
     console.error("Error al obtener venta:", error);
@@ -843,6 +858,7 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
           customer: true,
           items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true, manufacturer: true } } } },
           payments: true,
+          returns: { select: { productId: true, quantity: true, amount: true } },
         },
       });
 
@@ -860,6 +876,7 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
         items: updated!.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
         payments: updated!.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
         entrega: summarizeFulfillment(updated!.items),
+        devolucion: summarizeReturns(updated!.items, updated!.returns),
       };
     });
 
@@ -933,6 +950,7 @@ router.post("/:id/payments", async (req: AuthRequest, res: Response) => {
         customer: true,
         items: { include: { product: { select: { id: true, name: true, itemCode: true, brand: true, manufacturer: true } } } },
         payments: true,
+        returns: { select: { productId: true, quantity: true, amount: true } },
       },
     });
 
@@ -942,6 +960,7 @@ router.post("/:id/payments", async (req: AuthRequest, res: Response) => {
       items: result!.items.map((i) => ({ ...i, unitPrice: Number(i.unitPrice), subtotal: Number(i.subtotal) })),
       payments: result!.payments.map((p) => ({ ...p, amount: Number(p.amount) })),
       entrega: summarizeFulfillment(result!.items),
+      devolucion: summarizeReturns(result!.items, result!.returns),
     });
   } catch (error: any) {
     console.error("Error al registrar pago:", error);

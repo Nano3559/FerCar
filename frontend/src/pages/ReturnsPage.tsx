@@ -269,6 +269,17 @@ export default function ReturnsPage() {
                   <div className="text-right ml-3 shrink-0">
                     <p className="text-sm text-green-400 font-medium">Bs. {Number(rs.total).toFixed(2)}</p>
                     <p className="text-xs text-gray-500">{rs.items.length} producto(s)</p>
+                    {rs.returns?.length > 0 && (
+                      <p className="text-xs text-red-400">
+                        {(() => {
+                          const vendidas = rs.items.reduce((n, i) => n + i.quantity, 0);
+                          const devueltas = (rs.returns ?? []).reduce((n, r) => n + r.quantity, 0);
+                          return devueltas >= vendidas && vendidas > 0
+                            ? "Devuelto"
+                            : `${devueltas} devueltas`;
+                        })()}
+                      </p>
+                    )}
                   </div>
                 </button>
               ))}

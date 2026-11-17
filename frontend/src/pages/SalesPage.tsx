@@ -111,6 +111,14 @@ interface SaleRecord {
     detalle?: { productId: number; nombre: string; entregadas: number; pendientes: number }[];
     recortados: { productId: number; nombre: string; pedido: number; vendido: number; faltante: number }[];
   };
+  devolucion?: {
+    unidadesVendidas: number;
+    unidadesDevueltas: number;
+    montoDevuelto: number;
+    hayDevolucion: boolean;
+    completa: boolean;
+    porProducto: { productId: number; quantity: number; amount: number }[];
+  };
 }
 
 /** Lo que efectivamente se cobro de una venta. Un pago en credito no cuenta
@@ -1686,6 +1694,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
         // con unidades en camino, asi que el pendiente de entrega va aparte y
         // no cambia la etiqueta de estado.
         const unidadesPendientes = s.entrega?.pendientes ?? 0;
+        const dev = s.devolucion;
         return (
           <td className="px-4 py-3">
             {s.status === "PENDIENTE" ? (
@@ -1707,6 +1716,18 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                     {unidadesPendientes} ud por entregar
                   </p>
                 )}
+              </div>
+            )}
+            {dev?.hayDevolucion && (
+              <div className="mt-1 space-y-0.5">
+                <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
+                  dev.completa ? "bg-red-500/15 text-red-400" : "bg-orange-500/15 text-orange-400"
+                }`}>
+                  {dev.completa ? "Devuelto" : "Con devolución"}
+                </span>
+                <p className="text-xs text-red-400/90">
+                  {dev.unidadesDevueltas} ud devueltas · {formatBs(dev.montoDevuelto)}
+                </p>
               </div>
             )}
           </td>
@@ -2333,7 +2354,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                                       <tbody>
                                         {s.items.length === 0 ? (
                                           <tr><td colSpan={6} className="px-2 py-3 text-center text-gray-600">Sin ítems</td></tr>
-                                        ) : s.items.map((item) => (
+                                        ) : s.items.map((item, itemIndex) => (
                                           <tr key={item.id} className="border-b border-dark-700/20">
                                             <td className="px-2 py-1.5">
                                               <span className="text-foreground">{item.product?.name || "Producto"}</span>
@@ -2341,7 +2362,27 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                                             </td>
                                             <td className="px-2 py-1.5 text-gray-400">{item.product?.manufacturer || "—"}</td>
                                             <td className="px-2 py-1.5 text-gray-400 font-mono">{item.product?.itemCode || "—"}</td>
-                                            <td className="px-2 py-1.5 text-right text-gray-300">{item.quantity}</td>
+                                            <td className="px-2 py-1.5 text-right text-gray-300">
+                                              {item.quantity}
+                                              {(() => {
+                                                // Las devoluciones se guardan por producto, no por
+                                                // línea. Si el mismo producto entró dos veces (P1 y
+                                                // P2), la marca se muestra una sola vez para no
+                                                // repetir la misma devolución en ambas líneas.
+                                                const firstLine = s.items.findIndex(
+                                                  (i) => i.product?.id === item.product?.id,
+                                                );
+                                                if (firstLine !== itemIndex) return null;
+                                                const devueltas = s.devolucion?.porProducto.find(
+                                                  (d) => d.productId === item.product?.id,
+                                                )?.quantity ?? 0;
+                                                return devueltas > 0 ? (
+                                                  <span className="text-red-400 ml-1" title={`${devueltas} unidad(es) devueltas`}>
+                                                    (-{devueltas} dev.)
+                                                  </span>
+                                                ) : null;
+                                              })()}
+                                            </td>
                                             <td className="px-2 py-1.5 text-right text-gray-300">{formatBs(Number(item.unitPrice))}</td>
                                             <td className="px-2 py-1.5 text-right text-green-400 font-medium">{formatBs(Number(item.subtotal))}</td>
                                           </tr>
