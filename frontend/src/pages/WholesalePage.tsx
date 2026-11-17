@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
 import Autocomplete from "../components/ui/Autocomplete";
+import ProductThumb from "../components/ProductThumb";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -57,6 +58,7 @@ interface ProductResult {
   detalles: string | null; oemCode: string | null; factoryCode: string | null;
   wholesalePrice: number | null; stock: number; category: string | null;
   price1?: number; price2?: number;
+  image?: string | null; images?: string[] | null;
   stockTotal?: number;
   stockByLocation?: StockByLocation[];
 }
@@ -66,6 +68,12 @@ interface ProductFilters {
   categories: { id: number; name: string }[]; names: string[]; itemCodes: string[];
   oemCodes: string[]; factoryCodes: string[]; detalles: string[];
 }
+
+/** Foto principal del producto (la primera de `images`, o `image`). */
+const mainProductImage = (p: { image?: string | null; images?: string[] | null }): string | null => {
+  const fromList = (p.images || []).find((u) => typeof u === "string" && u.trim().length > 0);
+  return fromList || p.image || null;
+};
 
 interface LocationLite {
   id: number; name: string; type: string;
@@ -1011,6 +1019,7 @@ export default function WholesalePage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-gray-500 border-b border-dark-700/50">
+                          <th className="text-center px-3 py-2.5 font-medium whitespace-nowrap">Imagen</th>
                           <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Fabricante</th>
                           <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Producto</th>
                           <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Marca</th>
@@ -1027,6 +1036,11 @@ export default function WholesalePage() {
                       <tbody>
                         {searchResults.map((p) => (
                           <tr key={p.id} className="border-b border-dark-700/30 last:border-0 hover:bg-dark-900/30">
+                            <td className="px-3 py-2 w-16">
+                              <div className="flex justify-center">
+                                <ProductThumb image={mainProductImage(p)} name={p.name} size={44} />
+                              </div>
+                            </td>
                             <td className="px-3 py-2 text-gray-300">{p.manufacturer}</td>
                             <td className="px-3 py-2 text-foreground font-medium whitespace-normal break-words">{p.name}</td>
                             <td className="px-3 py-2 text-gray-300">{p.brand}</td>
@@ -1068,6 +1082,7 @@ export default function WholesalePage() {
                   <div className="md:hidden mt-4 space-y-1.5">
                     {searchResults.map((p) => (
                       <div key={p.id} className="w-full flex items-center justify-between px-4 py-3 bg-dark-900/50 border border-dark-700/30 rounded-xl">
+                        <ProductThumb image={mainProductImage(p)} name={p.name} size={48} className="mr-3" />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm text-foreground font-medium truncate">{p.name}</p>
                           <p className="text-xs text-gray-500 truncate">{p.manufacturer} · {p.brand} · {p.model} · {p.itemCode}</p>

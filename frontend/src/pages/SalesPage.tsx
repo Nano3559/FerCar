@@ -11,6 +11,8 @@ import api from "../services/api";
 import { useAuthStore } from "../stores/authStore";
 import ColumnManager, { resolveVisibleColumnsWithFallback } from "../components/ui/ColumnManager";
 import Autocomplete from "../components/ui/Autocomplete";
+import ProductThumb from "../components/ProductThumb";
+import { toEmbedUrl } from "../components/public/ProductImage";
 import { useDialogBehavior } from "../components/ui/useDialog";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -30,7 +32,7 @@ import {
 const HISTORY_COLUMNS = ["Código", "Fecha", "Cliente", "Datos de envío", "Datos de factura", "Usuario", "Ubicación", "Vendedor", "Tipo", "Total", "Estado", "Pagos", "Nota"];
 const CART_COLUMNS = ["Producto", "Precio", "Cantidad", "Subtotal", "Eliminar"];
 const SEARCH_COLUMNS = [
-  "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
+  "Imagen", "Fabricante", "Producto", "Marca", "Modelo", "Año", "Detalles",
   "Cód. OEM", "Cód. Fábrica", "Precio 1", "Precio 2", "Stock", "Acciones",
 ];
 
@@ -38,10 +40,17 @@ interface Product {
   id: number; itemCode: string; manufacturer: string; name: string;
   brand: string; model: string; year: string; price1: string; price2: string;
   wholesalePrice: string | null; stock: number; stockTotal?: number; category: string | null;
-  image: string | null; oemCode: string | null; factoryCode: string | null;
+  image: string | null; images?: string[] | null;
+  oemCode: string | null; factoryCode: string | null;
   detail: string | null; detalles: string | null;
   stockByLocation?: StockByLocation[];
 }
+
+/** Foto principal del producto (la primera de `images`, o `image`). */
+const mainProductImage = (p: { image?: string | null; images?: string[] | null }): string | null => {
+  const fromList = (p.images || []).find((u) => typeof u === "string" && u.trim().length > 0);
+  return fromList || p.image || null;
+};
 
 interface ProductFilters {
   brands: string[]; manufacturers: string[]; models: string[]; years: string[];
@@ -57,6 +66,8 @@ interface CartItem {
   productId: number; itemCode: string; name: string; brand: string;
   unitPrice: number; priceTier: 1 | 2; price1: number; price2: number;
   quantity: number; availableStock: number;
+  /** Foto principal del producto, para mostrarla en el carrito. */
+  image?: string | null;
   /** Stock total en toda la cadena, para poder pedir más de lo que hay en la tienda. */
   totalStock?: number;
   /** Stock del producto en cada ubicación, para proponer de dónde pedir lo que falta. */
@@ -520,6 +531,10 @@ export default function SalesPage({ saleType = "NORMAL", title = "Ventas Locales
   const [addTier, setAddTier] = useState<1 | 2>(2);
   const addCartPanelRef = useDialogBehavior(showAddCart, () => { setShowAddCart(false); setAddTarget(null); });
 
+  // --- Foto ampliada del producto ---
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
+  const previewPanelRef = useDialogBehavior(!!previewImage, () => setPreviewImage(null));
+
   // --- Solicitar producto al almacén ---
   const [showRequest, setShowRequest] = useState(false);
   const [requestTarget, setRequestTarget] = useState<Product | null>(null);
@@ -760,7 +775,22 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
   };
 
   const renderCartCell = (c: CartItem, column: string) => {
-    if (column === "Producto") return <td key={column} className="px-5 py-3"><p className="text-foreground font-medium text-sm">{c.name}</p><p className="text-xs text-gray-500">{c.brand} · {c.itemCode}</p></td>;
+    if (column === "Producto") return (
+      <td key={column} className="px-5 py-3">
+        <div className="flex items-center gap-3">
+          <ProductThumb
+            image={c.image}
+            name={c.name}
+            size={40}
+            onClick={c.image ? () => setPreviewImage({ url: toEmbedUrl(c.image!), name: c.name }) : undefined}
+          />
+          <div className="min-w-0">
+            <p className="text-foreground font-medium text-sm">{c.name}</p>
+            <p className="text-xs text-gray-500">{c.brand} · {c.itemCode}</p>
+          </div>
+        </div>
+      </td>
+    );
     if (column === "Precio") {
       const p1 = Number(c.price1);
       const p2 = Number(c.price2);
@@ -820,7 +850,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
       if (existing) {
         return prev.map((c) =>
           c.productId === p.id
-            ? { ...c, quantity: c.quantity + qty, priceTier: tier, unitPrice: price, stockByLocation: p.stockByLocation }
+            ? { ...c, quantity: c.quantity + qty, priceTier: tier, unitPrice: price, stockByLocation: p.stockByLocation, image: c.image || mainProductImage(p) }
             : c
         );
       }
@@ -830,6 +860,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
         quantity: qty, availableStock: p.stock,
         totalStock: disponible,
         stockByLocation: p.stockByLocation,
+        image: mainProductImage(p),
       }];
     });
 
@@ -939,6 +970,21 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
 
   // Se permite ver el contenido completo (sin truncar) para no ocultar datos.
   const renderSearchCell = (p: Product, column: string) => {
+    if (column === "Imagen") {
+      const url = mainProductImage(p);
+      return (
+        <td key={column} className="px-3 py-2 w-16">
+          <div className="flex justify-center">
+            <ProductThumb
+              image={url}
+              name={p.name}
+              size={44}
+              onClick={url ? () => setPreviewImage({ url: toEmbedUrl(url), name: p.name }) : undefined}
+            />
+          </div>
+        </td>
+      );
+    }
     if (column === "Fabricante") return <td key={column} className="px-3 py-2 text-gray-300 whitespace-normal break-words" title={p.manufacturer}>{p.manufacturer}</td>;
     if (column === "Producto") return <td key={column} className="px-3 py-2 text-foreground font-medium whitespace-normal break-words" title={p.name}>{p.name}</td>;
     if (column === "Marca") return <td key={column} className="px-3 py-2 text-gray-300 whitespace-normal break-words" title={p.brand}>{p.brand}</td>;
@@ -1893,7 +1939,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                     <thead>
                       <tr className="text-gray-500 border-b border-dark-700/50">
                         {SEARCH_COLUMNS.map((col) => {
-                          const align = ["Precio 1", "Precio 2"].includes(col) ? "text-right" : ["Stock", "Acciones"].includes(col) ? "text-center" : "text-left";
+                          const align = ["Precio 1", "Precio 2"].includes(col) ? "text-right" : ["Stock", "Acciones", "Imagen"].includes(col) ? "text-center" : "text-left";
                           return <th key={col} className={`${align} px-3 py-2.5 font-medium whitespace-nowrap`}>{col}</th>;
                         })}
                       </tr>
@@ -1912,6 +1958,13 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                 <div className="md:hidden mt-4 space-y-1.5">
                   {searchResults.map((p) => (
                     <div key={p.id} className="w-full flex items-center justify-between px-4 py-3 bg-dark-900/50 border border-dark-700/30 rounded-xl">
+                      <ProductThumb
+                        image={mainProductImage(p)}
+                        name={p.name}
+                        size={48}
+                        className="mr-3"
+                        onClick={mainProductImage(p) ? () => setPreviewImage({ url: toEmbedUrl(mainProductImage(p)!), name: p.name }) : undefined}
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-foreground font-medium truncate">{p.name}</p>
                         <p className="text-xs text-gray-500 truncate">{p.manufacturer} · {p.brand} · {p.model} · {p.itemCode}</p>
@@ -2866,7 +2919,14 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
       {showAddCart && addTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div ref={addCartPanelRef} role="dialog" aria-modal="true" aria-label="Agregar al carrito" className="bg-dark-800 border border-dark-700/50 rounded-2xl w-full max-w-md overflow-hidden">
-            <div className="flex items-start justify-between px-5 py-4 border-b border-dark-700/50">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-dark-700/50">
+              <ProductThumb
+                image={mainProductImage(addTarget)}
+                name={addTarget.name}
+                size={56}
+                className="mt-0.5"
+                onClick={mainProductImage(addTarget) ? () => setPreviewImage({ url: toEmbedUrl(mainProductImage(addTarget)!), name: addTarget.name }) : undefined}
+              />
               <div className="min-w-0 flex-1">
                 <h3 className="text-sm font-semibold text-foreground truncate">{addTarget.name}</h3>
                 <p className="text-xs text-gray-500 mt-0.5 truncate">
@@ -3168,7 +3228,7 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                       <thead>
                         <tr className="text-gray-500 border-b border-dark-700/50">
                           {SEARCH_COLUMNS.map((col) => {
-                            const align = ["Precio 1", "Precio 2"].includes(col) ? "text-right" : ["Stock", "Acciones"].includes(col) ? "text-center" : "text-left";
+                            const align = ["Precio 1", "Precio 2"].includes(col) ? "text-right" : ["Stock", "Acciones", "Imagen"].includes(col) ? "text-center" : "text-left";
                             return <th key={col} className={`${align} px-3 py-2 font-medium whitespace-nowrap`}>{col}</th>;
                           })}
                         </tr>
@@ -3307,6 +3367,39 @@ const [histColumns, setHistColumns] = useState<string[]>(() =>
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ FOTO AMPLIADA ============ */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            ref={previewPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Foto de ${previewImage.name}`}
+            className="relative w-full max-w-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setPreviewImage(null)}
+              title="Cerrar"
+              className="absolute -top-11 right-0 p-2 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-all"
+            >
+              <X size={20} />
+            </button>
+            <img
+              src={previewImage.url}
+              alt={previewImage.name}
+              referrerPolicy="no-referrer"
+              className="w-full max-h-[80vh] object-contain rounded-xl bg-dark-900 border border-dark-700/50"
+              onError={() => setPreviewImage(null)}
+            />
+            <p className="text-center text-sm text-gray-300 mt-3">{previewImage.name}</p>
           </div>
         </div>
       )}
