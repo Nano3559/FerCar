@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   resolverColumnaUbicacion,
   esColumnaCantidad,
+  esColumnaUbicacionPorFila,
+  pareceColumnaUbicacionPorFila,
   leerCantidad,
   normalizeHeader,
   type LocationRef,
@@ -75,6 +77,24 @@ test("distingue columna de cantidad de columna de ubicacion", () => {
   assert.equal(esColumnaCantidad("existencia"), true);
   assert.equal(esColumnaCantidad("TUMUSLA"), false);
   assert.equal(esColumnaCantidad("PRECIO 1"), false);
+});
+
+test("reconoce la columna que trae el nombre de la tienda en cada fila", () => {
+  // Los Excel del proveedor traen los encabezados en mayusculas.
+  for (const col of ["TIENDA", "UBICACION", "UBICACIÓN", "ALMACEN", "ALMACÉN", "Sucursal", "Local", "Depósito"]) {
+    assert.equal(esColumnaUbicacionPorFila(col), true, `"${col}" deberia ser ubicacion por fila`);
+  }
+  assert.equal(esColumnaUbicacionPorFila("PRODUCTO"), false);
+  assert.equal(esColumnaUbicacionPorFila("TUMUSLA"), false);
+});
+
+test("acepta encabezados compuestos para la ubicacion por fila", () => {
+  assert.equal(pareceColumnaUbicacionPorFila("UBICACIÓN / TIENDA"), true);
+  assert.equal(pareceColumnaUbicacionPorFila("TIENDA DE DESPACHO"), true);
+  assert.equal(pareceColumnaUbicacionPorFila("ALMACEN DESTINO"), true);
+  assert.equal(pareceColumnaUbicacionPorFila("PRODUCTO"), false);
+  // "TIENDA 1" ya se resuelve como columna de cantidad; quien llama la descarta.
+  assert.equal(pareceColumnaUbicacionPorFila("TIENDA 1"), true);
 });
 
 test("lee cantidades en los formatos que traen los archivos", () => {

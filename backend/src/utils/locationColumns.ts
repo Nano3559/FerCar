@@ -66,6 +66,28 @@ export const esColumnaCantidad = (encabezado: string): boolean =>
     normalizeHeader(encabezado),
   );
 
+// Nombres que puede tener la columna donde cada fila dice a que tienda o
+// almacen pertenece el producto ("TIENDA", "UBICACION", "ALMACEN"...). No son
+// columnas de cantidad: su valor es el nombre de la ubicacion, no un numero.
+const ALIAS_UBICACION_FILA = [
+  "tienda", "ubicacion", "almacen", "sucursal", "local",
+  "deposito", "punto de venta",
+];
+
+/** true si el encabezado es exactamente el nombre de la ubicacion por fila. */
+export const esColumnaUbicacionPorFila = (encabezado: string): boolean =>
+  ALIAS_UBICACION_FILA.includes(normalizeHeader(encabezado));
+
+/**
+ * true si el encabezado parece traer el nombre de la ubicacion por fila, aunque
+ * venga compuesto ("UBICACIÓN / TIENDA", "TIENDA DE DESPACHO"). Quien llama
+ * debe descartar antes las columnas que ya se resolvieron como cantidad.
+ */
+export const pareceColumnaUbicacionPorFila = (encabezado: string): boolean => {
+  const n = normalizeHeader(encabezado);
+  return ALIAS_UBICACION_FILA.some((a) => n.includes(a));
+};
+
 export interface CantidadLeida {
   valor: number;
   /** true si la celda no traia un numero usable (vacia, "?", "a confirmar"). */

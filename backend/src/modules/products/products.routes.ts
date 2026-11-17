@@ -9,6 +9,8 @@ import { classifyProductName } from "../../utils/productClassifier";
 import {
   resolverColumnaUbicacion,
   esColumnaCantidad,
+  esColumnaUbicacionPorFila,
+  pareceColumnaUbicacionPorFila,
   leerCantidad,
   normalizeHeader as normalize,
 } from "../../utils/locationColumns";
@@ -781,6 +783,9 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
     // avisar, en vez de perderlas como 0 sin decir nada.
     const sinCantidadPorUbicacion = new Map<number, number>();
     const stockPorUbicacion = new Map<number, number>();
+    // Ubicaciones que vienen en una columna por fila ("TIENDA", "UBICACION"...),
+    // no como una columna por tienda. Se guardan para mostrarlas en el resumen.
+    const ubicacionesPorFila = new Set<number>();
 
     const suppliers = await prisma.supplier.findMany();
     const supplierByName: Record<string, number> = {};
@@ -860,7 +865,6 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       let priceHermana = parseFloat(row["Hermanas"] || row["HERMANAS"] || row["Hermana"] || row["priceHermana"] || "0") || 0;
       let calidad = (row["Calidad"] || row["calidad"] || row["quality"] || row["Detalles"] || row["detalles"] || "").toString().trim();
       let rowStock = parseInt(row["Stock"] || row["stock"] || "0", 10) || 0;
-      const rowLocation = (row["Ubicación"] || row["Ubicacion"] || row["Tienda"] || row["Almacén"] || row["Almacen"] || "").toString().trim();
 
       // Lectura unificada para ambas opciones: Importar 1 (catálogo nuevo) e
       // Importar 2 (actualizar inventario) comparten el mismo formato de Excel.
@@ -897,6 +901,23 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       price2 = numA(cellA(["PRECIO 2", "Precio 2", "Precio Mayoreo"]));
       wholesalePrice = numA(cellA(["PRECIO MAYOR", "Precio Mayor", "Precio mayor", "Precio Mayoreo", "PRECIO AMYOR", "Precio Amyor", "XMAYOR"]));
       imagenUrls = cellA(["IMAGEN", "Imagen", "Image", "URL Imagen"]).split(",").map((u) => u.trim()).filter(Boolean);
+
+      // Ubicación escrita en cada fila (una sola tienda/almacén por producto).
+      // Se busca sin distinguir mayúsculas porque los Excel del proveedor traen
+      // los encabezados en mayúsculas ("TIENDA", "UBICACION", "ALMACEN") y antes
+      // solo se leían las variantes con minúsculas, así que la tienda se perdía
+      // y el stock terminaba en CHIQUICOLLO. También se aceptan encabezados
+      // compuestos ("UBICACIÓN / TIENDA", "TIENDA DE DESPACHO").
+      const rowLocation = (() => {
+        const keyExacta = Object.keys(row).find((k) => esColumnaUbicacionPorFila(k));
+        if (keyExacta) return String(row[keyExacta] ?? "").trim();
+        const key = Object.keys(row).find(
+          // Una columna ya resuelta como cantidad ("TUMUSLA", "TIENDA 1") no
+          // contiene el nombre de la ubicación, sino cuánto hay en ella.
+          (k) => !mapaColumnas.has(k) && pareceColumnaUbicacionPorFila(k),
+        );
+        return key ? String(row[key] ?? "").trim() : "";
+      })();
       rowStock = leerCantidad(columnaCantidad ? row[columnaCantidad] : "").valor;
       calidad = "";
       itemCode = itemCode || factoryCode || oemCode;
@@ -933,9 +954,32 @@ if (!name) {
 
         let rowLocationId = requestedLocationId;
         if (rowLocation) {
-          const location = await prisma.location.findFirst({ where: { OR: [{ name: { equals: rowLocation, mode: "insensitive" } }, { id: Number(rowLocation) || -1 }] } });
-          if (!location) throw new Error(`Ubicación no encontrada: ${rowLocation}`);
-          rowLocationId = location.id;
+          // Se resuelve con el mismo criterio tolerante que las columnas por
+          // ubicación: acepta "TUMUSLA", "Tienda TUMUSLA", "TUMUSLA (TIENDA)",
+          // "TIENDA 1", etc. Antes solo valía el nombre exacto y por eso un
+          // archivo con la tienda escrita de otra forma fallaba como
+          // "Ubicación no encontrada".
+          const resuelta = resolverColumnaUbicacion(rowLocation, allLocations);
+          const porId = /^\d+$/.test(rowLocation)
+            ? allLocations.find((l) => l.id === Number(rowLocation))
+            : undefined;
+          const exacta = resuelta
+            ? allLocations.find((l) => l.id === resuelta.locationId)
+            : porId ||
+              (await prisma.location.findFirst({
+                where: { name: { equals: rowLocation, mode: "insensitive" } },
+              }));
+          if (exacta) {
+            rowLocationId = exacta.id;
+            ubicacionesPorFila.add(exacta.id);
+          } else {
+            // No se descarta la fila: se avisa y el stock cae en la ubicación
+            // por defecto, para que el usuario vea el nombre exacto que no se
+            // reconoció y lo corrija en el archivo.
+            warnings.push(
+              `${label}: ubicación "${rowLocation}" no reconocida — el stock fue a CHIQUICOLLO`,
+            );
+          }
         }
         const perLocationStock = getPerLocationStock(row);
 
@@ -1066,11 +1110,18 @@ if (!name) {
             } else warnings.push(`${label}: Proveedor "${proveedor}" no encontrado en el sistema — costo sin asociar`);
           }
 
-          let locations = allLocations;
           if (perLocationStock.length > 0) {
             const stockByLoc: Record<number, number> = {};
             allLocations.forEach((l) => { stockByLoc[l.id] = 0; });
             perLocationStock.forEach((p) => { stockByLoc[p.locationId] = p.stock; });
+            for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: minStockFor(loc.id) } });
+          } else if (rowLocationId && rowStock > 0) {
+            // La fila trae la tienda/almacén (columna TIENDA/UBICACION): el
+            // stock va a ESA ubicación. Antes, al crear un producto nuevo, se
+            // mandaba a CHIQUICOLLO aunque la tienda estuviera escrita.
+            const stockByLoc: Record<number, number> = {};
+            allLocations.forEach((l) => { stockByLoc[l.id] = 0; });
+            stockByLoc[rowLocationId] = rowStock;
             for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: minStockFor(loc.id) } });
           } else if (defaultLocationId && rowStock > 0) {
             const stockByLoc: Record<number, number> = {};
@@ -1079,10 +1130,7 @@ if (!name) {
             for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: stockByLoc[loc.id], minStock: minStockFor(loc.id) } });
             warnings.push(`${label}: stock sin ubicación asignada — fue a CHIQUICOLLO`);
           } else {
-            locations = rowLocationId
-              ? allLocations.filter((l) => l.id === rowLocationId)
-              : allLocations;
-            for (const loc of locations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: rowLocationId ? rowStock : 0, minStock: minStockFor(loc.id) } });
+            for (const loc of allLocations) await prisma.inventory.create({ data: { productId: product.id, locationId: loc.id, stock: 0, minStock: minStockFor(loc.id) } });
           }
 
           imported.push({ id: product.id, itemCode, name, action: "creado", row: label });
@@ -1113,6 +1161,13 @@ if (!name) {
     if (mapaColumnas.size > 0) {
       warnings.push(`Columnas de ubicación reconocidas: ${comoSeResolvieron.join("; ")}`);
     }
+    if (ubicacionesPorFila.size > 0) {
+      warnings.push(
+        `Ubicaciones leídas de la columna por fila: ${[...ubicacionesPorFila]
+          .map((id) => allLocations.find((l) => l.id === id)?.name || id)
+          .join(", ")}`,
+      );
+    }
 
     res.json({
       total: rows.length,
@@ -1123,6 +1178,9 @@ if (!name) {
       detalles: {
         ubicacionesReconocidas: comoSeResolvieron,
         ubicacionesSinColumna: ubicacionesSinColumna.map((l) => l.name),
+        ubicacionesPorFila: [...ubicacionesPorFila].map(
+          (id) => allLocations.find((l) => l.id === id)?.name || String(id),
+        ),
         stockPorUbicacion: [...stockPorUbicacion.entries()].map(([locationId, total]) => ({
           ubicacion: allLocations.find((l) => l.id === locationId)?.name || locationId,
           total,

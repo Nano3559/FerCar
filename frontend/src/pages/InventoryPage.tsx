@@ -586,12 +586,25 @@ const handleImportExcel = async () => {
     rows.push(`Creados: ${r.imported} | Actualizados: ${r.updated} | Errores: ${r.errors} | Advertencias: ${r.warnings ?? 0}`);
     rows.push("");
     const det0 = r.detalles;
-    if (det0?.stockPorUbicacion?.length > 0) {
-      rows.push("=== STOCK LEÍDO DEL ARCHIVO POR UBICACIÓN ===");
-      det0.stockPorUbicacion.forEach((s: any) => rows.push(`- ${s.ubicacion}: ${s.total} unidades`));
+    if (det0) {
+      rows.push("=== UBICACIONES RECONOCIDAS EN EL ARCHIVO ===");
+      if (det0.ubicacionesReconocidas?.length > 0) {
+        rows.push(`- Columnas por tienda/almacén: ${det0.ubicacionesReconocidas.join("; ")}`);
+      }
+      if (det0.ubicacionesPorFila?.length > 0) {
+        rows.push(`- Leídas de la columna por fila: ${det0.ubicacionesPorFila.join(", ")}`);
+      }
+      if (!det0.ubicacionesReconocidas?.length && !det0.ubicacionesPorFila?.length) {
+        rows.push("- No se reconoció ninguna columna de tienda/almacén.");
+      }
       if (det0.ubicacionesSinColumna?.length > 0) {
         rows.push(`- SIN columna en el archivo (quedan como estaban): ${det0.ubicacionesSinColumna.join(", ")}`);
       }
+      rows.push("");
+    }
+    if (det0?.stockPorUbicacion?.length > 0) {
+      rows.push("=== STOCK LEÍDO DEL ARCHIVO POR UBICACIÓN ===");
+      det0.stockPorUbicacion.forEach((s: any) => rows.push(`- ${s.ubicacion}: ${s.total} unidades`));
       rows.push("");
     }
     if (det0?.celdasSinCantidad?.length > 0) {
@@ -1302,7 +1315,7 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
                 </button>
               </div>
 
-              <p className="text-gray-400 text-xs">Podés usar columnas que coincidan con el nombre de cada ubicación (Tienda 1, Almacén 1...) para repartir el stock entre varias ubicaciones.</p>
+              <p className="text-gray-400 text-xs">Podés usar columnas que coincidan con el nombre de cada ubicación (Tienda 1, Almacén 1...) para repartir el stock entre varias ubicaciones, o una sola columna TIENDA / UBICACIÓN / ALMACÉN con el nombre de la tienda en cada fila.</p>
             </div>
                 {!importResult ? (
                   <div className="space-y-3">
@@ -1348,19 +1361,46 @@ const setField = (field: keyof FormData, value: string) => setForm((prev) => ({ 
                       <p className="text-xs text-gray-400">Advertencias</p>
                     </div>
                   </div>
-                  {importResult.detalles?.stockPorUbicacion?.length > 0 && (
+                  {importResult.detalles && (
                     <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-3">
                       <p className="text-xs text-green-400 font-medium mb-2">
-                        Stock leído del archivo por ubicación
+                        Ubicaciones reconocidas en el archivo
                       </p>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {importResult.detalles.stockPorUbicacion.map((s: any) => (
-                          <div key={s.ubicacion} className="flex items-baseline justify-between gap-2 bg-dark-800/60 rounded-lg px-2 py-1">
-                            <span className="text-xs text-gray-300">{s.ubicacion}</span>
-                            <span className="text-sm font-semibold text-green-300">{s.total}</span>
-                          </div>
-                        ))}
-                      </div>
+                      {importResult.detalles.stockPorUbicacion?.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {importResult.detalles.stockPorUbicacion.map((s: any) => (
+                            <div key={s.ubicacion} className="flex items-baseline justify-between gap-2 bg-dark-800/60 rounded-lg px-2 py-1">
+                              <span className="text-xs text-gray-300">{s.ubicacion}</span>
+                              <span className="text-sm font-semibold text-green-300">{s.total}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {importResult.detalles.ubicacionesReconocidas?.length > 0 && (
+                        <p className="text-xs text-gray-400 mt-2">
+                          Columnas por tienda/almacén:{" "}
+                          <span className="text-green-300">
+                            {importResult.detalles.ubicacionesReconocidas.join("; ")}
+                          </span>
+                        </p>
+                      )}
+                      {importResult.detalles.ubicacionesPorFila?.length > 0 && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          Leídas de la columna por fila:{" "}
+                          <span className="text-green-300">
+                            {importResult.detalles.ubicacionesPorFila.join(", ")}
+                          </span>
+                        </p>
+                      )}
+                      {!importResult.detalles.stockPorUbicacion?.length &&
+                        !importResult.detalles.ubicacionesReconocidas?.length &&
+                        !importResult.detalles.ubicacionesPorFila?.length && (
+                          <p className="text-xs text-amber-400/90">
+                            No se reconoció ninguna columna de tienda/almacén. Revisa que el
+                            archivo traiga una columna por ubicación (TUMUSLA, SILES, MELCHOR...)
+                            o una columna TIENDA / UBICACIÓN / ALMACÉN con el nombre en cada fila.
+                          </p>
+                        )}
                       {importResult.detalles.ubicacionesSinColumna?.length > 0 && (
                         <p className="text-xs text-amber-400/90 mt-2">
                           Sin columna en el archivo (quedan como estaban):{" "}
