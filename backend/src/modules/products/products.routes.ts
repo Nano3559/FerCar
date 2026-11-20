@@ -8,6 +8,7 @@ import { yearRangesOverlap } from "../../utils/yearRanges";
 import { classifyProductName } from "../../utils/productClassifier";
 import {
   resolverColumnaUbicacion,
+  resolverValorUbicacion,
   esColumnaCantidad,
   esColumnaUbicacionPorFila,
   pareceColumnaUbicacionPorFila,
@@ -777,7 +778,6 @@ router.post("/import", authenticate, authorize("ADMIN"), upload.single("file"), 
       }
     }
     const ubicacionesConColumna = new Set(mapaColumnas.values());
-    const ubicacionesSinColumna = allLocations.filter((l) => !ubicacionesConColumna.has(l.id));
     const columnaCantidad = Object.keys((rows[0] as any) || {}).find((k) => esColumnaCantidad(k));
     // Celdas que no traen un numero (por ejemplo "?") se cuentan aparte para
     // avisar, en vez de perderlas como 0 sin decir nada.
@@ -959,7 +959,7 @@ if (!name) {
           // "TIENDA 1", etc. Antes solo valía el nombre exacto y por eso un
           // archivo con la tienda escrita de otra forma fallaba como
           // "Ubicación no encontrada".
-          const resuelta = resolverColumnaUbicacion(rowLocation, allLocations);
+          const resuelta = resolverValorUbicacion(rowLocation, allLocations);
           const porId = /^\d+$/.test(rowLocation)
             ? allLocations.find((l) => l.id === Number(rowLocation))
             : undefined;
@@ -982,6 +982,14 @@ if (!name) {
           }
         }
         const perLocationStock = getPerLocationStock(row);
+        // El stock que viene en la columna TIENDA/UBICACION tambien se cuenta
+        // en el resumen. Antes se guardaba en FALSURI pero la UI lo mostraba
+        // en blanco porque stockPorUbicacion solo se llenaba con columnas
+        // dedicadas por tienda.
+        if (perLocationStock.length === 0 && rowStock > 0) {
+          const destino = rowLocationId || defaultLocationId;
+          if (destino) stockPorUbicacion.set(destino, (stockPorUbicacion.get(destino) || 0) + rowStock);
+        }
 
         if (!price1) rowWarnings.push(`${label}: Precio 1 vacío — quedó en 0, editarlo manualmente`);
         if (!price2) rowWarnings.push(`${label}: Precio 2 vacío — quedó en 0, editarlo manualmente`);
@@ -1150,6 +1158,12 @@ if (!name) {
       const l = allLocations.find((x) => x.id === locationId);
       if (l) warnings.push(`${l.name}: ${cantidad} productos vinieron sin cantidad (celdas vacías o con "?") — hay que contarlos a mano`);
     }
+    // Una ubicación escrita en la columna por fila (TIENDA/UBICACIÓN) SÍ está
+    // en el archivo aunque no tenga su propia columna de cantidad. Antes se
+    // listaba acá igual y el importador creía que FALSURI no se reconocía.
+    const ubicacionesSinColumna = allLocations.filter(
+      (l) => !ubicacionesConColumna.has(l.id) && !ubicacionesPorFila.has(l.id),
+    );
     if (ubicacionesSinColumna.length > 0) {
       warnings.push(
         `El archivo NO trae columnas para: ${ubicacionesSinColumna.map((l) => `${l.name} (${l.type})`).join(", ")} — esas ubicaciones quedan como estaban`

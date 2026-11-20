@@ -60,6 +60,84 @@ export const resolverColumnaUbicacion = (
   return null;
 };
 
+// El nombre que el usuario escribe en la columna TIENDA/UBICACION de cada fila
+// no siempre coincide con el de la base: "FALSURY", "FAL SURI" o "TIENDA
+// FALSURY" son formas comunes de referirse a FALSURI. Antes solo se aceptaba
+// el nombre exacto y la fila caia en CHIQUICOLLO sin que el resumen lo dijera.
+const ALIAS_VALOR_UBICACION: Record<string, string> = {
+  falsury: "falsuri",
+  falsur: "falsuri",
+  falsuris: "falsuri",
+  chikicollo: "chiquicollo",
+  chiquicolo: "chiquicollo",
+  quijaro: "quijarro",
+};
+
+const soloAlfanumerico = (s: string): string =>
+  normalizeHeader(s).replace(/[^a-z0-9]/g, "");
+
+/** Distancia de Levenshtein, para tolerar errores de una o dos letras. */
+const distancia = (a: string, b: string): number => {
+  const fila = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let anterior = fila[0];
+    fila[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const viejo = fila[j];
+      fila[j] = Math.min(
+        fila[j] + 1,
+        fila[j - 1] + 1,
+        anterior + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      anterior = viejo;
+    }
+  }
+  return fila[b.length];
+};
+
+/**
+ * Resuelve el VALOR escrito en una celda de ubicacion por fila. Primero intenta
+ * el criterio estricto de las columnas y despues tolera alias y errores de
+ * tipeo. Solo adivina si hay un unico candidato razonable; si hay ambiguedad
+ * devuelve null para no mandar el stock al lugar equivocado.
+ */
+export const resolverValorUbicacion = (
+  valor: string,
+  locations: LocationRef[],
+): ColumnaResuelta | null => {
+  const directa = resolverColumnaUbicacion(valor, locations);
+  if (directa) return directa;
+
+  const n = soloAlfanumerico(valor);
+  if (!n) return null;
+  const sinRotulo = n
+    .replace(/^(tienda|almacen|sucursal|local|deposito|puntodeventa)/, "")
+    .replace(/(tienda|almacen|sucursal|local|deposito|puntodeventa)$/, "");
+  const objetivo = ALIAS_VALOR_UBICACION[sinRotulo] || ALIAS_VALOR_UBICACION[n] || sinRotulo || n;
+
+  const porNombre = new Map<string, LocationRef>();
+  for (const l of locations) porNombre.set(soloAlfanumerico(l.name), l);
+
+  const exacta = porNombre.get(objetivo);
+  if (exacta) {
+    return { locationId: exacta.id, como: `valor "${valor.trim()}" -> ${exacta.name}` };
+  }
+
+  if (objetivo.length >= 5) {
+    const candidatos = [...porNombre.entries()]
+      .map(([nombre, loc]) => ({ loc, d: distancia(objetivo, nombre) }))
+      .filter((c) => c.d <= 2)
+      .sort((a, b) => a.d - b.d);
+    if (candidatos.length === 1) {
+      return {
+        locationId: candidatos[0].loc.id,
+        como: `valor "${valor.trim()}" -> ${candidatos[0].loc.name} (similar)`,
+      };
+    }
+  }
+  return null;
+};
+
 /** Encabezados que son una cantidad global, no una ubicacion. */
 export const esColumnaCantidad = (encabezado: string): boolean =>
   ["stock", "cantidad", "existencia", "quantity", "existencia actual", "stock actual"].includes(

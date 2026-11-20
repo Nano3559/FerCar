@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   resolverColumnaUbicacion,
+  resolverValorUbicacion,
   esColumnaCantidad,
   esColumnaUbicacionPorFila,
   pareceColumnaUbicacionPorFila,
@@ -133,6 +134,31 @@ test("encabezados del archivo JALADORES 2026 (1).xlsx", () => {
   ];
   const ubicaciones = encabezados.filter((h) => resolverColumnaUbicacion(h, UBICACIONES));
   assert.deepEqual(ubicaciones, ["TUMUSLA", "CHIQUICOLLO"]);
+});
+
+test("reconoce FALSURI escrito en la columna por fila", () => {
+  const valorId = (v: string) => resolverValorUbicacion(v, UBICACIONES)?.locationId ?? null;
+  // Formas que el usuario pone en la celda TIENDA/UBICACION.
+  for (const v of [
+    "falsuri", "Falsuri", "FALSURI", "FÁLSURI", " falsuri ",
+    "FALSURY", "Fal Suri", "FAL-SURI", "TIENDA FALSURI", "SUCURSAL FALSURY",
+  ]) {
+    assert.equal(valorId(v), 21, `"${v}" deberia resolverse a FALSURI`);
+  }
+  // Las demas tiendas y almacenes siguen funcionando igual.
+  assert.equal(valorId("siles"), 20);
+  assert.equal(valorId("TUMUSLA"), 19);
+  assert.equal(valorId("chiquicollo"), 24);
+  assert.equal(valorId("melchor"), 22);
+  assert.equal(valorId("quijarro"), 23);
+});
+
+test("no adivina una ubicacion cuando el valor es ambiguo o no existe", () => {
+  const valorId = (v: string) => resolverValorUbicacion(v, UBICACIONES)?.locationId ?? null;
+  assert.equal(valorId(""), null);
+  assert.equal(valorId("?"), null);
+  assert.equal(valorId("san pedro"), null);
+  assert.equal(valorId("SIN TIENDA"), null);
 });
 
 test("normalizeHeader quita tildes, mayusculas y espacios", () => {
