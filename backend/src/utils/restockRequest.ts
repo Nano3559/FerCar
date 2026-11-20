@@ -166,47 +166,47 @@ export async function ensureRestockRequest(db: Db, args: RestockArgs): Promise<n
     return open.id;
   }
 
-  // Origen: SOLO desde ALMACÉN. No se crean solicitudes si solo hay stock en otras tiendas.
-  let originId: number | null = null;
+  // Si la solicitud nace de una linea de venta, el origen ya fue elegido y el
+  // stock ya se descontó en el plan de la venta. No hay que "buscar" un almacén
+  // ni exigir que quede disponible despues del descuento: eso impedia crear la
+  // solicitud cuando se vendia lo ultimo que habia y la venta fallaba aunque el
+  // reparto fuera valido (p. ej. varios productos saliendo de almacén).
+  let originId: number | null = args.fromLocationId ?? null;
+  if (args.saleItemId && originId) {
+    if (originId === destinationId) return null;
+  } else {
+    // Origen automático (reposicion por venta/stock minimo sin linea): solo
+    // desde ALMACÉN y solo si todavia tiene mercaderia disponible.
+    originId = null;
+    const almacenes = await db.location.findMany({
+      where: { type: "ALMACEN" },
+      orderBy: { id: "asc" },
+      select: { id: true },
+    });
 
-  const almacenes = await db.location.findMany({
-    where: { type: "ALMACEN" },
-    orderBy: { id: "asc" },
-    select: { id: true },
-  });
-
-  if (almacenes.length === 0) {
-    return null;
-  }
-
-  for (const alm of almacenes) {
-    const disp = await disponibleEnOrigen(db, productId, alm.id, null);
-    if (disp > 0) {
-      originId = alm.id;
-      break;
+    if (almacenes.length === 0) {
+      return null;
     }
-  }
 
-  if (originId === null) {
-    console.warn(
-      `[replenish] ${productId}: no hay stock disponible en ningún ALMACÉN. No se crea solicitud para destino ${destinationId}`,
-    );
-    return null;
-  }
+    for (const alm of almacenes) {
+      const disp = await disponibleEnOrigen(db, productId, alm.id, null);
+      if (disp > 0) {
+        originId = alm.id;
+        break;
+      }
+    }
 
-  if (originId === destinationId) {
-    return null;
-  }
+    if (originId === null) {
+      console.warn(
+        `[replenish] ${productId}: no hay stock disponible en ningún ALMACÉN. No se crea solicitud para destino ${destinationId}`,
+      );
+      return null;
+    }
 
-  const [product, destination] = await Promise.all([
-    db.product.findUnique({ where: { id: productId }, select: { name: true } }),
-    db.location.findUnique({ where: { id: destinationId }, select: { name: true } }),
-  ]);
+    if (originId === destinationId) {
+      return null;
+    }
 
-  // Lo que no nace de una linea de venta (reposicion automatica de una venta,
-  // stock minimo) todavia tiene la mercaderia en el origen: la solicitud no
-  // puede prometer mas de lo que queda ahi.
-  if (!args.saleItemId && originId !== null) {
     const disponible = await disponibleEnOrigen(db, productId, originId, null);
     if (disponible <= 0) {
       console.warn(
@@ -216,6 +216,11 @@ export async function ensureRestockRequest(db: Db, args: RestockArgs): Promise<n
     }
     quantity = Math.min(quantity, disponible);
   }
+
+  const [product, destination] = await Promise.all([
+    db.product.findUnique({ where: { id: productId }, select: { name: true } }),
+    db.location.findUnique({ where: { id: destinationId }, select: { name: true } }),
+  ]);
 
   const request = await db.productRequest.create({
     data: {
