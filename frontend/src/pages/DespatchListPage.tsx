@@ -926,6 +926,30 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                   <X size={16} />
                 </button>
               </div>
+
+              <div className="mt-4 border border-dark-700/50 rounded-xl overflow-hidden">
+                <div className="px-3 py-2 bg-dark-900/40 border-b border-dark-700/50 text-xs text-gray-400 font-medium">
+                  Productos a entregar
+                </div>
+                <div className="max-h-40 overflow-y-auto divide-y divide-dark-700/30">
+                  {deliverNote.items.length === 0 ? (
+                    <p className="px-3 py-3 text-sm text-gray-500">No hay productos cargados en esta nota.</p>
+                  ) : (
+                    deliverNote.items.map((it, idx) => (
+                      <div key={idx} className="px-3 py-2 text-sm flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-foreground truncate">{it.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {it.factoryCode || it.itemCode || "—"}
+                            {it.locationName ? ` · ${it.locationName}` : ""}
+                          </p>
+                        </div>
+                        <span className="text-foreground font-medium whitespace-nowrap">x{it.quantity}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
               <label className="block text-xs text-gray-400 mt-4 mb-1.5" htmlFor="entregado-destino">Tienda destino del stock (obligatorio)</label>
               <select id="entregado-destino" value={deliverDestination} onChange={(e) => setDeliverDestination(e.target.value)}
                 className="w-full px-3 py-2 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none">

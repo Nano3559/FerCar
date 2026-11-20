@@ -122,7 +122,7 @@ router.get("/:id", async (req: AuthRequest, res: Response) => {
     const request = await prisma.productRequest.findUnique({
       where: { id },
       include: {
-        product: { select: { id: true, name: true, itemCode: true, brand: true, model: true } },
+        product: { select: { id: true, name: true, itemCode: true, factoryCode: true, brand: true, model: true } },
         location: { select: { id: true, name: true, type: true } },
         fromLocation: { select: { id: true, name: true, type: true } },
         requestedBy: { select: { id: true, name: true, email: true } },
