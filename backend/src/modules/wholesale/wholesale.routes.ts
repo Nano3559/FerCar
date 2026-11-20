@@ -6,7 +6,7 @@ import { authenticate, authorize, requireTiendaLocation } from "../../shared/mid
 import { AuthRequest } from "../../shared/types";
 import { saleDateRange } from "../../utils/dateRange";
 import { ensureRestockRequest } from "../../utils/restockRequest";
-import { validateAndMergeItems } from "../../utils/saleItems";
+import { validateAndMergeItems, loadProductNames } from "../../utils/saleItems";
 import { planFulfillment, loadStockSnapshot, summarizeFulfillment, FulfillmentError, assertPendingCovered } from "../../utils/fulfillment";
 
 const router = Router();
@@ -61,7 +61,11 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     }
 
     // Validar, deduplicar y resolver precio unitario de los ítems
-    const validItems = validateAndMergeItems(items);
+    const nombresItems = await loadProductNames(
+      (ids) => prisma.product.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
+      items,
+    );
+    const validItems = validateAndMergeItems(items, nombresItems);
 
     // De dónde sale la mercadería que no está en esta tienda. Lo elige el
     // vendedor en pantalla: [{ productId, fromLocationId, quantity }].

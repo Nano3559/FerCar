@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateAndMergeItems, demandByProduct } from "../saleItems";
+import { validateAndMergeItems, demandByProduct, loadProductNames } from "../saleItems";
 
 test("valida y mantiene ítems únicos", () => {
   const items = validateAndMergeItems([
@@ -41,6 +41,24 @@ test("rechaza precio unitario menor o igual a 0", () => {
     () => validateAndMergeItems([{ productId: 1, quantity: 1, unitPrice: 0 }]),
     /precio unitario del producto 1 debe ser mayor a 0/
   );
+});
+
+test("el error de precio nombra al producto cuando se conocen los nombres", () => {
+  assert.throws(
+    () => validateAndMergeItems(
+      [{ productId: 15, quantity: 1, unitPrice: 0 }],
+      { 15: "BARRA ANTIVUELCO" },
+    ),
+    /El precio unitario del "BARRA ANTIVUELCO" \(ID 15\) debe ser mayor a 0/
+  );
+});
+
+test("loadProductNames ignora ids inválidos y construye el mapa", async () => {
+  const nombres = await loadProductNames(
+    async (ids) => ids.map((id) => ({ id, name: `Producto ${id}` })),
+    [{ productId: 15 }, { productId: "16" }, { productId: 0 }, {}],
+  );
+  assert.deepEqual(nombres, { 15: "Producto 15", 16: "Producto 16" });
 });
 
 test("rechaza productId inválido", () => {

@@ -57,7 +57,7 @@ interface ProductResult {
   brand: string; model: string; year: string; detail: string | null;
   detalles: string | null; oemCode: string | null; factoryCode: string | null;
   wholesalePrice: number | null; stock: number; category: string | null;
-  price1?: number; price2?: number;
+  price1: number; price2: number;
   image?: string | null; images?: string[] | null;
   stockTotal?: number;
   stockByLocation?: StockByLocation[];
@@ -279,6 +279,7 @@ export default function WholesalePage() {
             brand: p.brand, model: p.model, year: p.year, detail: p.detail,
             detalles: p.detalles, oemCode: p.oemCode || null, factoryCode: p.factoryCode || null,
             wholesalePrice: p.wholesalePrice ? Number(p.wholesalePrice) : null,
+            price1: Number(p.price1) || 0, price2: Number(p.price2) || 0,
             stock: Number(p.stock) || 0, category: p.category || null,
             stockTotal: typeof p.stockTotal === "number" ? Number(p.stockTotal) : undefined,
             stockByLocation: p.stockByLocation || undefined,
@@ -317,12 +318,20 @@ export default function WholesalePage() {
 
   const addItem = (p: ProductResult) => {
     if (items.find((i) => i.productId === p.id)) { toast.error("Producto ya agregado"); return; }
-    const price = p.wholesalePrice ?? 0;
+    // En este negocio Precio 1 es el mayorista: el propio CSV de precios lo
+    // rotula "Precio 1 (Mayorista)". El campo aparte "Precio Mayor" casi siempre
+    // viene vacío del importador, así que se cae a P1. Antes se mandaba 0 y el
+    // backend rechazaba la venta con "El precio unitario del producto 15...".
+    const price = p.wholesalePrice && p.wholesalePrice > 0 ? p.wholesalePrice : p.price1;
+    if (!(price > 0)) {
+      toast.error(`"${p.name}" no tiene Precio 1 (mayorista) definido. Edítalo antes de vender.`);
+      return;
+    }
     setItems((prev) => [...prev, {
       productId: p.id, itemCode: p.itemCode, name: p.name, brand: p.brand,
       model: p.model, year: p.year, detail: p.detail,
       quantity: 1, unitPrice: price, subtotal: price, factoryCode: p.factoryCode,
-      price1: Number(p.price1) || 0, price2: Number(p.price2) || 0,
+      price1: p.price1, price2: p.price2,
       stockByLocation: p.stockByLocation,
     }]);
   };
@@ -395,6 +404,13 @@ export default function WholesalePage() {
     try {
       if (validPayments.reduce((s, p) => s + Number(p.amount), 0) - total > 0.01) {
         toast.error("Los pagos superan el total de la venta");
+        return;
+      }
+      // El backend rechaza precio 0 con un mensaje que solo muestra el ID.
+      // Avisamos acá con el nombre para que se sepa qué fila corregir.
+      const sinPrecio = items.filter((i) => !(Number(i.unitPrice) > 0));
+      if (sinPrecio.length > 0) {
+        toast.error(`Precio inválido en: ${sinPrecio.map((i) => i.name).join(", ")}. Corrígelo antes de cobrar.`);
         return;
       }
       const payload: any = {
@@ -1049,7 +1065,9 @@ export default function WholesalePage() {
                             <td className="px-3 py-2 text-gray-400 text-xs">{p.detalles || p.detail || "—"}</td>
                             <td className="px-3 py-2 text-gray-400 text-xs">{p.oemCode || "—"}</td>
                             <td className="px-3 py-2 text-gray-400 text-xs">{p.factoryCode || "—"}</td>
-                            <td className="px-3 py-2 text-right text-emerald-400 font-medium whitespace-nowrap">{p.wholesalePrice ? formatBs(p.wholesalePrice) : "—"}</td>
+                            <td className="px-3 py-2 text-right text-emerald-400 font-medium whitespace-nowrap" title={p.wholesalePrice && p.wholesalePrice > 0 ? "Precio Mayor" : "Precio 1 (mayorista)"}>
+                              {p.wholesalePrice && p.wholesalePrice > 0 ? formatBs(p.wholesalePrice) : p.price1 > 0 ? `${formatBs(p.price1)} (P1)` : "—"}
+                            </td>
                             <td className="px-3 py-2 text-center">
                               <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>{p.stock}</span>
                               {typeof p.stockTotal === "number" && p.stockTotal !== p.stock && (
@@ -1087,7 +1105,7 @@ export default function WholesalePage() {
                           <p className="text-sm text-foreground font-medium truncate">{p.name}</p>
                           <p className="text-xs text-gray-500 truncate">{p.manufacturer} · {p.brand} · {p.model} · {p.itemCode}</p>
                           <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs font-medium text-emerald-400">{p.wholesalePrice ? formatBs(p.wholesalePrice) : "—"}</span>
+                            <span className="text-xs font-medium text-emerald-400">{p.wholesalePrice && p.wholesalePrice > 0 ? formatBs(p.wholesalePrice) : p.price1 > 0 ? `${formatBs(p.price1)} (P1)` : "—"}</span>
                             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.stock === 0 ? "bg-red-500/10 text-red-400" : p.stock <= 5 ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400"}`}>Stock: {p.stock}</span>
                             {typeof p.stockTotal === "number" && p.stockTotal !== p.stock && (
                               <span className="block text-[10px] text-gray-500" title="Suma de todas las tiendas y almacenes">{p.stockTotal} en toda la cadena</span>

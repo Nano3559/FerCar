@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { authenticate, authorize, requireTiendaLocation } from "../../shared/middlewares/auth";
 import { AuthRequest } from "../../shared/types";
 import { ensureRestockRequest } from "../../utils/restockRequest";
-import { validateAndMergeItems, demandByProduct } from "../../utils/saleItems";
+import { validateAndMergeItems, demandByProduct, loadProductNames } from "../../utils/saleItems";
 import { planFulfillment, loadStockSnapshot, summarizeFulfillment, FulfillmentError, assertPendingCovered } from "../../utils/fulfillment";
 import { saleCode } from "../../shared/documentCodes";
 import { saleDateRange } from "../../utils/dateRange";
@@ -338,7 +338,11 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     const saleType = type === "DEPARTAMENTAL" ? "DEPARTAMENTAL" : "NORMAL";
 
     // Validar y deduplicar ítems (evita sobreventa con productos repetidos)
-    const validItems = validateAndMergeItems(items);
+    const nombresItems = await loadProductNames(
+      (ids) => prisma.product.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
+      items,
+    );
+    const validItems = validateAndMergeItems(items, nombresItems);
 
     // De dónde sale la mercadería que no está en esta tienda. Lo elige el
     // vendedor en pantalla: [{ productId, fromLocationId, quantity }]. El
@@ -699,7 +703,11 @@ router.post("/:id/items", async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ message: "No puede modificar una venta de otra tienda" });
     }
 
-    const validItems = validateAndMergeItems(items);
+    const nombresItems = await loadProductNames(
+      (ids) => prisma.product.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
+      items,
+    );
+    const validItems = validateAndMergeItems(items, nombresItems);
 
     const result = await prisma.$transaction(async (tx) => {
       // Se vuelve a leer dentro de la transaccion para no trabajar con un
