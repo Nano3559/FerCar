@@ -1,12 +1,11 @@
 import cron from "node-cron";
 import { PrismaClient } from "@prisma/client";
-import { ensureRestockRequest } from "../utils/restockRequest";
 
 const prisma = new PrismaClient();
 
 // Job diario a las 08:05:
-//  1) Activa solicitudes de reposición cuyo expectedDate ya llegó.
-//  2) Genera solicitudes automáticas para tiendas cuyo stock quedó por debajo del mínimo.
+//  Activa solicitudes de reposición cuyo expectedDate ya llegó.
+//  La reposición por stock mínimo se genera solo al vender (no por barrido masivo).
 async function runReplenishCheck() {
   try {
     const now = new Date();
@@ -56,38 +55,8 @@ async function runReplenishCheck() {
     }
 
     if (due.length > 0) console.log(`[replenish] ${due.length} solicitudes activadas a las ${now.toISOString()}`);
-
-    // 2) Reposición automática por stock < mínimo en tiendas
-    await generateLowStockRequests();
   } catch (err) {
     console.error("[replenish] Error ejecutando job de reposición:", err);
-  }
-}
-
-// Revisa todas las tiendas y delega en el helper compartido la creación de
-// solicitudes para productos cuyo stock quedó en cero o por debajo del mínimo.
-async function generateLowStockRequests() {
-  const tiendas = await prisma.location.findMany({ where: { type: "TIENDA" } });
-
-  for (const tienda of tiendas) {
-    const inventories = await prisma.inventory.findMany({
-      where: { locationId: tienda.id },
-    });
-
-    for (const inv of inventories) {
-      // Quién solicita: un usuario TIENDA de esa ubicación (fallback: admin)
-      const tiendaUser = await prisma.user.findFirst({ where: { locationId: tienda.id, role: { name: "TIENDA" } } });
-      const requestedBy = tiendaUser ?? (await prisma.user.findFirst({ where: { role: { name: "ADMIN" } } }));
-      if (!requestedBy) continue;
-
-      await ensureRestockRequest(prisma, {
-        productId: inv.productId,
-        destinationId: tienda.id,
-        requestedById: requestedBy.id,
-        source: "STOCK_MINIMO",
-        note: "Reposición automática: el stock quedó por debajo del mínimo",
-      });
-    }
   }
 }
 
