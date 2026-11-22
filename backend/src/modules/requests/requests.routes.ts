@@ -391,6 +391,24 @@ router.put("/:id", async (req: AuthRequest, res: Response) => {
               data: { deliveredQuantity: item.deliveredQuantity + ahoraEntregado },
             });
 
+            // La nota de despacho sumó esta mercadería al destino al recibirla
+            // físicamente, pero pertenece a una venta ya cobrada: al confirmar la
+            // recepción hay que descontarla del destino para no inflar el stock.
+            const invDestino = await tx.inventory.findUnique({
+              where: {
+                productId_locationId: {
+                  productId: existing.productId,
+                  locationId: existing.locationId,
+                },
+              },
+            });
+            if (invDestino) {
+              await tx.inventory.update({
+                where: { id: invDestino.id },
+                data: { stock: Math.max(0, invDestino.stock - ahoraEntregado) },
+              });
+            }
+
             const completa = item.deliveredQuantity + ahoraEntregado >= item.quantity;
             await tx.notification.create({
               data: {
