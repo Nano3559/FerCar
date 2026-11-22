@@ -36,6 +36,7 @@ interface WholesaleSale {
   paraQuien?: string | null; lugarEntrega?: string | null; datosFactura?: string | null; formaPago?: string | null;
   nitName?: string | null; status?: string | null;
   telefono?: string | null; telefonoFactura?: string | null;
+  note?: string | null;
   customer: { name: string; nit: string | null; phone?: string | null } | null;
   location: { name: string } | null;
   user: { name: string } | null;
@@ -123,7 +124,7 @@ export default function WholesalePage() {
   const [activeTab, setActiveTab] = useState<"venta" | "carrito" | "historial">("venta");
   const [showConfirm, setShowConfirm] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
-  const [lastWholesaleSale, setLastWholesaleSale] = useState<{ id: number; saleDate: string; total: number; items: WholesaleItem[]; clientName: string; paraQuien: string; paraDonde: string; telefonoEnvio: string; nit: string; nitName: string; celularFactura: string; payments: { method: string; amount: number }[]; status: string; faltantes?: { productId: number; nombre: string; cantidad: number }[]; recortados?: { productId: number; nombre: string; pedido: number; vendido: number; faltante: number }[] } | null>(null);
+  const [lastWholesaleSale, setLastWholesaleSale] = useState<{ id: number; saleDate: string; total: number; items: WholesaleItem[]; clientName: string; paraQuien: string; paraDonde: string; telefonoEnvio: string; nit: string; nitName: string; celularFactura: string; note: string; payments: { method: string; amount: number }[]; status: string; faltantes?: { productId: number; nombre: string; cantidad: number }[]; recortados?: { productId: number; nombre: string; pedido: number; vendido: number; faltante: number }[] } | null>(null);
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -171,6 +172,7 @@ export default function WholesalePage() {
   const [nit, setNit] = useState("");
   const [nitName, setNitName] = useState("");
   const [celularFactura, setCelularFactura] = useState("");
+  const [note, setNote] = useState("");
   const [payments, setPayments] = useState<{ method: string; amount: number }[]>([{ method: "EFECTIVO", amount: 0 }]);
 
   const [payModalSale, setPayModalSale] = useState<WholesaleSale | null>(null);
@@ -422,6 +424,7 @@ export default function WholesalePage() {
         datosFactura: nit.trim(),
         nitName: nitName.trim(),
         telefonoFactura: celularFactura.trim(),
+        note: note.trim() || null,
         items: items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -448,7 +451,7 @@ export default function WholesalePage() {
         toast.success("Venta por mayor registrada");
       }
 
-      setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, paraQuien, paraDonde, telefonoEnvio, nit, nitName, celularFactura, payments: [...validPayments], status: resultingStatus, faltantes, recortados });
+      setLastWholesaleSale({ id: response.data.id, saleDate: response.data.createdAt || new Date().toISOString(), total: Number(response.data.total) || total, items: [...items], clientName, paraQuien, paraDonde, telefonoEnvio, nit, nitName, celularFactura, note: note.trim(), payments: [...validPayments], status: resultingStatus, faltantes, recortados });
       setShowConfirm(false);
       setShowReceipt(true);
       resetForm();
@@ -461,7 +464,7 @@ export default function WholesalePage() {
   };
 
   const resetForm = () => {
-    setItems([]); setClientName(""); setParaQuien(""); setParaDonde(""); setTelefonoEnvio(""); setNit(""); setNitName(""); setCelularFactura("");
+    setItems([]); setClientName(""); setParaQuien(""); setParaDonde(""); setTelefonoEnvio(""); setNit(""); setNitName(""); setCelularFactura(""); setNote("");
     setPayments([{ method: "EFECTIVO", amount: 0 }]);
     setAllocations([]);
   };
@@ -563,6 +566,7 @@ export default function WholesalePage() {
       </tbody></table>
       <p class="total">TOTAL: ${formatBs(Number(sale.total))}</p>
       <p><b>Pagos:</b> ${sale.payments.map((p) => `${p.method}: ${formatBs(Number(p.amount))}`).join(", ")}</p>
+      ${sale.note ? `<p><b>Nota:</b> ${sale.note}</p>` : ""}
       </body></html>`);
     win.document.close(); win.print();
   };
@@ -794,12 +798,13 @@ export default function WholesalePage() {
                     <th className="text-center px-4 py-3 text-gray-400 font-medium">Estado</th>
                     <th className="text-right px-4 py-3 text-gray-400 font-medium">Pagado</th>
                     <th className="text-right px-4 py-3 text-gray-400 font-medium">Total</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Nota</th>
                     <th className="text-center px-4 py-3 text-gray-400 font-medium">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sales.length === 0 ? (
-                    <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                    <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-500">
                       {histDateFrom || histDateTo || histSeller || histLocation || histProduct
                         ? "No hay ventas mayoristas que coincidan con el filtro"
                         : "No hay ventas mayoristas registradas"}
@@ -840,12 +845,26 @@ export default function WholesalePage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-300 text-right">
-                        {formatBs(paid)}
+                        <div>{formatBs(paid)}</div>
                         {s.status !== "PAGADO" && (
-                          <span className="block text-xs text-yellow-400">Saldo {formatBs(Math.max(Number(s.total) - paid, 0))}</span>
+                          <div className="text-xs text-yellow-400">Saldo {formatBs(Math.max(Number(s.total) - paid, 0))}</div>
+                        )}
+                        {s.payments.length > 0 && (
+                          <div className="mt-1 flex flex-wrap justify-end gap-1">
+                            {s.payments.map((p, i) => (
+                              <span key={i} className="inline-flex items-center px-1.5 py-0.5 bg-dark-900/50 border border-dark-700/30 rounded text-[11px] text-gray-400 whitespace-nowrap">
+                                {pagoLabel(p.method)} {formatBs(Number(p.amount))}
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-emerald-400 font-medium text-right">{formatBs(Number(s.total))}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs max-w-[16rem]">
+                        {s.note
+                          ? <span title={s.note} className="whitespace-normal break-words">{s.note}</span>
+                          : <span className="text-gray-600">-</span>}
+                      </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1">
                           {s.status !== "PAGADO" && (
@@ -862,7 +881,7 @@ export default function WholesalePage() {
                     </tr>
                     {expandedSale === s.id && (
                       <tr className="bg-dark-900/40">
-                        <td colSpan={10} className="px-4 py-3">
+                        <td colSpan={11} className="px-4 py-3">
                           <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Detalle de ítems</p>
                           <div className="overflow-x-auto">
                             <table className="w-full text-xs">
@@ -896,6 +915,28 @@ export default function WholesalePage() {
                               </tbody>
                             </table>
                           </div>
+
+                          <div className="mt-3 pt-3 border-t border-dark-700/40">
+                            <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Pagos</p>
+                            {s.payments.length === 0 ? (
+                              <p className="text-xs text-gray-600">Sin pagos registrados</p>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                {s.payments.map((p, i) => (
+                                  <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-dark-800 border border-dark-700/50 rounded-lg text-xs text-gray-300">
+                                    {pagoLabel(p.method)}: <span className="text-foreground font-medium">{formatBs(Number(p.amount))}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {s.note && (
+                            <div className="mt-3 pt-3 border-t border-dark-700/40">
+                              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Nota / Recordatorio</p>
+                              <p className="text-xs text-gray-300 whitespace-pre-wrap break-words">{s.note}</p>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
@@ -1300,6 +1341,13 @@ export default function WholesalePage() {
                   </div>
                 </div>
 
+                <div className="border-t border-dark-700/50 pt-4">
+                  <label htmlFor="wholesale-note" className="block text-xs text-gray-400 mb-1.5">Nota / Recordatorio (opcional)</label>
+                  <textarea id="wholesale-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2}
+                    placeholder="Nota, recordatorio o instrucción para esta venta..."
+                    className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary-500 resize-none" />
+                </div>
+
                 {/* Pagos */}
                 <div className="border-t border-dark-700/50 pt-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
@@ -1487,6 +1535,12 @@ export default function WholesalePage() {
                   </div>
                 ))}
               </div>
+              {lastWholesaleSale.note && (
+                <div className="border-t border-dark-700/50 pt-3 text-left">
+                  <p className="text-xs text-gray-500 mb-1">Nota / Recordatorio</p>
+                  <p className="text-sm text-gray-300 whitespace-pre-wrap break-words">{lastWholesaleSale.note}</p>
+                </div>
+              )}
               <div className="border-t border-dark-700/50 pt-3 flex justify-between text-lg font-bold">
                 <span className="text-foreground">Total</span><span className="text-emerald-400">{formatBs(lastWholesaleSale.total)}</span>
               </div>

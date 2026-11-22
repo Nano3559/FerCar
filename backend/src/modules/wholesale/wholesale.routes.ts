@@ -20,7 +20,7 @@ router.use(authorize("ADMIN", "TIENDA", "VENDEDOR"));
 // POST — Crear venta mayorista
 router.post("/", async (req: AuthRequest, res: Response) => {
   try {
-    const { items, payments, customerId, customerData, locationId, clienteName, paraQuien, lugarEntrega, datosFactura, formaPago, nitName, origen, envioExterior, quienRecoge, telefono, telefonoFactura } = req.body;
+    const { items, payments, customerId, customerData, locationId, clienteName, paraQuien, lugarEntrega, datosFactura, formaPago, nitName, origen, envioExterior, quienRecoge, telefono, telefonoFactura, note } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Debe agregar al menos un producto" });
@@ -166,6 +166,7 @@ router.post("/", async (req: AuthRequest, res: Response) => {
           quienRecoge: quienRecoge || null,
           telefono: telefono || null,
           telefonoFactura: telefonoFactura || null,
+          note: typeof note === "string" && note.trim() ? note.trim() : null,
           items: { create: saleItemsData },
           payments: {
             create: payments.map((p: any) => ({
