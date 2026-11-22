@@ -188,6 +188,16 @@ router.post("/", async (req: AuthRequest, res: Response) => {
             where: { id: inv.id },
             data: { stock: newStock },
           });
+
+          // La venta dejó el stock en cero o por debajo del mínimo: se genera
+          // sola la solicitud de reposición desde el almacén, igual que en ventas.
+          await ensureRestockRequest(tx, {
+            productId: update.productId,
+            destinationId: update.locationId,
+            requestedById: user.userId,
+            source: "VENTA",
+            note: "Reposición automática: la venta dejó el stock bajo el mínimo",
+          });
         }
       }
 

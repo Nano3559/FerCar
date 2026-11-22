@@ -156,6 +156,7 @@ export default function WholesalePage() {
     names: [], itemCodes: [], oemCodes: [], factoryCodes: [], detalles: [],
   });
   const [searchResults, setSearchResults] = useState<ProductResult[]>([]);
+  const [productsRefresh, setProductsRefresh] = useState(0);
   const [searching, setSearching] = useState(false);
   const [searchPage, setSearchPage] = useState(1);
   const [searchPages, setSearchPages] = useState(1);
@@ -292,7 +293,7 @@ export default function WholesalePage() {
     }, 300);
     setSearching(true);
     return () => { controller.abort(); clearTimeout(t); };
-  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedStoreId, searchPage]);
+  }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedStoreId, searchPage, productsRefresh]);
 
   useEffect(() => { setSearchPage(1); }, [search, nameFilter, itemCodeFilter, brand, manufacturer, model, year, categoryId, oemCode, factoryCode, detailFilter, supplierId, selectedStoreId]);
 
@@ -453,6 +454,7 @@ export default function WholesalePage() {
       resetForm();
       setActiveTab("venta");
       fetchSales();
+      setProductsRefresh((n) => n + 1);
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Error al registrar venta");
     }
