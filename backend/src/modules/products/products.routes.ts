@@ -58,18 +58,26 @@ router.get("/", optionalAuth, async (req: AuthRequest, res: Response) => {
     const where: any = {};
     const AND: any[] = [];
 
-    if (search && typeof search === "string") {
-      AND.push({
-        OR: [
-          { name: { contains: search, mode: "insensitive" } },
-          { itemCode: { contains: search, mode: "insensitive" } },
-          { oemCode: { contains: search, mode: "insensitive" } },
-          { factoryCode: { contains: search, mode: "insensitive" } },
-          { manufacturer: { contains: search, mode: "insensitive" } },
-          { brand: { contains: search, mode: "insensitive" } },
-          { model: { contains: search, mode: "insensitive" } },
-        ],
-      });
+    if (search && typeof search === "string" && search.trim()) {
+      const term = search.trim();
+      const orFilters: any[] = [
+        { name: { contains: term, mode: "insensitive" } },
+        { itemCode: { contains: term, mode: "insensitive" } },
+        { oemCode: { contains: term, mode: "insensitive" } },
+        { factoryCode: { contains: term, mode: "insensitive" } },
+        { manufacturer: { contains: term, mode: "insensitive" } },
+        { brand: { contains: term, mode: "insensitive" } },
+        { model: { contains: term, mode: "insensitive" } },
+        { year: { contains: term, mode: "insensitive" } },
+        { detail: { contains: term, mode: "insensitive" } },
+        { detalles: { contains: term, mode: "insensitive" } },
+        { category: { name: { contains: term, mode: "insensitive" } } },
+        { importers: { some: { importer: { name: { contains: term, mode: "insensitive" } } } } },
+      ];
+      if (/^\d+$/.test(term)) {
+        orFilters.push({ id: Number(term) });
+      }
+      AND.push({ OR: orFilters });
     }
 
     if (brand && typeof brand === "string") AND.push({ brand: { contains: brand, mode: "insensitive" } });

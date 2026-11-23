@@ -686,7 +686,7 @@ export default function RequestsPage({ embedded = false }: { embedded?: boolean 
 
               <div>
                 <label htmlFor="req-nota" className="block text-xs text-gray-400 mb-1.5">Nota (opcional)</label>
-                <textarea id="req-nota" value={note} onChange={(e) => setNote(e.target.value)} rows={2}
+                <textarea id="req-nota" value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={3000}
                   placeholder="Observaciones adicionales..."
                   className="w-full px-3 py-2.5 bg-dark-900/50 border border-dark-600/50 rounded-xl text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none placeholder-gray-600" />
               </div>

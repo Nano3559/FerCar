@@ -158,7 +158,11 @@ router.post("/", async (req: AuthRequest, res: Response) => {
 
     const productId = parsePositiveInt(req.body.productId, "Producto");
     const quantity = parsePositiveInt(req.body.quantity, "Cantidad");
-    const note = req.body.note || null;
+    const noteRaw = req.body.note;
+    const note = typeof noteRaw === "string" && noteRaw.trim() ? noteRaw.trim() : null;
+    if (note && note.length > 3000) {
+      return res.status(400).json({ message: "Nota no puede exceder 3000 caracteres" });
+    }
 
     if (quantity <= 0) return res.status(400).json({ message: "La cantidad debe ser mayor a 0" });
 

@@ -635,7 +635,7 @@ export default function DespatchListPage({ embedded = false }: { embedded?: bool
                     <ListChecks size={13} /> {requestIds.length} solicitud(es): #{requestIds.join(", #")}
                   </span>
                 )}
-                <input value={observacion} onChange={(e) => setObservacion(e.target.value)} maxLength={300}
+                <input value={observacion} onChange={(e) => setObservacion(e.target.value)} maxLength={3000}
                   placeholder="Observación de la nota (opcional)"
                   className="flex-1 min-w-[200px] px-3 py-1.5 bg-dark-900/50 border border-dark-600/50 rounded-lg text-foreground text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
                 <button onClick={saveNote} disabled={activeItems.length === 0 || saving}

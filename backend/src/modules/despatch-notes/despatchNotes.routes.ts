@@ -33,7 +33,7 @@ type DespatchItemInput = {
 router.post("/", authorize(...ROLES_DESPACHO), async (req: AuthRequest, res: Response) => {
   try {
     const entregadoA = parseString(req.body.entregadoA, "Entregado a", { max: 120 });
-    const observacion = parseString(req.body.observacion, "Observación", { max: 300 });
+    const observacion = parseString(req.body.observacion, "Observación", { max: 3000 });
     const rawItems: DespatchItemInput[] = req.body.items;
     if (!Array.isArray(rawItems) || rawItems.length === 0) {
       return res.status(400).json({ message: "La nota debe tener al menos un ítem" });
